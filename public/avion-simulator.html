@@ -1,0 +1,242 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta charset="utf-8">
+<title>Flight Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed 3D viewport as the "airspace", ground-station glass panels docked at its edges (stacked below it on phones). */
+:root{
+  --bg:#140E1C; --deep:#4A2B66; --panel:rgba(30,21,44,.80); --panel-solid:#1E152C; --line:rgba(167,155,196,.20);
+  --ink:#EFE9F8; --body:#C9BEDD; --muted:#A79BC4; --accent:#B9A6E8;
+  --ok:#5CC2B8; --warn:#E8B04E; --crit:#E07A98; --yellow:#F1C84B;
+  --f-head:Georgia,"Times New Roman",serif; --f-body:Carlito,Calibri,"Segoe UI",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;overflow:hidden}
+#app{position:relative;height:100%;width:100%}
+#view{position:absolute;inset:0;display:block;width:100%;height:100%;outline:none;touch-action:none}
+.glass{background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2)}
+.lbl{font-family:var(--f-body);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* top bar */
+#top{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;pointer-events:none}
+#top>*{pointer-events:auto}
+.brand{display:flex;align-items:baseline;gap:10px;padding:8px 14px}
+.brand h1{font-family:var(--f-head);font-weight:400;font-size:22px;margin:0;letter-spacing:.02em}
+.brand span{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;font-family:var(--f-mono);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 3px rgba(167,155,196,.15)}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(92,194,184,.2)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--crit)}
+.seg{display:flex;padding:3px;gap:2px}
+.seg button{background:none;border:0;padding:6px 11px;border-radius:7px;color:var(--body);font-size:13px}
+.seg button[aria-pressed="true"]{background:rgba(185,166,232,.22);color:var(--ink)}
+.seg button:hover{color:var(--ink)}
+.spacer{flex:1}
+
+/* side panels */
+#left{position:absolute;left:12px;top:70px;width:250px;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - 340px);overflow:auto}
+#right{position:absolute;right:12px;top:70px;width:272px;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - 82px);overflow:auto}
+.card{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.card h2{font-family:var(--f-head);font-weight:400;font-size:15px;margin:0;color:var(--ink)}
+.phases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.phases li{display:grid;grid-template-columns:20px 1fr;gap:8px;align-items:center;padding:5px 6px;border-radius:6px;color:var(--muted);font-size:13px}
+.phases li i{font-style:normal;font-family:var(--f-mono);font-size:11px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line)}
+.phases li.on{background:rgba(185,166,232,.14);color:var(--ink)} .phases li.on i{border-color:var(--accent);color:var(--accent)}
+.phases li.done{color:var(--body)} .phases li.done i{background:var(--ok);border-color:var(--ok);color:var(--bg)}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.btn{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:7px;padding:8px 9px;font-size:13px;text-align:center}
+.btn:hover:not(:disabled){background:rgba(185,166,232,.16)}
+.btn:disabled{opacity:.38;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:#1b1228;border-color:transparent;font-weight:700}
+.btn.primary:hover:not(:disabled){background:#cbbcf0}
+.btn.wide{grid-column:1/-1}
+.btn.confirm{background:var(--yellow);color:#241a06;border-color:transparent;font-weight:700;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 6px rgba(241,200,75,.25)}}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.kv div{display:flex;flex-direction:column;gap:1px}
+.kv b{font-family:var(--f-mono);font-weight:500;font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums}
+.kv b small{font-size:11px;color:var(--muted);font-weight:400;margin-left:3px}
+.motors{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.motor{display:flex;flex-direction:column;align-items:center;gap:4px}
+.bar{width:100%;height:46px;background:rgba(255,255,255,.05);border-radius:4px;position:relative;overflow:hidden;border:1px solid var(--line)}
+.bar span{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,var(--deep),var(--accent));height:0}
+.motor em{font-style:normal;font-family:var(--f-mono);font-size:10.5px;color:var(--body)}
+.batt{height:8px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
+.batt span{display:block;height:100%;background:var(--ok);width:100%}
+#att{width:100%;height:auto;aspect-ratio:2/1.1;max-width:100%;border-radius:8px;display:block}
+.note{font-size:11.5px;color:var(--muted);line-height:1.4}
+.sim{font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--muted)}
+
+/* bottom */
+#mapcard{position:absolute;left:12px;bottom:12px;width:210px;padding:10px;display:flex;flex-direction:column;gap:6px}
+#map{width:100%;aspect-ratio:1/1;border-radius:6px;display:block}
+#depthcard{position:absolute;right:296px;bottom:12px;width:300px;padding:10px;display:flex;flex-direction:column;gap:6px}
+#depth{width:100%;aspect-ratio:16/10;border-radius:6px;background:#000;position:relative;overflow:hidden}
+#depth canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#depth .reticle{position:absolute;inset:0;pointer-events:none}
+#depth .reticle::before,#depth .reticle::after{content:"";position:absolute;left:50%;top:50%;border:1px solid rgba(255,255,255,.6)}
+#depth .reticle::before{width:26px;height:26px;transform:translate(-50%,-50%);border-radius:50%}
+#depth .reticle::after{width:60%;height:0;transform:translate(-50%,-50%);border-width:1px 0 0;opacity:.3}
+#lock{position:absolute;left:8px;top:8px;font-family:var(--f-mono);font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,.55);color:var(--ink)}
+#log{position:absolute;left:234px;right:610px;bottom:12px;max-height:132px;padding:10px 12px;overflow:hidden;display:flex;flex-direction:column;gap:4px}
+#log ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column-reverse;gap:3px;overflow:auto;font-family:var(--f-mono);font-size:11.5px;color:var(--body)}
+#log li b{color:var(--muted);font-weight:400;margin-right:8px}
+#log li.warn{color:var(--warn)} #log li.crit{color:var(--crit)} #log li.ok{color:var(--ok)}
+
+/* inspect */
+#inspect{position:absolute;left:12px;top:70px;width:250px;max-height:calc(100% - 82px);overflow:auto}
+.parts{display:flex;flex-direction:column;gap:2px}
+.parts button{display:grid;grid-template-columns:12px 1fr auto;gap:8px;align-items:center;background:none;border:0;padding:6px 6px;border-radius:6px;text-align:left;color:var(--body);font-size:13px}
+.parts button:hover{background:rgba(255,255,255,.06)}
+.parts button[aria-pressed="false"]{opacity:.4}
+.parts button.sel{background:rgba(185,166,232,.16);color:var(--ink)}
+.sw{width:12px;height:12px;border-radius:3px}
+#partinfo{position:absolute;right:12px;top:70px;width:272px}
+#partinfo p{margin:0;color:var(--body);line-height:1.45}
+#keys{position:absolute;left:50%;transform:translateX(-50%);top:70px;padding:8px 12px;font-size:12px;color:var(--body);text-align:center}
+#keys kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--ink)}
+#pad{position:absolute;right:296px;bottom:236px;display:none;grid-template-columns:repeat(3,44px);gap:4px;padding:8px}
+#pad button{height:40px;border-radius:8px;background:rgba(255,255,255,.07);border:1px solid var(--line);font-family:var(--f-mono);font-size:12px;touch-action:none}
+#loading{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);z-index:10;transition:opacity .6s}
+#loading div{display:flex;flex-direction:column;align-items:center;gap:10px}
+#loading h1{font-family:var(--f-head);font-weight:400;font-size:40px;margin:0;letter-spacing:.04em}
+#loading .bar2{width:220px;height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+#loading .bar2 span{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+
+@media (max-width:1180px){ #log{display:none} #depthcard{right:296px;width:240px} }
+@media (max-width:900px){
+  body{overflow:auto}
+  #app{height:auto;display:flex;flex-direction:column;gap:10px;padding-inline:16px;padding-block:12px}
+  #viewwrap{position:relative;height:58vh;min-height:320px;border-radius:12px;overflow:hidden;order:2}
+  #view{position:absolute}
+  #top,#left,#right,#mapcard,#depthcard,#log,#inspect,#partinfo,#keys{position:static;width:auto;max-height:none;transform:none}
+  #app>*{min-width:0;max-width:100%} #app{overflow-x:hidden}
+  #top{order:1} #keys{order:3} #left,#inspect{order:4} #right,#partinfo{order:5} #depthcard{order:6} #mapcard{order:7} #log{order:8;display:flex}
+  #pad{right:10px;bottom:10px;position:absolute}
+}
+@media (prefers-reduced-motion:reduce){.btn.confirm{animation:none}}
+</style>
+
+<div id="app">
+  <div id="viewwrap"><canvas id="view" tabindex="0" aria-label="3D view of the Avion drone"></canvas>
+    <div id="pad" class="glass" aria-label="Manual flight pad">
+      <button data-k="KeyQ" aria-label="Yaw left">⟲</button><button data-k="KeyW" aria-label="Forward">▲</button><button data-k="KeyE" aria-label="Yaw right">⟳</button>
+      <button data-k="KeyA" aria-label="Left">◀</button><button data-k="KeyS" aria-label="Back">▼</button><button data-k="KeyD" aria-label="Right">▶</button>
+      <button data-k="KeyR" aria-label="Climb">UP</button><span></span><button data-k="KeyF" aria-label="Descend">DN</button>
+    </div>
+  </div>
+
+  <header id="top">
+    <div class="brand glass"><h1>Flight Simulator</h1></div>
+    <div class="pill glass" id="phasePill"><span class="dot" id="phaseDot"></span><span id="phaseTxt">PREFLIGHT · DISARMED</span></div>
+    <div class="pill glass mono" title="Mission clock"><span id="clock">T+00:00</span></div>
+    <div class="spacer"></div>
+    <div class="seg glass" role="group" aria-label="Mode">
+      <button id="mMission" aria-pressed="true">Mission</button>
+      <button id="mManual" aria-pressed="false">Manual</button>
+      <button id="mInspect" aria-pressed="false">Inspect</button>
+    </div>
+    <div class="seg glass" role="group" aria-label="Camera" id="camSeg">
+      <button data-cam="chase" aria-pressed="true">Chase</button>
+      <button data-cam="orbit" aria-pressed="false">Orbit</button>
+      <button data-cam="top" aria-pressed="false">Overview</button>
+      <button data-cam="fpv" aria-pressed="false">FPV</button>
+    </div>
+  </header>
+
+  <div id="keys" class="glass" hidden>Manual: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Q</kbd><kbd>E</kbd> yaw · <kbd>Space</kbd>/<kbd>R</kbd> up · <kbd>Shift</kbd>/<kbd>F</kbd> down · click the view first</div>
+
+  <aside id="left">
+    <section class="card glass">
+      <div class="row"><h2>Relief mission</h2><span class="sim">AUTO</span></div>
+      <div class="note">Base camp → broken bridge → cut-off village. Drone flies itself; the operator confirms the drop.</div>
+      <ol class="phases" id="phases">
+        <li data-p="1"><i>1</i>Autonomous takeoff</li>
+        <li data-p="2"><i>2</i>Route execution</li>
+        <li data-p="3"><i>3</i>Perception · drop-zone lock</li>
+        <li data-p="4"><i>4</i>Payload delivery</li>
+        <li data-p="5"><i>5</i>Autonomous return</li>
+      </ol>
+      <div class="btns">
+        <button class="btn primary wide" id="bLaunch">Arm &amp; launch</button>
+        <button class="btn wide" id="bConfirm" disabled>Confirm drop</button>
+        <button class="btn" id="bHold" disabled>Hold</button>
+        <button class="btn" id="bRTL" disabled>Return home</button>
+        <button class="btn" id="bLowBatt" disabled>Low-battery test</button>
+        <button class="btn" id="bReset">Reset</button>
+      </div>
+    </section>
+    <section class="card glass">
+      <h2>Environment</h2>
+      <label class="row" for="wind"><span class="lbl">Wind</span><span class="mono" id="windV">3 m/s</span></label>
+      <input type="range" id="wind" min="0" max="12" step="1" value="3">
+      <label class="row" for="speed"><span class="lbl">Sim speed</span><span class="mono" id="speedV">1×</span></label>
+      <input type="range" id="speed" min="0" max="3" step="1" value="0">
+      <label class="row" style="justify-content:flex-start;gap:8px;font-size:13px;color:var(--body)"><input type="checkbox" id="autoConfirm"> Auto-confirm drop</label>
+    </section>
+  </aside>
+
+  <aside id="right">
+    <section class="card glass">
+      <div class="row"><h2>Flight telemetry</h2><span class="sim" title="Values come from the twin's physics model, not from flight logs">SIM</span></div>
+      <canvas id="att" width="488" height="268" aria-label="Attitude indicator"></canvas>
+      <div class="kv">
+        <div><span class="lbl">Alt AGL</span><b id="tAlt">0.0<small>m</small></b></div>
+        <div><span class="lbl">Ground speed</span><b id="tGs">0.0<small>m/s</small></b></div>
+        <div><span class="lbl">Vert speed</span><b id="tVs">0.0<small>m/s</small></b></div>
+        <div><span class="lbl">Heading</span><b id="tHdg">000<small>°</small></b></div>
+        <div><span class="lbl">Home dist</span><b id="tHome">0<small>m</small></b></div>
+        <div><span class="lbl">Throttle</span><b id="tThr">0<small>%</small></b></div>
+      </div>
+    </section>
+    <section class="card glass">
+      <div class="row"><span class="lbl">Battery · 6S</span><span class="mono" style="white-space:nowrap" id="tBatt">100% · 25.2 V</span></div>
+      <div class="batt"><span id="battBar"></span></div>
+      <div class="row"><span class="lbl">Motors · 5010 750 KV</span><span class="mono" id="tArm" style="color:var(--muted)">DISARMED</span></div>
+      <div class="motors" id="motors"></div>
+      <div class="kv">
+        <div><span class="lbl">GNSS</span><b id="tSat">16<small>sats 3D</small></b></div>
+        <div><span class="lbl">Link</span><b id="tLink">−48<small>dBm</small></b></div>
+      </div>
+      <div class="note">Telemetry is generated by the twin's simulation model (mass, thrust and battery curves are placeholders). Swap in Pixhawk MAVLink data for live values.</div>
+    </section>
+  </aside>
+
+  <aside id="inspect" class="card glass" hidden>
+    <div class="row"><h2>Assembly</h2><span class="sim" id="partCount">49 BODIES</span></div>
+    <label class="row" for="explode"><span class="lbl">Exploded view</span><span class="mono" id="explodeV">0%</span></label>
+    <input type="range" id="explode" min="0" max="100" value="0">
+    <label class="row" style="justify-content:flex-start;gap:8px;font-size:13px;color:var(--body)"><input type="checkbox" id="spinTest"> Motor spin test</label>
+    <div class="lbl">Part groups · tap to select, eye to hide</div>
+    <div class="parts" id="parts"></div>
+  </aside>
+  <aside id="partinfo" class="card glass" hidden>
+    <span class="lbl" id="piCat">Select a part</span>
+    <h2 id="piName">Click any part on the drone</h2>
+    <p id="piDesc">The model is the team's full STEP assembly, converted to a mesh: 263,000 triangles across 49 bodies.</p>
+    <div class="kv" id="piKv"></div>
+  </aside>
+
+  <section id="mapcard" class="glass"><div class="row"><span class="lbl">Live map · route</span><span class="mono" style="font-size:11px;color:var(--muted)" id="mapScale">100 m</span></div><canvas id="map" width="460" height="460" aria-label="Top-down mission map"></canvas></section>
+  <section id="depthcard" class="glass"><div class="row"><span class="lbl">D455 depth view</span><span class="mono" style="font-size:11px;color:var(--muted)">0–60 m</span></div><div id="depth"><canvas id="depthC" width="320" height="200"></canvas><div class="reticle"></div><span id="lock">SEARCHING</span></div></section>
+  <section id="log" class="glass"><span class="lbl">Mission log</span><ol id="logList"></ol></section>
+
+  <div id="loading"><div><h1>Flight Simulator</h1><span class="lbl" id="loadTxt">Loading model</span><div class="bar2"><span id="loadBar"></span></div></div></div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="vendor/RoomEnvironment.js"></script>
+<script src="avion-sim-0.js"></script>
+<script src="avion-sim-1.js"></script>
+
+</body></html>

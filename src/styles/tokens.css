@@ -1,0 +1,88 @@
+/*
+  Avion Ground Station design tokens.
+  Warm "golden hour" palette: dark espresso/chocolate surfaces, beige ink,
+  burnished-brass accent. Token names are historical; values below are the
+  source of truth. Colour roles stay semantic: accent = active/interactive
+  only, ok/warn/danger = verified state only. Never use them as decoration.
+*/
+:root {
+  color-scheme: dark;
+
+  /* Base palette — espresso through cocoa */
+  --midnight: #1b1410;      /* app background */
+  --midnight-deep: #120c08; /* viewport wells, under 3D */
+  --graphite: #241a13;      /* panels */
+  --slate: #32251a;         /* raised controls */
+  --slate-hi: #3f2f20;      /* hover on raised */
+  --line: #3b2c1d;          /* separators */
+  --line-soft: #2a1f15;
+
+  --ink: #f2e8d6;           /* warm beige */
+  --ink-2: #cfc0a5;
+  --muted: #9b8c72;
+  --faint: #6d5f4c;
+
+  --accent: #d8a648;        /* burnished brass */
+  --accent-ink: #241704;
+  --accent-soft: rgba(216, 166, 72, 0.13);
+  --accent-line: rgba(216, 166, 72, 0.4);
+
+  --ok: #9cb257;            /* olive / healthy */
+  --ok-soft: rgba(156, 178, 87, 0.14);
+  --warn: #e07b33;          /* burnt orange — distinct from brass */
+  --warn-soft: rgba(224, 123, 51, 0.14);
+  --danger: #d6573f;        /* rust red */
+  --danger-soft: rgba(214, 87, 63, 0.14);
+  --virtual: #c49ad0;       /* dusty lilac — cool pop for simulated vehicles */
+  --virtual-soft: rgba(196, 154, 208, 0.14);
+
+  /* Type */
+  --font-ui: "Manrope Variable", "Manrope", system-ui, sans-serif;
+  --font-display: "Saira Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+
+  --t-xs: 0.75rem;
+  --t-sm: 0.8125rem;
+  --t-base: 0.875rem;
+  --t-md: 1rem;
+  --t-lg: 1.25rem;
+  --t-xl: 1.75rem;
+  --t-2xl: 2.5rem;
+  --t-hero: clamp(2.75rem, 5.2vw, 5rem);
+
+  /* Space (4px grid) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+  --s10: 40px;
+  --s12: 48px;
+
+  /* Radii by hierarchy, not one-size-fits-all */
+  --r-ctl: 6px;    /* buttons, inputs */
+  --r-panel: 10px; /* panels */
+  --r-well: 14px;  /* 3D viewports */
+
+  --sidebar-w: 252px;
+  --sidebar-w-collapsed: 64px;
+  --statusbar-h: 52px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 140ms;
+  --dur: 240ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+  }
+}
+
+/* Settings can force reduced motion regardless of the OS preference */
+:root[data-motion="reduced"] {
+  --dur-fast: 0ms;
+  --dur: 0ms;
+}
