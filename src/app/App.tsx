@@ -9,6 +9,7 @@ import { StatusBar } from "../components/shell/StatusBar";
 import { CalibrationPage } from "../features/calibration/CalibrationPage";
 import { ConnectionPage } from "../features/connection/ConnectionPage";
 import { DigitalTwinPage } from "../features/digital-twin/DigitalTwinPage";
+import { DoctorPage } from "../features/doctor/DoctorPage";
 import { FlightDataPage } from "../features/flightdata/FlightDataPage";
 import { LogsPage } from "../features/logs/LogsPage";
 import { MissionPlanningPage } from "../features/mission-planning/MissionPlanningPage";
@@ -40,6 +41,7 @@ function AnimatedRoutes() {
           <Route path="/connection" element={<ConnectionPage />} />
           <Route path="/digital-twin" element={<DigitalTwinPage />} />
           <Route path="/calibration" element={<CalibrationPage />} />
+          <Route path="/doctor" element={<DoctorPage />} />
           <Route path="/vehicle" element={<VehicleConfigPage />} />
           <Route path="/pid" element={<PidTuningPage />} />
           <Route path="/params" element={<FullParamsPage />} />

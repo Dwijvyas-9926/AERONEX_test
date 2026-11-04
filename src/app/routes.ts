@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Activity, Box, Cable, Crosshair, Drone, Gamepad2, Gauge, Info, ListTree, Plane, Route, ScrollText, Settings, ShieldCheck, SlidersVertical } from "lucide-react";
+import { Activity, Box, Cable, Crosshair, Drone, Gamepad2, Gauge, Info, ListTree, Plane, Route, ScrollText, Settings, ShieldCheck, SlidersVertical, Stethoscope } from "lucide-react";
 
 /**
  * Build status per module, shown in the navigation so nothing pretends to exist.
@@ -30,6 +30,7 @@ export const ROUTES: RouteDef[] = [
   },
   { path: "/digital-twin", label: "Digital Twin Studio", icon: Box, group: "Aircraft", status: { kind: "partial", note: "Import + test flight" }, blurb: "Import your assembly, orient it and test-fly it." },
   { path: "/calibration", label: "Calibration Center", icon: Crosshair, group: "Aircraft", status: { kind: "partial", note: "Live on hardware" }, blurb: "Accel, compass, radio, modes, ESC and motor test." },
+  { path: "/doctor", label: "Drone Doctor", icon: Stethoscope, group: "Aircraft", status: { kind: "partial", note: "Live diagnosis" }, blurb: "Scans your aircraft and tells you what's wrong and how to fix it." },
   { path: "/pid", label: "PID Tuning", icon: SlidersVertical, group: "Aircraft", status: { kind: "partial", note: "Live gains" }, blurb: "Calm horizontal and vertical wobble, with a tuning advisor." },
   { path: "/params", label: "Full Parameters", icon: ListTree, group: "Aircraft", status: { kind: "partial", note: "Read / write" }, blurb: "Search and edit every autopilot parameter, then upload." },
   { path: "/vehicle", label: "Vehicle Configuration", icon: Drone, group: "Aircraft", status: { kind: "ready" }, blurb: "Profiles for each aircraft you fly." },
