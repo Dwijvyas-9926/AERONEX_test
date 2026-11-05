@@ -382,7 +382,7 @@ export function DigitalTwinPage() {
               </ol>
               <div className="callout info" style={{ margin: "0 var(--s5) var(--s5)" }}>
                 <Info />
-                <span>The flight here is a visual preview, not a validated physics simulation. True 6-DOF dynamics from your mass and frame size are the Phase 2 simulator.</span>
+                <span>The flight here is a visual preview, not a validated physics simulation. True 6-DOF dynamics from your mass and frame size are planned for the full simulator.</span>
               </div>
             </section>
           </div>

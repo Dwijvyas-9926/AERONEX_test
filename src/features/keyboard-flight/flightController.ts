@@ -276,6 +276,14 @@ export class FlightController {
         }
         break;
       }
+      case "emergency": {
+        // Recover once the link is back and the vehicle is safely disarmed.
+        if (t.connected && !t.armed) {
+          this.deps.log("info", "Link restored and vehicle disarmed — ready again.");
+          this.setPhase("idle");
+        }
+        break;
+      }
       default:
         break;
     }

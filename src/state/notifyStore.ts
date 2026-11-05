@@ -48,6 +48,9 @@ export function notify(tone: Tone, title: string, body?: string) {
 /** Ask the user to confirm a consequential action. Resolves false on cancel. */
 export function confirmAction(req: Omit<ConfirmRequest, "resolve">): Promise<boolean> {
   return new Promise((resolve) => {
+    // If a confirm is already open, resolve it false so its awaiter doesn't hang.
+    const existing = useNotify.getState().confirm;
+    if (existing) existing.resolve(false);
     useNotify.setState({
       confirm: {
         ...req,

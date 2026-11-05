@@ -1,5 +1,6 @@
 import { SlidersHorizontal, X } from "lucide-react";
 import { commandLink } from "../../services/link/commandLink";
+import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
 import { COPTER_FLIGHT_MODES, FLTMODE_CH, switchPosition } from "./ardupilot";
@@ -11,7 +12,7 @@ export function FlightModesSection({ canSend }: { canSend: boolean }) {
   useRequireParams(["FLTMODE_CH", "FLTMODE1", "FLTMODE2", "FLTMODE3", "FLTMODE4", "FLTMODE5", "FLTMODE6", "SIMPLE", "SUPER_SIMPLE"], canSend);
   const fltCh = useParams((s) => s.values["FLTMODE_CH"]);
   const rc = useLink((s) => s.telemetry.rc);
-  const now = Date.now();
+  const now = useNow(500);
   const chPwm = fltCh && rc && now - rc.at < 3000 ? rc.value.channels[fltCh - 1] : undefined;
   const activePos = chPwm ? switchPosition(chPwm) : null;
 

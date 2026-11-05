@@ -59,6 +59,7 @@ export function KeyboardFlightPage() {
 
   const fcRef = useRef<FlightController | null>(null);
   const readyRef = useRef(false);
+  const modalRef = useRef(true);
   const logId = useRef(0);
 
   const pushLog = useCallback((level: LogLevel, text: string) => {
@@ -97,6 +98,8 @@ export function KeyboardFlightPage() {
 
   // --- tutorial shows every time the tab opens ---
   useEffect(() => { setShowTutorial(true); }, []);
+  // Keep a ref so the global key handler can suppress flight keys while the modal is open.
+  useEffect(() => { modalRef.current = showTutorial; }, [showTutorial]);
 
   // --- keyboard ---
   useEffect(() => {
@@ -109,6 +112,8 @@ export function KeyboardFlightPage() {
       const k = e.key.toLowerCase();
       if (!["w", "a", "s", "d", "q", "e", "t", "l", " "].includes(k)) return;
       e.preventDefault();
+      // Never trigger flight commands while the tutorial/controls modal is open.
+      if (modalRef.current) return;
       if (e.repeat) return;
       if (k === " ") { fcRef.current?.emergencyHold(); setActive((a) => ({ ...a, space: true })); return; }
       if (k === "l") { void fcRef.current?.requestLand(); setActive((a) => ({ ...a, l: true })); return; }
@@ -130,6 +135,7 @@ export function KeyboardFlightPage() {
       const k = e.key.toLowerCase();
       if (!["w", "a", "s", "d", "q", "e", "t", "l", " "].includes(k)) return;
       e.preventDefault();
+      if (modalRef.current) return;
       if (k === " ") { setActive((a) => ({ ...a, space: false })); return; }
       if (k === "l") { setActive((a) => ({ ...a, l: false })); return; }
       if (k === "t") { setActive((a) => ({ ...a, t: false })); fcRef.current?.setKeys({ up: false }); return; }

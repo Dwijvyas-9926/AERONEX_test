@@ -35,7 +35,7 @@ export function TelemetryPage() {
           <div className="empty">
             <Activity />
             <h3>No link data yet</h3>
-            <p>Connect a flight controller to see message rates, heartbeat health and vehicle messages here. Simulator telemetry will appear here too once Phase 2 lands, labelled as virtual.</p>
+            <p>Connect a flight controller to see message rates, heartbeat health and vehicle messages here. Simulator telemetry will appear here too, labelled as virtual.</p>
             <Link className="btn btn-primary" to="/connection">
               <Cable /> Open Vehicle Connection
             </Link>

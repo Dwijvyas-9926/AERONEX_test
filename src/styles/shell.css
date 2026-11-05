@@ -460,7 +460,7 @@
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgba(3, 7, 14, 0.72);
+  background: rgba(10, 7, 4, 0.72);
   backdrop-filter: blur(4px);
   display: grid;
   place-items: center;

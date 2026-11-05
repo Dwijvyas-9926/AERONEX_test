@@ -59,7 +59,7 @@ export function SimulatorPage() {
           </div>
         </div>
       ) : (
-        <iframe key={frameKey} ref={iframeRef} className="sim-frame" src={SIM_URL} title="Avion flight simulator" allow="fullscreen; gamepad; accelerometer" />
+        <iframe key={frameKey} ref={iframeRef} className="sim-frame" src={SIM_URL} title="AERONEX flight simulator" allow="fullscreen; gamepad; accelerometer" />
       )}
     </div>
   );

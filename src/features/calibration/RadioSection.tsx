@@ -1,6 +1,7 @@
 import { Check, Play, Radio, Save, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { commandLink } from "../../services/link/commandLink";
+import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { RADIO_FUNCTION } from "./ardupilot";
 import { ParamToggle, useRequireParams } from "./common";
@@ -16,7 +17,7 @@ interface Cap {
 
 export function RadioSection({ canSend }: { canSend: boolean }) {
   const rc = useLink((s) => s.telemetry.rc);
-  const now = Date.now();
+  const now = useNow(500);
   const stale = !rc || now - rc.at > 3000;
   const channels = rc?.value.channels ?? [];
   const live = channels.map((v, i) => ({ ch: i + 1, pwm: v })).filter((c) => c.pwm > 0 && c.pwm < 3000);

@@ -1,9 +1,8 @@
 import { Activity, BatteryMedium, Cable, CircleCheck, Compass, Radio, Satellite, ShieldAlert, ShieldCheck, Waves } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { batteryHealth, GPS_FIX_LABEL, gpsHealth, type Health, SENSOR_BITS, sensorHealth, varianceHealth, vibeHealth, worst } from "./health";
-
-const fresh = (at: number | undefined) => at != null && Date.now() - at < 3000;
 
 function Dot({ h }: { h: Health }) {
   return <span className={`pf-dot ${h}`} aria-hidden />;
@@ -42,6 +41,8 @@ export function PreflightPage() {
   }
 
   const armed = vehicle!.armed;
+  const now = useNow(500);
+  const isFresh = (at?: number) => at != null && now - at < 3000;
   const sensors = tel.sensors?.value;
   const ekf = tel.ekf?.value;
   const vibe = tel.vibration?.value;
@@ -49,37 +50,47 @@ export function PreflightPage() {
   const batt = tel.battery?.value;
   const rc = tel.rc?.value;
 
-  // Per-check health.
+  const sensorsFresh = isFresh(tel.sensors?.at);
+  // Fold staleness into each check: present + fresh → real health; present but
+  // stale (telemetry stopped) → warn; absent → unknown. Prevents a frozen reading
+  // from being presented as a current, healthy one.
+  const stale = (h: Health, present: boolean, at?: number): Health => (!present ? "unknown" : isFresh(at) ? h : "warn");
+
   const sensorChecks = SENSOR_BITS.map((s) => ({
     ...s,
-    health: sensors ? sensorHealth(s.bit, sensors.present, sensors.health) : ("unknown" as Health),
+    health: !sensors ? ("unknown" as Health) : !sensorsFresh ? ("warn" as Health) : sensorHealth(s.bit, sensors.present, sensors.health),
   }));
   const gpsPresent = sensors ? !!(sensors.present & (1 << 5)) : false;
-  const ekfVars = ekf ? [ekf.velVar, ekf.posHoriz, ekf.posVert, ekf.compass] : [];
-  const ekfHealth = ekf ? worst(ekfVars.map(varianceHealth)) : ("unknown" as Health);
-  const vibeHealthAll = vibe ? worst([vibeHealth(vibe.x), vibeHealth(vibe.y), vibeHealth(vibe.z), vibe.clip0 + vibe.clip1 + vibe.clip2 > 0 ? "warn" : "ok"]) : ("unknown" as Health);
-  const gpsH = gps ? gpsHealth(gps.fixType) : ("unknown" as Health);
-  const battH = batt ? batteryHealth(batt.remaining, batt.voltage) : ("unknown" as Health);
+  const ekfHealth = stale(ekf ? worst([ekf.velVar, ekf.posHoriz, ekf.posVert, ekf.compass].map(varianceHealth)) : ("unknown" as Health), !!ekf, tel.ekf?.at);
+  const vibeHealthAll = stale(vibe ? worst([vibeHealth(vibe.x), vibeHealth(vibe.y), vibeHealth(vibe.z), vibe.clip0 + vibe.clip1 + vibe.clip2 > 0 ? "warn" : "ok"]) : ("unknown" as Health), !!vibe, tel.vibration?.at);
+  const gpsH = stale(gps ? gpsHealth(gps.fixType) : ("unknown" as Health), !!gps, tel.gps?.at);
+  const battH = stale(batt ? batteryHealth(batt.remaining, batt.voltage) : ("unknown" as Health), !!batt, tel.battery?.at);
 
-  const overall = worst([
+  // Only channels that actually have data contribute to the verdict, so an
+  // absent optional channel doesn't wedge it on "waiting".
+  const graded = [
     ...sensorChecks.filter((s) => s.critical).map((s) => s.health),
     ekfHealth,
     ...(gpsPresent ? [gpsH] : []),
     vibeHealthAll,
     battH,
-  ]);
+  ].filter((h) => h !== "unknown" && h !== "absent");
+  const overall = graded.length ? worst(graded) : ("unknown" as Health);
+  const telemetryStale = !!sensors && !sensorsFresh;
 
   const prearm = events.filter((e) => /prearm/i.test(e.text)).slice(0, 6);
 
   const verdict = armed
     ? { cls: "go", icon: ShieldCheck, title: "Armed", note: "The vehicle is armed." }
-    : overall === "ok"
-      ? { cls: "go", icon: ShieldCheck, title: "Ready to arm", note: "Telemetry shows no blocking issues. The vehicle's own pre-arm checks remain the authority." }
-      : overall === "warn"
-        ? { cls: "caution", icon: ShieldAlert, title: "Caution", note: "Some values are marginal. Review the flagged items below before flying." }
-        : overall === "bad"
-          ? { cls: "nogo", icon: ShieldAlert, title: "Not ready", note: "One or more health checks are failing. Resolve them before arming." }
-          : { cls: "wait", icon: Activity, title: "Waiting for data", note: "Waiting for the vehicle to stream health messages." };
+    : telemetryStale
+      ? { cls: "caution", icon: ShieldAlert, title: "Telemetry stale", note: "Live health messages have stopped. Reconnect and let telemetry refresh before trusting this readout." }
+      : graded.length === 0
+        ? { cls: "wait", icon: Activity, title: "Waiting for data", note: "Waiting for the vehicle to stream its health messages." }
+        : overall === "ok"
+          ? { cls: "go", icon: ShieldCheck, title: "Ready to arm", note: "Live telemetry shows no blocking issues. The vehicle's own pre-arm checks remain the authority." }
+          : overall === "warn"
+            ? { cls: "caution", icon: ShieldAlert, title: "Caution", note: "Some values are marginal or stale. Review the flagged items below before flying." }
+            : { cls: "nogo", icon: ShieldAlert, title: "Not ready", note: "One or more health checks are failing. Resolve them before arming." };
 
   return (
     <div className="page-pad">
@@ -124,7 +135,7 @@ export function PreflightPage() {
                 <EkfRow label="Horiz. position" v={ekf.posHoriz} />
                 <EkfRow label="Vert. position" v={ekf.posVert} />
                 <EkfRow label="Compass" v={ekf.compass} />
-                {!fresh(tel.ekf?.at) && <p className="pf-stale">stale</p>}
+                {!isFresh(tel.ekf?.at) && <p className="pf-stale">stale</p>}
               </>
             ) : (
               <p className="muted">No EKF_STATUS_REPORT yet.</p>

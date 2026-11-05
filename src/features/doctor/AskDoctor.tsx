@@ -25,23 +25,28 @@ function Rich({ text }: { text: string }) {
   const lines = text.split("\n");
   const blocks: ReactNode[] = [];
   let list: string[] = [];
+  let ordered = false;
   const flush = (key: string) => {
-    if (list.length) {
-      blocks.push(<ul key={key}>{list.map((li, i) => <li key={i}><Inline text={li} /></li>)}</ul>);
-      list = [];
-    }
+    if (!list.length) return;
+    const items = list.map((li, i) => <li key={i}><Inline text={li} /></li>);
+    blocks.push(ordered ? <ol key={key}>{items}</ol> : <ul key={key}>{items}</ul>);
+    list = [];
   };
   lines.forEach((ln, i) => {
     const t = ln.trim();
-    const m = t.match(/^[-*]\s+(.*)/) || t.match(/^\d+\.\s+(.*)/);
-    if (m) {
-      list.push(m[1]);
+    const um = t.match(/^[-*]\s+(.*)/);
+    const om = t.match(/^\d+\.\s+(.*)/);
+    if (um || om) {
+      const isOrdered = !!om;
+      if (list.length && isOrdered !== ordered) flush(`l-${i}`); // list type changed
+      ordered = isOrdered;
+      list.push((om ? om[1] : um![1]));
     } else {
-      flush(`ul-${i}`);
+      flush(`l-${i}`);
       if (t) blocks.push(<p key={`p-${i}`}><Inline text={t.replace(/^#+\s*/, "")} /></p>);
     }
   });
-  flush("ul-end");
+  flush("l-end");
   return <>{blocks}</>;
 }
 

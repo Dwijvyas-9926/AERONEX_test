@@ -9,8 +9,8 @@ export function MissionPlanningPage() {
           <p>Plan where the aircraft goes and what it does there, then rehearse it in the simulator before uploading.</p>
         </div>
       </header>
-      <PhaseBanner phase={7} title="Planned after the first milestone">
-        It builds on the command layer (Phase 4) and the simulator (Phase 2), so missions can be tested virtually first.
+      <PhaseBanner phase={7} title="Planned — not yet available">
+        It builds on the live command link and the simulator, so missions can be rehearsed virtually before you fly them.
       </PhaseBanner>
       <div style={{ maxWidth: 820 }}>
         <PlanList

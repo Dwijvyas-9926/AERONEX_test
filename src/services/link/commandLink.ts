@@ -417,6 +417,16 @@ class CommandLink {
         const result = d.result as number;
         const p = this.pendingCmds.get(cmd);
         if (p) {
+          // MAV_RESULT_IN_PROGRESS (5) is not terminal — long commands (e.g.
+          // accel/gyro calibration) send it before the final ACK. Keep waiting.
+          if (result === 5) {
+            clearTimeout(p.timer);
+            p.timer = setTimeout(() => {
+              this.pendingCmds.delete(cmd);
+              p.resolve(-1);
+            }, 20000);
+            break;
+          }
           clearTimeout(p.timer);
           this.pendingCmds.delete(cmd);
           p.resolve(result);
@@ -429,7 +439,10 @@ class CommandLink {
         const count = (d.param_count as number) ?? 0;
         useParams.getState().onParamValue(id, value, count);
         const pend = this.pendingParams.get(id);
-        if (pend && Math.abs((useParams.getState().pending[id]?.target ?? value) - value) < 1e-4) {
+        // The vehicle echoes a float32; compare against the float32-rounded target
+        // with a relative epsilon so large non-integer params still match.
+        const target = useParams.getState().pending[id]?.target ?? value;
+        if (pend && Math.abs(Math.fround(target) - value) <= Math.max(1e-4, 1e-4 * Math.abs(target))) {
           clearTimeout(pend.timer);
           this.pendingParams.delete(id);
           pend.resolve();

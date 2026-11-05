@@ -9,7 +9,7 @@ export function LogsPage() {
           <p>Open a flight log after landing and see what the aircraft experienced.</p>
         </div>
       </header>
-      <PhaseBanner phase={7} title="Planned after the first milestone">
+      <PhaseBanner phase={7} title="Planned — not yet available">
         Log parsing runs in the browser, so logs never leave your computer.
       </PhaseBanner>
       <div style={{ maxWidth: 820 }}>

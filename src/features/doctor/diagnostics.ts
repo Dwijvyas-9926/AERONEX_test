@@ -255,7 +255,10 @@ function checkPower(c: DiagContext): Finding[] {
   if (!s || !fresh(s.at, c.now) || s.value.voltage == null) return [];
   const v = s.value.voltage;
   const remaining = s.value.remaining;
-  const cells = Math.max(1, Math.min(14, Math.round(v / 3.7)));
+  // Estimate cell count from the ~4.2 V/cell charged ceiling (ceil), which is
+  // robust across the charge range — round(v/3.7) wrongly reads a full 4S (16.8 V)
+  // as 5 cells and flags a healthy pack as critically low.
+  const cells = Math.max(1, Math.min(14, Math.ceil(v / 4.21)));
   const perCell = v / cells;
   const metric = `${one(2, v)} V (~${cells}S, ${one(2, perCell)} V/cell)${remaining != null ? ` · ${remaining}%` : ""}`;
 

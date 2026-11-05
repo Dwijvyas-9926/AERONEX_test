@@ -126,7 +126,7 @@ textarea {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #7ad5f0;
+  background: color-mix(in srgb, var(--accent) 82%, white);
 }
 
 .btn-ghost {
@@ -142,12 +142,12 @@ textarea {
 
 .btn-danger {
   background: var(--danger-soft);
-  border-color: rgba(239, 91, 91, 0.45);
-  color: #ffb3b3;
+  border-color: rgba(214, 87, 63, 0.45);
+  color: color-mix(in srgb, var(--danger) 55%, white);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(239, 91, 91, 0.22);
+  background: rgba(214, 87, 63, 0.22);
 }
 
 .btn-lg {
@@ -415,8 +415,8 @@ textarea {
 
 .callout.warn {
   background: var(--warn-soft);
-  border-color: rgba(232, 169, 59, 0.35);
-  color: #f3d199;
+  border-color: rgba(224, 123, 51, 0.35);
+  color: color-mix(in srgb, var(--warn) 48%, white);
 }
 
 .callout.warn svg {
@@ -425,8 +425,8 @@ textarea {
 
 .callout.danger {
   background: var(--danger-soft);
-  border-color: rgba(239, 91, 91, 0.35);
-  color: #ffc4c4;
+  border-color: rgba(214, 87, 63, 0.35);
+  color: color-mix(in srgb, var(--danger) 50%, white);
 }
 
 .callout.danger svg {

@@ -79,8 +79,13 @@ export function ParamNumber({ name, label, step = 1, min, max, suffix, help, dis
   const commit = () => {
     editing.current = false;
     const v = Number(draft);
-    if (draft !== "" && Number.isFinite(v) && v !== value) void commandLink.setParam(name, v);
-    else if (value !== undefined) setDraft(fmt(value));
+    if (draft !== "" && Number.isFinite(v)) {
+      // Clamp typed entry to the control's range so an out-of-range value can't
+      // be written to the vehicle.
+      const c = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, v));
+      if (c !== value) void commandLink.setParam(name, c);
+      setDraft(fmt(c));
+    } else if (value !== undefined) setDraft(fmt(value));
   };
   return (
     <label className="field cal-param">

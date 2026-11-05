@@ -27,10 +27,11 @@ function PidSlider({ control, linked, disabled, edits }: { control: PidControl; 
     edits.setEdit(control.name, c);
     if (control.mirror && linked) edits.setEdit(control.mirror, c);
   };
-  // Keyboard entry stages the exact value typed (clamped ≥ 0), no step-snapping,
-  // so precise decimals like 0.0825 are preserved.
+  // Keyboard entry stages the exact value typed, clamped to the control's range
+  // (no step-snapping), so precise decimals like 0.0825 are preserved but an
+  // out-of-range value can't be written to the vehicle.
   const stageExact = (v: number) => {
-    const c = Math.max(0, v);
+    const c = Math.max(control.min, Math.min(control.max, v));
     edits.setEdit(control.name, c);
     if (control.mirror && linked) edits.setEdit(control.mirror, c);
   };

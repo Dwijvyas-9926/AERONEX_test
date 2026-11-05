@@ -72,8 +72,8 @@
 }
 
 .hero-ghost {
-  background: rgba(17, 27, 43, 0.6);
-  border-color: rgba(180, 192, 211, 0.22);
+  background: rgba(20, 13, 8, 0.6);
+  border-color: rgba(216, 166, 72, 0.24);
   backdrop-filter: blur(6px);
 }
 
@@ -84,8 +84,8 @@
   width: 264px;
   padding: var(--s4) var(--s4) var(--s3);
   border-radius: var(--r-well);
-  background: rgba(10, 18, 32, 0.55);
-  border: 1px solid rgba(180, 192, 211, 0.14);
+  background: rgba(18, 12, 8, 0.55);
+  border: 1px solid rgba(216, 166, 72, 0.18);
   backdrop-filter: blur(10px) saturate(1.1);
   display: grid;
   justify-items: center;
@@ -156,7 +156,7 @@
 .hero-disclaimer {
   justify-self: stretch;
   padding-top: var(--s2);
-  border-top: 1px solid rgba(180, 192, 211, 0.12);
+  border-top: 1px solid rgba(216, 166, 72, 0.14);
   font-size: var(--t-xs);
   color: var(--muted);
   text-align: center;
@@ -525,7 +525,7 @@
 
 .method[aria-pressed="true"] {
   border-color: var(--accent-line);
-  background: linear-gradient(180deg, rgba(92, 200, 232, 0.08), rgba(92, 200, 232, 0.02));
+  background: linear-gradient(180deg, rgba(216, 166, 72, 0.10), rgba(216, 166, 72, 0.03));
 }
 
 .method:disabled {
@@ -1003,7 +1003,7 @@ textarea.input {
 .twin-viewport {
   position: relative;
   height: 600px;
-  background: radial-gradient(100% 100% at 50% 18%, #44515f 0%, #222a32 55%, #161b21 100%);
+  background: radial-gradient(100% 100% at 50% 18%, #3b352c 0%, #26221b 55%, #16130f 100%);
 }
 
 @media (max-width: 920px) {
@@ -1251,7 +1251,7 @@ input[type="range"]::-moz-range-thumb {
   width: 100%;
   height: 100%;
   border: 0;
-  background: #140e1c;
+  background: #15120d;
 }
 
 .sim-stage canvas {
@@ -1955,8 +1955,8 @@ input[type="range"]::-moz-range-thumb {
 .ask-msg.assistant .ask-bubble { background: var(--slate); border: 1px solid var(--line); max-width: 100%; }
 .ask-bubble p { margin: 0 0 var(--s2); }
 .ask-bubble p:last-child { margin-bottom: 0; }
-.ask-bubble ul { margin: 0 0 var(--s2); padding-left: var(--s4); display: flex; flex-direction: column; gap: 4px; }
-.ask-bubble ul:last-child { margin-bottom: 0; }
+.ask-bubble ul, .ask-bubble ol { margin: 0 0 var(--s2); padding-left: var(--s4); display: flex; flex-direction: column; gap: 4px; }
+.ask-bubble ul:last-child, .ask-bubble ol:last-child { margin-bottom: 0; }
 .ask-bubble code { background: var(--midnight-deep); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-size: .9em; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .ask-bubble strong { color: var(--ink); }
 

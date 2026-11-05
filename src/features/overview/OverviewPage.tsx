@@ -113,7 +113,7 @@ function Checklist() {
       icon: Cable,
     },
     { title: "Prepare the digital twin", detail: "Import your assembly, set its nose and top, and test-fly it.", state: "now", to: "/digital-twin", icon: Box },
-    { title: "Calibrate sensors and radio", detail: "Guided, firmware-aware workflows. Arrives in Phase 5.", state: "later", to: "/calibration", icon: Crosshair },
+    { title: "Calibrate sensors and radio", detail: "Accel, compass, radio, flight modes and ESC — guided, firmware-aware workflows.", state: "now", to: "/calibration", icon: Crosshair },
     { title: "Rehearse in the simulator", detail: "Fly the valley with the keyboard or auto-patrol, with five cameras and a HUD.", state: "now", to: "/simulator", icon: Gamepad2 },
   ];
   return (

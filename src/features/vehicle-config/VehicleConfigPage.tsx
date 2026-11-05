@@ -112,7 +112,7 @@ function Editor({ profile, onDirty }: { profile: VehicleProfile; onDirty: (d: bo
         <label className="field">
           <span>All-up mass (g)</span>
           <input className="input" inputMode="numeric" value={massText} placeholder="e.g. 2400" onChange={(e) => setMassText(e.target.value)} aria-invalid={!!massError} />
-          {massError ? <small style={{ color: "var(--danger)" }}>{massError}</small> : <small>Used by the simulator&rsquo;s flight model in Phase 2.</small>}
+          {massError ? <small style={{ color: "var(--danger)" }}>{massError}</small> : <small>Used by the simulator&rsquo;s flight model.</small>}
         </label>
         <label className="field">
           <span>Motor-to-motor diagonal (mm)</span>
@@ -132,7 +132,7 @@ function Editor({ profile, onDirty }: { profile: VehicleProfile; onDirty: (d: bo
         <div className="callout span2">
           <Info />
           <span>
-            3D model: the default quadcopter. Importing your own assembly arrives with Digital Twin Studio in Phase 3. Profiles live in this
+            3D model: the default quadcopter. Import your own assembly in Digital Twin Studio. Profiles live in this
             browser&rsquo;s storage; clearing site data removes them.
           </span>
         </div>

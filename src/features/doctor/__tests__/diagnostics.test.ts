@@ -75,6 +75,15 @@ describe("drone doctor diagnostics", () => {
     expect(f.find((x) => x.area === "Power")?.severity).toBe("critical");
   });
 
+  it("does NOT flag a fully charged pack as low (cell-count estimate)", () => {
+    for (const v of [16.8, 25.2, 12.6]) {
+      // full 4S, 6S, 3S respectively — all ~4.2 V/cell
+      const tel = { ...healthyTel, battery: S({ voltage: v, current: 8, remaining: 100 }) };
+      const f = runDiagnostics(ctx({ telemetry: tel, params: healthyParams }));
+      expect(f.find((x) => x.area === "Power")?.severity).toBe("ok");
+    }
+  });
+
   it("flags high compass offsets from parameters", () => {
     const f = runDiagnostics(ctx({ telemetry: healthyTel, params: { ...healthyParams, COMPASS_OFS_X: 500, COMPASS_OFS_Y: 400, COMPASS_OFS_Z: 300 } }));
     const c = f.find((x) => x.id === "compass-ofs");
