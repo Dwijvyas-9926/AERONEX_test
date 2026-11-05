@@ -75,6 +75,37 @@ export function SettingsPage() {
 
         <section className="panel">
           <div className="panel-head">
+            <h3>Ask the Doctor (AI assistant)</h3>
+          </div>
+          <div className="setting">
+            <div>
+              <strong>Anthropic API key</strong>
+              <p>Powers the Ask the Doctor chat on the Drone Doctor page. Stored only in this browser and sent only to Anthropic — AERONEX has no server. Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.</p>
+            </div>
+            <div className="set-ai-key">
+              <input className="input" type="password" placeholder="sk-ant-…" value={s.aiKey} onChange={(e) => s.set("aiKey", e.target.value)} />
+              {s.aiKey && <button className="btn btn-ghost" onClick={() => s.set("aiKey", "")} title="Remove stored key">Clear</button>}
+            </div>
+          </div>
+          <div className="setting">
+            <div>
+              <strong>Model</strong>
+              <p>Which Claude model answers. If you get a “model not available” error, try <code>claude-3-5-sonnet-latest</code>, or a newer model your account has access to.</p>
+            </div>
+            <>
+              <input className="input" list="ai-models" value={s.aiModel} onChange={(e) => s.set("aiModel", e.target.value)} style={{ maxWidth: 280 }} aria-label="AI model" />
+              <datalist id="ai-models">
+                <option value="claude-3-5-sonnet-latest" />
+                <option value="claude-3-5-haiku-latest" />
+                <option value="claude-sonnet-4-5" />
+                <option value="claude-opus-4-1" />
+              </datalist>
+            </>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
             <h3>Stored data</h3>
           </div>
           <div className="setting">

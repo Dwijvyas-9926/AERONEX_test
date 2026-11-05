@@ -1936,3 +1936,60 @@ input[type="range"]::-moz-range-thumb {
 .dr-help-body strong { color: var(--ink); }
 .dr-help-body em { color: var(--accent); font-style: normal; }
 .dr-help-body .dr-help-note { color: var(--muted); font-size: var(--t-xs); margin-bottom: 0; }
+
+/* ======================= Drone Doctor — layout + Ask the Doctor ======================= */
+.dr-layout { display: grid; grid-template-columns: 1fr; gap: var(--s4); }
+.dr-main { min-width: 0; }
+@media (min-width: 1100px) {
+  .dr-layout { grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.85fr); align-items: start; }
+  .dr-side { position: sticky; top: var(--s4); }
+}
+
+.ask-panel { display: flex; flex-direction: column; }
+.ask-body { display: flex; flex-direction: column; gap: var(--s3); }
+.ask-scroll { display: flex; flex-direction: column; gap: var(--s3); max-height: 58vh; min-height: 280px; overflow-y: auto; padding-right: var(--s1); }
+.ask-msg { display: flex; }
+.ask-msg.user { justify-content: flex-end; }
+.ask-bubble { max-width: 88%; padding: var(--s3); border-radius: var(--r-ctl); font-size: var(--t-sm); line-height: 1.55; color: var(--ink); }
+.ask-msg.user .ask-bubble { background: var(--accent-soft); border: 1px solid var(--accent-line); }
+.ask-msg.assistant .ask-bubble { background: var(--slate); border: 1px solid var(--line); max-width: 100%; }
+.ask-bubble p { margin: 0 0 var(--s2); }
+.ask-bubble p:last-child { margin-bottom: 0; }
+.ask-bubble ul { margin: 0 0 var(--s2); padding-left: var(--s4); display: flex; flex-direction: column; gap: 4px; }
+.ask-bubble ul:last-child { margin-bottom: 0; }
+.ask-bubble code { background: var(--midnight-deep); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; font-size: .9em; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.ask-bubble strong { color: var(--ink); }
+
+.ask-input { display: flex; gap: var(--s2); align-items: flex-end; }
+.ask-input textarea { flex: 1; resize: none; max-height: 140px; min-height: 40px; line-height: 1.4; }
+.ask-send { flex: none; height: 40px; width: 44px; padding: 0; display: grid; place-items: center; }
+
+.ask-empty { color: var(--ink-2); font-size: var(--t-sm); }
+.ask-empty > p { margin: 0 0 var(--s3); line-height: 1.5; }
+.ask-starters { display: flex; flex-direction: column; gap: var(--s2); }
+.ask-starter { text-align: left; background: var(--midnight-deep); border: 1px solid var(--line); border-radius: var(--r-ctl); color: var(--ink-2); padding: var(--s2) var(--s3); font: inherit; font-size: var(--t-sm); cursor: pointer; }
+.ask-starter:hover { border-color: var(--accent-line); color: var(--ink); }
+
+.ask-typing { display: inline-flex; gap: 4px; align-items: center; }
+.ask-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: askblink 1.2s infinite; }
+.ask-typing span:nth-child(2) { animation-delay: .2s; }
+.ask-typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes askblink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
+
+.ask-head-actions { display: flex; align-items: center; gap: var(--s2); }
+.ask-grounded { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-xs); color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; }
+.btn-sm { height: 28px; padding: 0 var(--s2); font-size: var(--t-xs); }
+.ask-disclaimer { font-size: var(--t-xs); color: var(--muted); margin: 0; line-height: 1.4; }
+.ask-error { margin: 0; }
+
+.ask-setup { text-align: center; padding: var(--s5); }
+.ask-setup-ic { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto var(--s3); background: var(--accent-soft); color: var(--accent); }
+.ask-setup h4 { font-family: var(--font-display); font-size: var(--t-md); margin: 0 0 var(--s2); }
+.ask-setup > p { color: var(--ink-2); font-size: var(--t-sm); line-height: 1.55; margin: 0 auto var(--s3); max-width: 46ch; }
+.ask-key-row { display: flex; align-items: center; gap: var(--s2); max-width: 420px; margin: 0 auto var(--s2); }
+.ask-key-row > svg { color: var(--muted); flex: none; }
+.ask-key-row .input { flex: 1; }
+.ask-setup-note { font-size: var(--t-xs); color: var(--muted); max-width: 46ch; margin: 0 auto; line-height: 1.5; }
+.ask-setup a, .ask-disclaimer a, .setting a { color: var(--accent); }
+.set-ai-key { display: flex; gap: var(--s2); align-items: center; }
+.set-ai-key .input { min-width: 210px; }

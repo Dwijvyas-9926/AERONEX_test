@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
 import { useRequireParams } from "../calibration/common";
+import { AskDoctor } from "./AskDoctor";
 import { DOCTOR_PARAMS, type Finding, runDiagnostics, type Severity, summarize } from "./diagnostics";
 
 const SEV_META: Record<Severity, { label: string; Icon: typeof TriangleAlert }> = {
@@ -126,6 +127,8 @@ export function DoctorPage() {
         )}
       </section>
 
+      <div className="dr-layout">
+        <div className="dr-main">
       <section className={`dr-verdict ${v.cls}`}>
         <div className="dr-score">
           <div className="dr-score-ring" style={{ ["--pct" as string]: `${summary.score}` }}>
@@ -180,6 +183,11 @@ export function DoctorPage() {
           {showHealthy && <div className="dr-list">{healthy.map((f) => <FindingCard key={f.id} f={f} />)}</div>}
         </div>
       )}
+        </div>
+        <div className="dr-side">
+          <AskDoctor findings={findings} />
+        </div>
+      </div>
 
       <p className="cal-foot muted">
         <Stethoscope size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />

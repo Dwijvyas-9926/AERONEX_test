@@ -10,8 +10,13 @@ interface SettingsState {
   graphics: GraphicsPreset;
   units: Units;
   sidebarCollapsed: boolean;
+  /** BYOK: the user's own Anthropic API key for the Ask the Doctor chat. Stored only in this browser. */
+  aiKey: string;
+  aiModel: string;
   set: <K extends keyof Omit<SettingsState, "set">>(k: K, v: SettingsState[K]) => void;
 }
+
+export const DEFAULT_AI_MODEL = "claude-3-5-sonnet-latest";
 
 export const useSettings = create<SettingsState>()(
   persist(
@@ -20,6 +25,8 @@ export const useSettings = create<SettingsState>()(
       graphics: "high",
       units: "metric",
       sidebarCollapsed: false,
+      aiKey: "",
+      aiModel: DEFAULT_AI_MODEL,
       set: (k, v) => set({ [k]: v } as Partial<SettingsState>),
     }),
     { name: "avion.settings.v1", storage: createJSONStorage(() => localStorage), version: 1 },
