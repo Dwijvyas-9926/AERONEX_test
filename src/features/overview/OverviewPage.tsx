@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router-dom";
 import { AttitudeIndicator } from "../../components/ui/AttitudeIndicator";
+import { HeroHud } from "./HeroHud";
 import { LINK_STATUS } from "../connection/linkStatus";
 import { browserName, hasGamepadApi, hasWebGL2, hasWebSerial, isSecureContextOk } from "../../services/capabilities";
 import { isPortOpen, useLink } from "../../state/linkStore";
@@ -53,6 +54,7 @@ function Hero() {
         ) : null}
       </div>
       <div className="hero-shade" aria-hidden />
+      {webgl && <HeroHud animate={animate} />}
 
       <motion.div
         className="hero-copy"
