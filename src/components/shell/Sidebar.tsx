@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import { ROUTES, type RouteDef } from "../../app/routes";
 import { useSettings } from "../../state/settingsStore";
 
-const GROUPS: RouteDef["group"][] = ["Workspace", "Aircraft", "Flight", "Analysis"];
+const GROUPS: RouteDef["group"][] = ["Workspace", "Setup", "Tune & Configure", "Flight", "Analysis"];
 
 function tag(r: RouteDef) {
   if (r.status.kind === "planned") return `Phase ${r.status.phase}`;

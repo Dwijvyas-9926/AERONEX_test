@@ -162,6 +162,28 @@
   text-align: center;
 }
 
+.hero-scroll {
+  position: absolute;
+  bottom: clamp(14px, 3vh, 26px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink-2);
+  text-decoration: none;
+  font-size: var(--t-xs);
+  letter-spacing: 0.02em;
+  opacity: 0.82;
+  z-index: 3;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.hero-scroll:hover { color: var(--ink); opacity: 1; }
+.hero-scroll svg { animation: heroBounce 1.9s ease-in-out infinite; }
+:root[data-motion="reduced"] .hero-scroll svg { animation: none; }
+@keyframes heroBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
+
 .hero-hint {
   position: absolute;
   right: clamp(20px, 3vw, 40px);

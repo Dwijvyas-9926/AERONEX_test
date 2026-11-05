@@ -203,7 +203,7 @@ export function VehicleConfigPage() {
     <div className="page-pad">
       <header className="page-head">
         <div>
-          <h1>Vehicle Configuration</h1>
+          <h1>Aircraft Profile</h1>
           <p>A profile for each aircraft you fly. Profiles describe your airframe; they never overwrite what a connected flight controller reports.</p>
         </div>
         <div className="actions">

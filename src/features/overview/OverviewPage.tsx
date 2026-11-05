@@ -1,6 +1,8 @@
-import { Box, Cable, Check, CircleDashed, Crosshair, Drone, Gamepad2, Hand, MonitorCheck, Rotate3d } from "lucide-react";
+import { Box, Cable, Check, ChevronDown, CircleDashed, Crosshair, Drone, Gamepad2, Hand, MonitorCheck, Rotate3d } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router-dom";
+import { AttitudeIndicator } from "../../components/ui/AttitudeIndicator";
 import { LINK_STATUS } from "../connection/linkStatus";
 import { browserName, hasGamepadApi, hasWebGL2, hasWebSerial, isSecureContextOk } from "../../services/capabilities";
 import { isPortOpen, useLink } from "../../state/linkStore";
@@ -52,31 +54,37 @@ function Hero() {
       </div>
       <div className="hero-shade" aria-hidden />
 
-      <div className="hero-copy">
-        <h1 id="hero-title">
+      <motion.div
+        className="hero-copy"
+        initial="hidden"
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.12, delayChildren: 0.12 } } }}
+      >
+        <motion.h1 id="hero-title" variants={FADE_UP}>
           Every flight
           <br />
           starts on the ground.
-        </h1>
-        <p>
+        </motion.h1>
+        <motion.p variants={FADE_UP}>
           Connect your Pixhawk, prepare the aircraft&rsquo;s digital twin, calibrate it, and rehearse in a virtual valley before it ever
           leaves the bench.
-        </p>
-        <div className="hero-actions">
+        </motion.p>
+        <motion.div className="hero-actions" variants={FADE_UP}>
           <button className="btn btn-primary btn-lg" onClick={() => nav("/connection")}>
             <Cable /> Connect aircraft
           </button>
           <button className="btn btn-lg hero-ghost" onClick={() => nav("/vehicle")}>
-            <Drone /> Vehicle profiles
+            <Drone /> Aircraft profile
           </button>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       {webgl ? (
         <HeroInstruments animate={animate} />
       ) : (
         <div className="hero-instruments">
-          <p className="hero-disclaimer">WebGL 2 isn&rsquo;t available in this browser, so the 3D preview is off. Everything else works.</p>
+          <AttitudeIndicator roll={-6} pitch={4} size={116} />
+          <p className="hero-disclaimer">WebGL 2 isn&rsquo;t available in this browser, so the live 3D preview is off. Everything else works.</p>
         </div>
       )}
 
@@ -85,9 +93,19 @@ function Hero() {
           <Hand size={14} /> Drag to orbit the aircraft
         </p>
       )}
+
+      <a className="hero-scroll" href="#main-start" aria-label="Scroll to setup">
+        <span>Set up your aircraft</span>
+        <ChevronDown size={18} />
+      </a>
     </section>
   );
 }
+
+const FADE_UP = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const } },
+};
 
 type StepState = "done" | "now" | "blocked" | "later";
 
@@ -268,7 +286,7 @@ export function OverviewPage() {
   return (
     <>
       <Hero />
-      <div className="page-pad overview-body">
+      <div className="page-pad overview-body" id="main-start">
         <div className="split">
           <div className="stack">
             <ModePanels />
