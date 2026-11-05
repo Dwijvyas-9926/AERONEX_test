@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Telemetry, VehicleIdentity } from "../../../state/linkStore";
-import { buildDroneContext } from "../askDoctor";
+import { buildDroneContext } from "../anthropicClient";
 import { buildSystemPrompt } from "../droneKnowledge";
 import type { Finding } from "../diagnostics";
 

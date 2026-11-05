@@ -3,7 +3,7 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
 import { useSettings } from "../../state/settingsStore";
-import { askDoctor, buildDroneContext, type ChatMessage } from "./askDoctor";
+import { askDoctor, buildDroneContext, type ChatMessage } from "./anthropicClient";
 import type { Finding } from "./diagnostics";
 import { GENERIC_STARTERS } from "./droneKnowledge";
 
