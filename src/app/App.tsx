@@ -15,6 +15,7 @@ import { LogsPage } from "../features/logs/LogsPage";
 import { MissionPlanningPage } from "../features/mission-planning/MissionPlanningPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { FullParamsPage } from "../features/params/FullParamsPage";
+import { KeyboardFlightPage } from "../features/keyboard-flight/KeyboardFlightPage";
 import { PidTuningPage } from "../features/pid/PidTuningPage";
 import { PreflightPage } from "../features/preflight/PreflightPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -23,6 +24,21 @@ import { TelemetryPage } from "../features/telemetry/TelemetryPage";
 import { VehicleConfigPage } from "../features/vehicle-config/VehicleConfigPage";
 import { prefersReducedMotion, useSettings } from "../state/settingsStore";
 import { useLinkNotifications } from "./useLinkNotifications";
+import { useLink } from "../state/linkStore";
+import { commandLink } from "../services/link/commandLink";
+
+/* Stream a 1 Hz GCS heartbeat whenever a vehicle is connected, so ArduPilot's
+   GCS failsafe is armed. It stops when the tab closes or the link drops, which
+   is what triggers the vehicle to land on its own. */
+function useGcsHeartbeat() {
+  const status = useLink((s) => s.status);
+  useEffect(() => {
+    if (status === "connected") {
+      commandLink.startHeartbeat();
+      return () => commandLink.stopHeartbeat();
+    }
+  }, [status]);
+}
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -48,6 +64,7 @@ function AnimatedRoutes() {
           <Route path="/preflight" element={<PreflightPage />} />
           <Route path="/flight-data" element={<FlightDataPage />} />
           <Route path="/simulator" element={<SimulatorPage />} />
+          <Route path="/keyboard-flight" element={<KeyboardFlightPage />} />
           <Route path="/missions" element={<MissionPlanningPage />} />
           <Route path="/telemetry" element={<TelemetryPage />} />
           <Route path="/logs" element={<LogsPage />} />
@@ -63,6 +80,7 @@ function AnimatedRoutes() {
 function Frame() {
   const collapsed = useSettings((s) => s.sidebarCollapsed);
   useLinkNotifications();
+  useGcsHeartbeat();
   return (
     <div className="app" data-collapsed={collapsed}>
       <div className="brand">

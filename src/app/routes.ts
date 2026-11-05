@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Activity, Box, Cable, Crosshair, Drone, Gamepad2, Gauge, Info, ListTree, Plane, Route, ScrollText, Settings, ShieldCheck, SlidersVertical, Stethoscope } from "lucide-react";
+import { Activity, Box, Cable, Crosshair, Drone, Gamepad2, Gauge, Info, Keyboard, ListTree, Plane, Route, ScrollText, Settings, ShieldCheck, SlidersVertical, Stethoscope } from "lucide-react";
 
 /**
  * Build status per module, shown in the navigation so nothing pretends to exist.
@@ -37,6 +37,7 @@ export const ROUTES: RouteDef[] = [
   { path: "/flight-data", label: "Flight Data", icon: Plane, group: "Flight", status: { kind: "partial", note: "Live PFD" }, blurb: "A full primary flight display from live telemetry." },
   { path: "/preflight", label: "Preflight Check", icon: ShieldCheck, group: "Flight", status: { kind: "partial", note: "Live health" }, blurb: "Pre-arm, EKF, GPS, vibration and battery go/no-go." },
   { path: "/simulator", label: "Flight Simulator", icon: Gamepad2, group: "Flight", status: { kind: "ready" }, blurb: "Fly your aircraft in a 3D valley, no hardware." },
+  { path: "/keyboard-flight", label: "Keyboard Flight", icon: Keyboard, group: "Flight", status: { kind: "partial", note: "Live guided control" }, blurb: "Fly a real test hop from the keyboard — no RC needed." },
   { path: "/missions", label: "Mission Planning", icon: Route, group: "Flight", status: { kind: "planned", phase: 7 }, blurb: "Waypoints, survey grids and relief-drop missions." },
   {
     path: "/telemetry",

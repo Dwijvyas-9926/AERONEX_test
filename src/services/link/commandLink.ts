@@ -28,7 +28,30 @@ export const CMD = {
   DO_CANCEL_MAG_CAL: 42426,
   DO_MOTOR_TEST: 209,
   SET_MESSAGE_INTERVAL: 511,
+  COMPONENT_ARM_DISARM: 400,
+  DO_SET_MODE: 176,
+  NAV_TAKEOFF: 22,
 } as const;
+
+// ArduCopter flight-mode numbers (custom_mode).
+export const COPTER_MODE = {
+  STABILIZE: 0,
+  ALT_HOLD: 2,
+  GUIDED: 4,
+  LOITER: 5,
+  RTL: 6,
+  LAND: 9,
+  BRAKE: 17,
+} as const;
+
+// SET_POSITION_TARGET_LOCAL_NED constants (verified against ArduPilot guided-mode docs).
+const FRAME_BODY_OFFSET_NED = 9; // velocity is forward/right/down relative to heading
+const TYPEMASK_VEL_YAWRATE = 1479; // use vx,vy,vz + yaw_rate; ignore position, accel, yaw
+const MAV_MODE_FLAG_CUSTOM_MODE_ENABLED = 1;
+// GCS heartbeat identity.
+const MAV_TYPE_GCS = 6;
+const MAV_AUTOPILOT_INVALID = 8;
+const MAV_STATE_ACTIVE = 4;
 
 // MOTOR_TEST_THROTTLE_TYPE
 const MOTOR_TEST_THROTTLE_PERCENT = 0;
@@ -56,6 +79,7 @@ class CommandLink {
   private send: SendFn | null = null;
   private pendingCmds = new Map<number, PendingCmd>();
   private pendingParams = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Called by the link manager when the port's writer is ready / gone. */
   attach(send: SendFn) {
@@ -63,6 +87,7 @@ class CommandLink {
   }
   detach() {
     this.send = null;
+    this.stopHeartbeat();
     for (const p of this.pendingCmds.values()) clearTimeout(p.timer);
     for (const p of this.pendingParams.values()) {
       clearTimeout(p.timer);
@@ -173,6 +198,68 @@ class CommandLink {
   async requestMessageInterval(msgId: number, hz: number) {
     const interval = hz > 0 ? Math.round(1e6 / hz) : -1;
     await this.sendCommand(CMD.SET_MESSAGE_INTERVAL, { p1: msgId, p2: interval }, 0, 2000).catch(() => {});
+  }
+
+  // ---- GCS heartbeat (required for the vehicle's GCS failsafe to work) ----
+
+  /**
+   * Stream a 1 Hz GCS heartbeat. ArduPilot's GCS failsafe only arms once it has
+   * seen heartbeats from the GCS; if they then stop (tab closed / app crash) for
+   * FS_GCS_TIMEOUT seconds it triggers the configured action (we use Land). The
+   * timer lives in the browser, so closing the tab stops it — which is the point.
+   */
+  startHeartbeat() {
+    if (this.heartbeatTimer) return;
+    const beat = () => {
+      if (!this.send) return;
+      this.write("HEARTBEAT", { custom_mode: 0, type: MAV_TYPE_GCS, autopilot: MAV_AUTOPILOT_INVALID, base_mode: 0, system_status: MAV_STATE_ACTIVE, mavlink_version: 3 }).catch(() => {});
+    };
+    beat();
+    this.heartbeatTimer = setInterval(beat, 1000);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  // ---- guided flight ----
+
+  /** Arm or disarm the motors (MAV_CMD_COMPONENT_ARM_DISARM). force=21196 skips checks — avoid. */
+  async arm(shouldArm: boolean, force = false): Promise<number> {
+    return this.sendCommand(CMD.COMPONENT_ARM_DISARM, { p1: shouldArm ? 1 : 0, p2: force ? 21196 : 0 }, 0, 4000);
+  }
+
+  /** Switch flight mode via MAV_CMD_DO_SET_MODE using an ArduCopter custom mode number. */
+  async setMode(customMode: number): Promise<number> {
+    return this.sendCommand(CMD.DO_SET_MODE, { p1: MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, p2: customMode }, 0, 4000);
+  }
+
+  /** Command an autonomous takeoff to the given altitude (metres). Requires Guided + armed. */
+  async guidedTakeoff(altitudeM: number): Promise<number> {
+    return this.sendCommand(CMD.NAV_TAKEOFF, { p7: altitudeM }, 0, 4000);
+  }
+
+  /**
+   * Stream a body-relative velocity target: vx forward, vy right, vz down (m/s),
+   * yawRate rad/s (clockwise positive). No ACK — resend at a few Hz while flying.
+   * The vehicle brakes to a stop by itself ~3 s after the last one (dead-man hold).
+   */
+  setVelocityBody(vx: number, vy: number, vz: number, yawRate: number) {
+    const t = this.target();
+    void this.write("SET_POSITION_TARGET_LOCAL_NED", {
+      time_boot_ms: 0,
+      x: 0, y: 0, z: 0,
+      vx, vy, vz,
+      afx: 0, afy: 0, afz: 0,
+      yaw: 0, yaw_rate: yawRate,
+      type_mask: TYPEMASK_VEL_YAWRATE,
+      target_system: t.sysid,
+      target_component: t.compid,
+      coordinate_frame: FRAME_BODY_OFFSET_NED,
+    }).catch(() => {});
   }
 
   /** Request the standard ArduPilot data streams (MAV_DATA_STREAM groups) so the
