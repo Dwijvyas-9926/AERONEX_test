@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Cable, CheckCircle2, ChevronDown, Info, RefreshCw, ShieldX, Stethoscope, TriangleAlert } from "lucide-react";
+import { Activity, ArrowRight, Cable, CheckCircle2, ChevronDown, HelpCircle, Info, RefreshCw, ShieldX, Stethoscope, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLink } from "../../state/linkStore";
@@ -50,6 +50,7 @@ export function DoctorPage() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [lastRun, setLastRun] = useState(0);
   const [showHealthy, setShowHealthy] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     if (!connected) {
@@ -106,6 +107,24 @@ export function DoctorPage() {
           <RefreshCw size={15} /> Scanning live
         </button>
       </header>
+
+      <section className="dr-help">
+        <button className="dr-help-toggle" onClick={() => setShowHelp((s) => !s)} aria-expanded={showHelp}>
+          <HelpCircle size={16} /> What am I looking at? <ChevronDown size={15} className={showHelp ? "open" : ""} />
+        </button>
+        {showHelp && (
+          <div className="dr-help-body">
+            <p>The Doctor re-scans your connected aircraft every second or two and reports anything outside ArduPilot's safe limits. Read it top to bottom:</p>
+            <ul>
+              <li><strong>Health score &amp; verdict</strong> — the headline. <em>Do not fly</em> means something critical needs fixing; <em>Fly with caution</em> means no blockers but things to watch; <em>Looking healthy</em> means every check passed.</li>
+              <li><strong>Each finding card</strong> — a specific issue with its measured value, the likely <strong>cause</strong>, a <strong>Fix</strong>, and a link to the screen that resolves it. The most serious issues are listed first.</li>
+              <li><strong>Passing checks</strong> — collapsed at the bottom; expand them to see everything that's currently healthy.</li>
+            </ul>
+            <p>It watches eight areas: vibration, state estimation (EKF), compass, GPS, power, sensors, configuration, and pre-arm messages. It reads the autopilot's own signals — it never overrides the vehicle's own pre-arm checks.</p>
+            <p className="dr-help-note">Indoors, GPS and compass will flag (no clear sky view, nearby metal) — that's expected. The pre-arm section fills in once you actually try to arm.</p>
+          </div>
+        )}
+      </section>
 
       <section className={`dr-verdict ${v.cls}`}>
         <div className="dr-score">
