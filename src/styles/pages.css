@@ -2119,45 +2119,19 @@ input[type="range"]::-moz-range-thumb {
 .hero-hud.live .hud-corner.br { animation-delay: .24s; }
 @keyframes hudCorner { from { opacity: 0; transform: scale(.7); } to { opacity: .55; transform: scale(1); } }
 
-/* scanning sweep */
-.hero-hud-scan { position: absolute; left: 0; right: 0; height: 2px; top: 6%; opacity: 0; background: linear-gradient(90deg, transparent, rgba(216,166,72,.6) 20%, rgba(216,166,72,.6) 80%, transparent); }
-.hero-hud.live .hero-hud-scan { animation: hudScan 7.5s cubic-bezier(.45,0,.55,1) infinite; }
-@keyframes hudScan { 0% { top: 6%; opacity: 0; } 10% { opacity: .55; } 90% { opacity: .55; } 100% { top: 94%; opacity: 0; } }
-
 /* right-edge ruler */
 .hero-hud-ruler { position: absolute; right: 18px; top: 30%; bottom: 30%; width: 11px; border-left: 1px solid var(--accent-line); background: repeating-linear-gradient(to bottom, var(--accent-line) 0 1px, transparent 1px 13px); opacity: .5; }
 .hud-ruler-caret { position: absolute; left: -3px; top: 6%; width: 15px; height: 2px; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .hero-hud.live .hud-ruler-caret { animation: hudCaret 5.5s ease-in-out infinite alternate; }
 @keyframes hudCaret { from { top: 4%; } to { top: 92%; } }
 
-/* status chips */
-.hero-hud-chips { position: absolute; top: clamp(16px, 3vh, 26px); left: clamp(40px, 5vw, 60px); display: flex; gap: 8px; flex-wrap: wrap; }
-.hud-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-size: 10px; letter-spacing: .09em; color: var(--ink-2); background: rgba(18,12,8,.5); border: 1px solid rgba(216,166,72,.18); border-radius: 999px; padding: 3px 10px; backdrop-filter: blur(4px); }
-.hud-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
-.hud-chip.ok i { background: var(--ok); }
-.hero-hud.live .hud-chip.ok i { animation: hudPulse 1.8s ease-in-out infinite; }
-.hero-hud.live .hud-chip:nth-child(2) i { animation-delay: .3s; }
-.hero-hud.live .hud-chip:nth-child(3) i { animation-delay: .6s; }
-@keyframes hudPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(156,178,87,.5); } 50% { box-shadow: 0 0 0 5px rgba(156,178,87,0); } }
-
-/* tracking reticle over the scene */
-.hero-hud-reticle { position: absolute; left: 60%; top: 38%; transform: translate(-50%, -50%); width: 84px; height: 84px; opacity: .5; }
-.hud-ret-ring { fill: none; stroke: var(--accent); stroke-width: 1; stroke-opacity: .6; stroke-dasharray: 7 11; transform-origin: 40px 40px; }
-.hud-ret-ring.slow { stroke-dasharray: 4 15; stroke-opacity: .45; }
-.hero-hud.live .hud-ret-ring { animation: hudSpin 16s linear infinite; }
-.hero-hud.live .hud-ret-ring.slow { animation: hudSpin 11s linear infinite reverse; }
-@keyframes hudSpin { to { transform: rotate(360deg); } }
-.hud-ret-tick { stroke: var(--accent); stroke-width: 1.5; stroke-opacity: .85; }
-.hud-ret-dot { fill: var(--accent); }
-
 /* live telemetry strip */
-.hero-hud-tel { position: absolute; top: clamp(52px, 8vh, 76px); left: clamp(40px, 5vw, 60px); display: flex; align-items: center; gap: 14px; background: rgba(18,12,8,.44); border: 1px solid rgba(216,166,72,.16); border-radius: 10px; padding: 7px 14px; backdrop-filter: blur(6px); }
+.hero-hud-tel { position: absolute; top: clamp(16px, 3vh, 26px); left: clamp(40px, 5vw, 60px); display: flex; align-items: center; gap: 14px; background: rgba(18,12,8,.44); border: 1px solid rgba(216,166,72,.16); border-radius: 10px; padding: 7px 14px; backdrop-filter: blur(6px); }
 .hud-tel-tag { font-family: var(--font-display); font-size: 9px; letter-spacing: .14em; color: var(--accent); }
 .hud-tel-cell { display: flex; flex-direction: column; line-height: 1.1; }
 .hud-tel-k { font-size: 8.5px; letter-spacing: .1em; color: var(--muted); }
 .hud-tel-v { font-family: var(--font-display); font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 900px) {
-  .hero-hud-chips, .hero-hud-tel, .hero-hud-ruler, .hero-hud-reticle { display: none; }
+  .hero-hud-tel, .hero-hud-ruler { display: none; }
 }
-:root[data-motion="reduced"] .hero-hud-scan { display: none; }

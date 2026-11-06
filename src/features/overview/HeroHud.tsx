@@ -52,25 +52,9 @@ export function HeroHud({ animate }: { animate: boolean }) {
       <span className="hud-corner bl" />
       <span className="hud-corner br" />
 
-      <div className="hero-hud-scan" />
-
       <div className="hero-hud-ruler">
         <span className="hud-ruler-caret" />
       </div>
-
-      <div className="hero-hud-chips">
-        <span className="hud-chip ok"><i /> LINK</span>
-        <span className="hud-chip ok"><i /> GPS 3D</span>
-        <span className="hud-chip ok"><i /> EKF</span>
-        <span className="hud-chip"><i /> ARMED</span>
-      </div>
-
-      <svg className="hero-hud-reticle" viewBox="0 0 80 80">
-        <circle cx="40" cy="40" r="30" className="hud-ret-ring" />
-        <circle cx="40" cy="40" r="20" className="hud-ret-ring slow" />
-        <path d="M40 6 v10 M40 64 v10 M6 40 h10 M64 40 h10" className="hud-ret-tick" />
-        <circle cx="40" cy="40" r="2.5" className="hud-ret-dot" />
-      </svg>
 
       <TelemetryStrip animate={animate} />
     </div>
