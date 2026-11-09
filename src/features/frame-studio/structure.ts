@@ -42,6 +42,16 @@ export interface SectionInput {
   fixedDimMm: number;
   /** Printed frames: wall thickness of the hollow box section, mm. */
   wallMm: number;
+  /**
+   * Widest the arm root may be made, mm.
+   *
+   * Without this the equations will quote whatever width meets the deflection
+   * target, and for a weak material on a long arm that is a number like
+   * 484 mm — an "arm" wider than the aircraft. Clamping produces a buildable
+   * part whose real stress and deflection are then reported honestly, so the
+   * design reads as too flexible rather than as a star-shaped blob.
+   */
+  maxWidthMm?: number;
 }
 
 export interface SectionResult {
@@ -243,7 +253,9 @@ export function sizeArm(input: SectionInput): SectionResult {
     // δ = F·L³/(3·E·I), I = w·t³/12  →  w = 12·F·L³/(3·E·δ·t³)
     required.stiffness = (12 * thrustN * L ** 3) / (3 * E * deflLimit * t ** 3);
     required.geometry = geomMin;
-    widthMm = Math.max(...Object.values(required));
+    // Keep what each case *demanded* in `required` for the UI to report, but
+    // never build wider than the cap.
+    widthMm = Math.min(Math.max(...Object.values(required)), Math.max(geomMin, input.maxWidthMm ?? Infinity));
     heightMm = t;
   } else {
     /*
@@ -273,8 +285,9 @@ export function sizeArm(input: SectionInput): SectionResult {
 
     // Widen until the section is no deeper than it is wide, within reason.
     let solved = depthFor(b);
-    for (let i = 0; i < 24 && solved.all > MAX_DEPTH_TO_WIDTH * b; i++) {
-      b += Math.max(1, b * 0.08);
+    const widthLimit = Math.max(geomMin, input.maxWidthMm ?? Infinity);
+    for (let i = 0; i < 24 && solved.all > MAX_DEPTH_TO_WIDTH * b && b < widthLimit; i++) {
+      b = Math.min(widthLimit, b + Math.max(1, b * 0.08));
       solved = depthFor(b);
     }
 

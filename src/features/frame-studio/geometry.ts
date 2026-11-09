@@ -20,9 +20,17 @@ import {
   type Material,
   type MotorSpec,
 } from "./catalog";
+import { unibodyOutline } from "./unibody";
 import { massOf, minRootWidth, motorPadWidth, PAD_EDGE_FACTOR, round, sizeArm, type SectionResult } from "./structure";
 
 export type Layout = "true-x" | "stretched-x" | "h" | "deadcat";
+
+export type Construction = "bolted" | "unibody";
+
+export const CONSTRUCTIONS: { id: Construction; name: string; blurb: string }[] = [
+  { id: "bolted", name: "Bolted arms", blurb: "Arms clamped between two plates. Stiffer, and a broken arm swaps out on its own." },
+  { id: "unibody", name: "Unibody", blurb: "Arms and bottom plate cut as one piece. Lighter and far simpler to build — but a broken arm is a new plate." },
+];
 
 export const LAYOUTS: { id: Layout; name: string; blurb: string }[] = [
   { id: "true-x", name: "True X", blurb: "Equal arms, symmetric handling. The all-round default." },
@@ -61,6 +69,8 @@ export interface Profile {
    * cavity in plan, and it spans `wallMm` to `thicknessMm - wallMm` in depth.
    */
   cavity?: { outline: Pt[]; wallMm: number };
+  /** Arms only: exposed length of this arm, mm. Arms of different length are separate parts. */
+  cantileverMm?: number;
   /** Planar area of the outline minus holes, mm². */
   areaMm2: number;
 }
@@ -80,6 +90,16 @@ export interface FrameSpec {
   battery: { l: number; w: number; h: number; massG: number };
   /** FC, ESC, VTX, camera, RX, wiring — everything that isn't frame or battery. */
   electronicsMassG: number;
+  /**
+   * How the frame goes together.
+   *
+   * "bolted" clamps separate arms between two plates — stiffer, and a broken
+   * arm is a two-minute swap. "unibody" cuts the arms and the bottom plate as
+   * one piece — lighter, cheaper and simpler to build, but a broken arm means
+   * a whole new plate. Small frames are usually unibody; 5" and up usually
+   * bolted.
+   */
+  construction: Construction;
   materialId: string;
   /**
    * Cut frames: arm stock thickness, mm. Printed frames: starting outer width
@@ -118,6 +138,8 @@ export interface FrameDesign {
   rootRadiusMm: number;
   /** Length of the arm clamped between the plates, mm. */
   armOverlapMm: number;
+  /** The arm parts and the bearings each is fitted at. */
+  armGroups: ArmGroup[];
   /** Diameter of the arm clamp bolts, mm. */
   rootBoltMm: number;
   section: SectionResult;
@@ -423,12 +445,31 @@ export function armProfile(opts: {
   const outline: Pt[] = [];
   // Half-round inboard end: +90° round through 180° to 270°.
   outline.push(...arcPoints([tipR, 0], tipR, 90, 180, 16));
-  outline.push([taperStart, -wr / 2]);
-  outline.push([taperEnd, -padR]);
+  /*
+    Blend the root into the motor pad with a smoothstep rather than a straight
+    taper. A straight taper leaves a hard angle at each end, and hard angles in
+    carbon are where cracks start — the same reason production frames use
+    curves and rounded cut-outs rather than faceted ones. Smoothstep is
+    tangent-continuous at both ends, so the section changes without a corner
+    anywhere along it.
+  */
+  const taperPts = (sign: number): Pt[] => {
+    const steps = 16;
+    const pts: Pt[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const blend = t * t * (3 - 2 * t); // smoothstep
+      const x = taperStart + (taperEnd - taperStart) * t;
+      const y = wr / 2 + (padR - wr / 2) * blend;
+      pts.push([x, sign * y]);
+    }
+    return pts;
+  };
+
+  outline.push(...taperPts(-1));
   // Semicircular motor pad, swept from -90° up through 0° to +90°.
   outline.push(...arcPoints([motorX, 0], padR, -90, 180, 24));
-  outline.push([taperEnd, padR]);
-  outline.push([taperStart, wr / 2]);
+  outline.push(...taperPts(1).reverse());
   // closes back onto the start of the tip arc
 
   const [b1, b2] = rootBoltOffsets(opts.rootBolt);
@@ -483,6 +524,7 @@ export function armProfile(opts: {
     slots: [],
     thicknessMm,
     cavity,
+    cantileverMm,
     areaMm2: polygonArea(outline) - holeArea,
   };
 }
@@ -506,6 +548,37 @@ const PLATE_REF_MODULUS = 64;
 const PRINT_WIDTH_TO_PAD = 0.7;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** One arm part: its exposed length and how many of it the frame needs. */
+export interface ArmGroup {
+  cantileverMm: number;
+  bearings: number[];
+  qty: number;
+  id: string;
+  name: string;
+}
+
+/**
+ * Split the motors into arm parts by radius.
+ *
+ * Radii within a tenth of a millimetre are the same part — floating point
+ * noise should not turn a symmetric frame into four bespoke arms.
+ */
+export function groupArmsByRadius(motors: Pt[], rootRadius: number): ArmGroup[] {
+  const byRadius = new Map<number, number[]>();
+  for (const m of motors) {
+    const key = Math.round(Math.hypot(m[0], m[1]) * 10) / 10;
+    byRadius.set(key, [...(byRadius.get(key) ?? []), Math.atan2(m[1], m[0])]);
+  }
+  const sorted = [...byRadius.entries()].sort((a, b) => b[0] - a[0]);
+  return sorted.map(([radius, bearings], i) => ({
+    cantileverMm: round(Math.max(25, radius - rootRadius)),
+    bearings,
+    qty: bearings.length,
+    id: sorted.length === 1 ? "arm" : i === 0 ? "arm-long" : "arm-short",
+    name: sorted.length === 1 ? "Arm" : i === 0 ? "Front arm" : "Rear arm",
+  }));
+}
 
 /** Thickness of each plate, and the wall of a printed arm. */
 export interface PlateStock {
@@ -552,8 +625,17 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   const stackHoleEdgeR = spec.stackPattern * Math.SQRT1_2 + spec.stackBolt / 2;
   const rootRadius = round(stackHoleEdgeR + ROOT_BOLT + 2 + armOverlapMm);
 
-  const motorRadius = Math.min(...motors.map((m) => Math.hypot(m[0], m[1])));
-  const armLengthMm = round(Math.max(25, motorRadius - rootRadius));
+  /*
+    Arms are grouped by how far out their motor sits.
+
+    For every symmetric layout all four are identical, but a dead cat sweeps
+    its front motors further out than its rear ones. Drawing one arm and
+    fitting it four times would put all four motors at the same radius — which
+    is a true X with crooked bearings, not a dead cat. Each distinct radius is
+    therefore its own part.
+  */
+  const armGroups = groupArmsByRadius(motors, rootRadius);
+  const armLengthMm = Math.max(...armGroups.map((a) => a.cantileverMm));
 
   /*
     Plate half-dimensions must cover the arm roots, the stack and the battery,
@@ -603,7 +685,7 @@ export function designFrame(spec: FrameSpec): FrameDesign {
 
   const solveSection = (auw: number, forceAuto = false) => {
     const auto = autoArm || forceAuto;
-    const inputAt = (dim: number) => sectionInput(spec, material, motor, armLengthMm, auw, style.loadFactor, ROOT_BOLT, dim, wallMm);
+    const inputAt = (dim: number) => sectionInput(spec, material, motor, armLengthMm, auw, style.loadFactor, ROOT_BOLT, dim, wallMm, widthCap);
     if (!isCut) {
       const dim = auto ? refArmDim : spec.fixedDimMm!;
       return { section: sizeArm(inputAt(dim)), armDimMm: dim, escalated: false };
@@ -633,16 +715,16 @@ export function designFrame(spec: FrameSpec): FrameDesign {
     need 7 mm stock" instead of silently drawing an arm as wide as the plate.
   */
   let suggested = autoArm ? solved : solveSection(auwG, true);
-  const plateGeom: PlateGeom = { motors, rootRadius, armOverlapMm, rootBolt: ROOT_BOLT };
+  const plateGeom: PlateGeom = { motors, rootRadius, armOverlapMm, rootBolt: ROOT_BOLT, armGroups };
   const plates: PlateStock = { bottomMm: bottomPlateMm, topMm: topPlateMm, wallMm };
-  let profiles = buildProfiles(spec, motor, solved.section, armLengthMm, bodyWmm, bodyLmm, plateGeom, plates);
-  let frameG = frameMass(profiles, material, solved.section, armLengthMm);
+  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates);
+  let frameG = frameMass(profiles, material, solved.section);
   for (let i = 0; i < 5; i++) {
     auwG = fixedMass + frameG;
     solved = solveSection(auwG);
     suggested = autoArm ? solved : solveSection(auwG, true);
-    profiles = buildProfiles(spec, motor, solved.section, armLengthMm, bodyWmm, bodyLmm, plateGeom, plates);
-    const next = frameMass(profiles, material, solved.section, armLengthMm);
+    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates);
+    const next = frameMass(profiles, material, solved.section);
     if (Math.abs(next - frameG) < 0.5) { frameG = next; break; }
     frameG = next;
   }
@@ -669,6 +751,7 @@ export function designFrame(spec: FrameSpec): FrameDesign {
     armLengthMm,
     rootRadiusMm: rootRadius,
     armOverlapMm,
+    armGroups,
     rootBoltMm: ROOT_BOLT,
     section,
     profiles,
@@ -700,7 +783,7 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   };
 }
 
-function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: number, auwG: number, loadFactor: number, rootBolt: number, fixedDimMm: number, wallMm: number) {
+function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: number, auwG: number, loadFactor: number, rootBolt: number, fixedDimMm: number, wallMm: number, maxWidthMm: number) {
   return {
     material,
     safetyFactor: spec.safetyFactor,
@@ -713,6 +796,7 @@ function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: 
     rootBolt,
     fixedDimMm,
     wallMm,
+    maxWidthMm,
   };
 }
 
@@ -721,6 +805,7 @@ interface PlateGeom {
   rootRadius: number;
   armOverlapMm: number;
   rootBolt: number;
+  armGroups: ArmGroup[];
 }
 
 /**
@@ -741,26 +826,54 @@ export function armRootHoles(g: PlateGeom): Hole[] {
   return holes;
 }
 
-function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, armLengthMm: number, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
+/**
+ * Standoff positions for a unibody frame, on the bisectors between arms.
+ *
+ * A bolted frame gets its standoffs free — they ride on the arm clamp bolts.
+ * A unibody has no such bolts, so the top plate needs its own, and the only
+ * clear places for them are the gaps between the arms.
+ */
+export function standoffHoles(motors: Pt[], bodyW: number, bodyL: number, bolt: number): Hole[] {
+  const bearings = motors.map((m) => Math.atan2(m[1], m[0])).sort((a, b) => a - b);
+  const edge = EDGE_DISTANCE_FACTOR * bolt + bolt / 2;
+  return bearings.map((b, i) => {
+    const next = i === bearings.length - 1 ? bearings[0] + TAU : bearings[i + 1];
+    const mid = (b + next) / 2;
+    const cos = Math.cos(mid);
+    const sin = Math.sin(mid);
+    // Furthest point on this bisector that still clears the plate edge.
+    const r = Math.min(
+      Math.abs(cos) < 1e-6 ? Infinity : (bodyW / 2 - edge) / Math.abs(cos),
+      Math.abs(sin) < 1e-6 ? Infinity : (bodyL / 2 - edge) / Math.abs(sin),
+    );
+    return { c: [r * cos, r * sin] as Pt, r: bolt / 2 };
+  });
+}
+
+function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
   const bottomT = plates.bottomMm;
   const topT = plates.topMm;
 
-  const arm = armProfile({
-    cantileverMm: armLengthMm,
-    overlapMm: g.armOverlapMm,
-    rootWidthMm: section.widthMm,
-    padWidthMm: section.padWidthMm,
-    motorPattern: motor.pattern,
-    motorBolt: motor.bolt,
-    rootBolt: g.rootBolt,
-    thicknessMm: section.heightMm,
-    wallMm: section.hollow ? section.wallMm : 0,
-    id: "arm",
-    name: "Arm",
-    qty: 4,
-  });
+  // One arm part per distinct motor radius. All share the solved section,
+  // which was sized against the longest of them.
+  const arms = g.armGroups.map((group) =>
+    armProfile({
+      cantileverMm: group.cantileverMm,
+      overlapMm: g.armOverlapMm,
+      rootWidthMm: section.widthMm,
+      padWidthMm: section.padWidthMm,
+      motorPattern: motor.pattern,
+      motorBolt: motor.bolt,
+      rootBolt: g.rootBolt,
+      thicknessMm: section.heightMm,
+      wallMm: section.hollow ? section.wallMm : 0,
+      id: group.id,
+      name: group.name,
+      qty: group.qty,
+    }),
+  );
 
   // Bottom plate: stack holes, arm root bolts, battery strap slots.
   const bottomHoles: Hole[] = [
@@ -812,7 +925,77 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     areaMm2: polygonArea(topOutline) - topHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0),
   };
 
-  return [bottom, top, arm];
+  if (spec.construction === "bolted") return [bottom, top, ...arms];
+
+  /*
+    Unibody: the chassis is the plate and the arms as one piece.
+
+    The arms are placed exactly as they would be bolted on, then unioned with
+    the plate, so the cantilever the solver sized is the cantilever that gets
+    cut. What changes is the hardware: there are no arm clamp bolts, so the
+    top plate needs standoffs of its own, and the whole piece is cut from the
+    arm stock because the arms are what set the thickness.
+  */
+  const shift = g.rootRadius - g.armOverlapMm;
+  const placedArms: Pt[][] = [];
+  for (const [i, group] of g.armGroups.entries()) {
+    for (const bearing of group.bearings) {
+      const cos = Math.cos(bearing);
+      const sin = Math.sin(bearing);
+      placedArms.push(
+        arms[i].outline.map(([x, y]) => {
+          const X = x + shift;
+          return [X * cos - y * sin, X * sin + y * cos] as Pt;
+        }),
+      );
+    }
+  }
+
+  const chassisOutline = unibodyOutline(bottomOutline, placedArms);
+  const standoffs = standoffHoles(g.motors, fittedBottom.w, fittedBottom.l, g.rootBolt);
+  const motorHoles: Hole[] = g.motors.flatMap((m) =>
+    patternHoles(m, motor.pattern, motor.bolt, PAD_EDGE_FACTOR),
+  );
+  const chassisHoles: Hole[] = [
+    ...patternHoles([0, 0], spec.stackPattern, spec.stackBolt),
+    ...standoffs,
+    ...motorHoles,
+  ];
+  const chassis: Profile = {
+    id: "chassis",
+    name: "Chassis",
+    qty: 1,
+    outline: chassisOutline,
+    holes: chassisHoles,
+    slots,
+    thicknessMm: section.heightMm,
+    areaMm2:
+      polygonArea(chassisOutline)
+      - chassisHoles.reduce((sum, h) => sum + Math.PI * h.r * h.r, 0)
+      - slots.reduce((sum, pts) => sum + polygonArea(pts), 0),
+  };
+
+  // The top plate now only carries the stack and the standoffs.
+  const uniTopHoles: Hole[] = [...patternHoles([0, 0], spec.stackPattern, spec.stackBolt), ...standoffs];
+  const uniFit = fitRoundedPlate(
+    2 * (Math.max(...standoffs.map((h) => Math.abs(h.c[0]))) + EDGE_DISTANCE_FACTOR * g.rootBolt),
+    2 * (Math.max(...standoffs.map((h) => Math.abs(h.c[1]))) + EDGE_DISTANCE_FACTOR * g.rootBolt),
+    6,
+    uniTopHoles,
+  );
+  const uniTopOutline = roundedRect(uniFit.w, uniFit.l, 6);
+  const uniTop: Profile = {
+    id: "top-plate",
+    name: "Top plate",
+    qty: 1,
+    outline: uniTopOutline,
+    holes: uniTopHoles,
+    slots: [],
+    thicknessMm: topT,
+    areaMm2: polygonArea(uniTopOutline) - uniTopHoles.reduce((sum, h) => sum + Math.PI * h.r * h.r, 0),
+  };
+
+  return [chassis, uniTop];
 }
 
 /**
@@ -824,11 +1007,11 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
  * from the solved cross-section swept along its length instead, with the motor
  * pad and the clamped root counted as solid because they are.
  */
-function frameMass(profiles: Profile[], material: Material, section: SectionResult, cantileverMm: number): number {
+function frameMass(profiles: Profile[], material: Material, section: SectionResult): number {
   let total = 0;
   for (const p of profiles) {
-    if (p.id === "arm") {
-      const spanMm = Math.max(0, cantileverMm - section.padWidthMm / 2);
+    if (p.cantileverMm !== undefined) {
+      const spanMm = Math.max(0, p.cantileverMm - section.padWidthMm / 2);
       const solidEnds = p.areaMm2 - section.widthMm * spanMm;
       const volume = section.areaMm2 * spanMm + Math.max(0, solidEnds) * p.thicknessMm;
       total += massOf(volume, material.density) * p.qty;

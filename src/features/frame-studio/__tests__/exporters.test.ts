@@ -15,6 +15,7 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   stackBolt: 3,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
+  construction: "bolted",
   materialId: "cf-plate",
   fixedDimMm: 4,
   plateThicknessMm: null,
@@ -324,7 +325,17 @@ describe("making instructions", () => {
 
   it("tells a cut build that arms and plates are different thicknesses", () => {
     const steps = buildRecipe(cutDesign());
-    expect(steps[0].title.toLowerCase()).toContain("two thicknesses");
+    expect(steps.some((s) => s.title.toLowerCase().includes("two thicknesses"))).toBe(true);
+  });
+
+  it("gives a unibody its own instructions, not the bolted ones", () => {
+    const uni = buildRecipe(designFrame(spec({ construction: "unibody" })));
+    const bolted = buildRecipe(cutDesign());
+    expect(uni[0].title.toLowerCase()).toContain("one piece");
+    expect(bolted[0].title.toLowerCase()).toContain("arms");
+    // The two-plate simplification makes no sense when there is one plate.
+    expect(uni.some((s) => /one plate thickness/i.test(s.title))).toBe(false);
+    expect(bolted.some((s) => /one plate thickness/i.test(s.title))).toBe(true);
   });
 
   it("tells a cut build not to let the file be scaled", () => {

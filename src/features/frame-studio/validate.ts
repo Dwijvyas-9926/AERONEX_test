@@ -11,6 +11,7 @@
   margin they have rather than just being told "ok".
 */
 
+import { MATERIALS } from "./catalog";
 import {
   distanceToBoundary,
   pointInPolygon,
@@ -126,10 +127,11 @@ export function validateDesign(d: FrameDesign): Finding[] {
   }
 
   /* --- arm roots must be clamped by both plates ---------------------- */
-  const arm = d.profiles.find((p) => p.id === "arm");
+  // A unibody has no arm clamp to check — the arms are the plate.
+  const arm = d.profiles.find((p) => p.cantileverMm !== undefined);
   const bottom = d.profiles.find((p) => p.id === "bottom-plate");
   const top = d.profiles.find((p) => p.id === "top-plate");
-  if (arm && bottom && top) {
+  if (d.spec.construction === "bolted" && arm && bottom && top) {
     // Root bolt positions in global coordinates, derived from the design.
     const rootBolts = bottom.holes.filter((h) => {
       const r = Math.hypot(h.c[0], h.c[1]);
@@ -161,18 +163,32 @@ export function validateDesign(d: FrameDesign): Finding[] {
       limit: `${s.allowableMPa} MPa`,
     });
   }
+  /*
+    Deflection, with the severity scaled to how badly it misses.
+
+    A little over the target is a tuning nuisance. Several times over is an
+    aircraft that cannot be flown: the arms wave about under thrust, the gyro
+    reads that as attitude, and no amount of PID work fixes it. Reporting both
+    as "warning" would let a student build an acrylic 10" frame believing it
+    was merely a bit flexible.
+  */
   const deflLimit = Math.max(0.5, d.armLengthMm / 150);
-  if (s.deflectionMm > deflLimit * 1.05) {
+  const deflRatio = s.deflectionMm / deflLimit;
+  if (deflRatio > 1.05) {
+    const severe = deflRatio > 3;
     out.push({
       id: "arm-deflection",
-      severity: "warn",
+      severity: severe ? "error" : "warn",
       scope: "Arm",
-      title: "Arm flexes more than is comfortable",
-      detail: "A floppy arm lowers the frame's natural frequency, which the flight controller sees as vibration and which makes tuning harder.",
+      title: severe ? "Arms are far too flexible to fly" : "Arm flexes more than is comfortable",
+      detail: severe
+        ? `These arms deflect about ${Math.round(deflRatio)} times the design target under full thrust. An arm that waves about is read by the flight controller as the aircraft moving, so it is unflyable no matter how it is tuned. ${stiffnessAdvice(d)}`
+        : "A floppy arm lowers the frame's natural frequency, which the flight controller sees as vibration and which makes tuning harder.",
       measured: `${s.deflectionMm} mm at full thrust`,
       limit: `${round(deflLimit)} mm`,
     });
   }
+
   if (!d.material.structural) {
     out.push({
       id: "material-structural",
@@ -204,24 +220,24 @@ export function validateDesign(d: FrameDesign): Finding[] {
   /*
     The arm-is-really-a-plate check.
 
-    A long arm on thin stock can always be made stiff enough by widening it,
-    and the equations will happily return an 80 mm-wide arm without complaint.
-    It would be strong, and it would also be heavy, draggy and nothing like a
-    frame anyone builds. Because stiffness rises with t³ and mass only with t,
-    going thicker is strictly better than going wider — so when the arm passes
-    this proportion, say so and name the thickness that fixes it.
+    This looks at what the stiffness calculation *demanded*, not at what was
+    built — the builder clamps the width so the drawing stays sane, which
+    would otherwise hide the problem. Because stiffness rises with t³ and mass
+    only with t, going thicker is strictly better than going wider, so when
+    the demand exceeds the proportion limit the fix is named explicitly.
   */
-  if (d.material.method === "cut" && d.section.widthMm > d.stock.widthCapMm + 0.5) {
+  const demanded = d.section.required.stiffness;
+  if (d.material.method === "cut" && demanded > d.stock.widthCapMm + 0.5) {
     const canFix = d.stock.suggestedArmMm > d.stock.armDimMm + 1e-6 && d.stock.suggestedWidthMm <= d.stock.widthCapMm + 0.5;
     out.push({
       id: "arm-too-wide",
-      severity: canFix ? "warn" : "error",
+      severity: "warn",
       scope: "Arm",
-      title: "Arm is as wide as a plate",
+      title: "This material cannot make an arm this long stiff enough",
       detail: canFix
-        ? `At ${d.stock.armDimMm} mm thick this arm has to be ${Math.round(d.section.widthMm)} mm wide to stay stiff enough, which is wider than the motor pad it feeds. Use ${d.stock.suggestedArmMm} mm stock instead and the arm comes down to about ${Math.round(d.stock.suggestedWidthMm)} mm — stiffer, lighter and far more like a real frame.`
-        : `This arm needs to be ${Math.round(d.section.widthMm)} mm wide to stay stiff enough, which is not a sensible frame. Shorten the arms, use a stiffer material, or accept a more flexible aircraft.`,
-      measured: `${Math.round(d.section.widthMm)} mm wide`,
+        ? `At ${d.stock.armDimMm} mm thick the arm would have to be ${Math.round(demanded)} mm wide to hit the stiffness target — wider than the motor pad it feeds. Use ${d.stock.suggestedArmMm} mm stock and it comes down to about ${Math.round(d.stock.suggestedWidthMm)} mm.`
+        : `Hitting the stiffness target would need an arm ${Math.round(demanded)} mm wide, which is not a frame. The arm has been capped at ${Math.round(d.stock.widthCapMm)} mm, so expect the flex figure above. ${stiffnessAdvice(d)}`,
+      measured: `${Math.round(demanded)} mm needed`,
       limit: `${Math.round(d.stock.widthCapMm)} mm`,
     });
   }
@@ -307,6 +323,23 @@ export function validateDesign(d: FrameDesign): Finding[] {
   }
 
   return out;
+}
+
+/**
+ * What would actually make this frame stiff enough, in order of effect.
+ *
+ * Stiffness goes with E·b·t³, so the levers are, in descending order: a
+ * stiffer material, thicker stock, and a shorter arm. Suggesting a wider arm
+ * is almost never the right answer.
+ */
+function stiffnessAdvice(d: FrameDesign): string {
+  const better = MATERIALS.filter(
+    (m) => m.method === d.material.method && m.structural && m.modulus > d.material.modulus * 1.5,
+  ).sort((a, b) => b.modulus - a.modulus)[0];
+  const parts: string[] = [];
+  if (better) parts.push(`${better.name} is about ${Math.round(better.modulus / d.material.modulus)} times stiffer`);
+  parts.push(`a smaller propeller shortens the arms, which helps most of all because stiffness falls with the cube of length`);
+  return `Try ${parts.join(", or ")}.`;
 }
 
 function holeFullyInside(h: Hole, poly: Pt[]): boolean {

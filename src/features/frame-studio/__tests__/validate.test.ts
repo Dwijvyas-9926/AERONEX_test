@@ -21,6 +21,7 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   stackBolt: 3,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
+  construction: "bolted",
   materialId: "cf-plate",
   fixedDimMm: 4,
   plateThicknessMm: null,

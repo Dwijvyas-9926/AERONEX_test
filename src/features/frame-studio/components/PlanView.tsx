@@ -38,24 +38,34 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
   const [hover, setHover] = useState<string | null>(null);
   const active = focus ?? hover;
 
-  const arm = d.profiles.find((p) => p.id === "arm")!;
-  const bottom = d.profiles.find((p) => p.id === "bottom-plate")!;
+  const unibody = d.spec.construction === "unibody";
+  const armParts = d.profiles.filter((p) => p.cantileverMm !== undefined);
+  const bottom = d.profiles.find((p) => p.id === "bottom-plate" || p.id === "chassis")!;
   const top = d.profiles.find((p) => p.id === "top-plate")!;
 
   // Arms are drawn from the same profile the exporter writes, placed by the
   // same root radius the solver used — not a separate decorative shape.
+  /*
+    Arms are drawn from the same profiles the exporter writes, each at its own
+    bearing. A unibody has none to draw separately — they are part of the
+    chassis outline.
+  */
   const arms = useMemo(() => {
+    if (unibody) return [];
     const shift = d.rootRadiusMm - d.armOverlapMm;
-    return d.motors.map((m, i) => {
-      const bearing = Math.atan2(m[1], m[0]);
-      return {
-        key: `arm-${i}`,
-        outline: placeArm(arm.outline, bearing, shift),
-        holes: arm.holes.map((h) => ({ ...h, c: placeArm([h.c], bearing, shift)[0] })),
-        motor: m,
-      };
-    });
-  }, [arm, d.motors, d.rootRadiusMm, d.armOverlapMm]);
+    const out: { key: string; outline: Pt[]; holes: Hole[] }[] = [];
+    for (const part of armParts) {
+      const group = d.armGroups.find((gr: { id: string }) => gr.id === part.id);
+      for (const [i, bearing] of (group?.bearings ?? []).entries()) {
+        out.push({
+          key: `${part.id}-${i}`,
+          outline: placeArm(part.outline, bearing, shift),
+          holes: part.holes.map((h) => ({ ...h, c: placeArm([h.c], bearing, shift)[0] })),
+        });
+      }
+    }
+    return out;
+  }, [armParts, d.armGroups, d.rootRadiusMm, d.armOverlapMm, unibody]);
 
   // Frame the drawing on its true extent, with room for the dimension lines.
   const reach = Math.max(...d.motors.map((m) => Math.hypot(m[0], m[1]))) + d.section.padWidthMm / 2;
@@ -126,8 +136,8 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
         {arms.map((a) => (
           <g
             key={a.key}
-            className={`fs-part fs-arm${active === "arm" ? " is-active" : ""}`}
-            onMouseEnter={() => { setHover("arm"); onFocus?.("arm"); }}
+            className={`fs-part fs-arm${active && a.key.startsWith(active) ? " is-active" : ""}`}
+            onMouseEnter={() => { setHover(a.key.replace(/-\d+$/, "")); onFocus?.(a.key.replace(/-\d+$/, "")); }}
             onMouseLeave={() => { setHover(null); onFocus?.(null); }}
           >
             <path d={toPath(a.outline)} />
@@ -136,8 +146,8 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
         ))}
 
         <g
-          className={`fs-part fs-plate${active === "bottom-plate" ? " is-active" : ""}`}
-          onMouseEnter={() => { setHover("bottom-plate"); onFocus?.("bottom-plate"); }}
+          className={`fs-part fs-plate${active === bottom.id ? " is-active" : ""}`}
+          onMouseEnter={() => { setHover(bottom.id); onFocus?.(bottom.id); }}
           onMouseLeave={() => { setHover(null); onFocus?.(null); }}
         >
           <path d={toPath(bottom.outline)} />

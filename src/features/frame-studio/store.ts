@@ -49,6 +49,7 @@ export const DEFAULT_SPEC: FrameSpec = {
   stackBolt: 3,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
+  construction: "bolted",
   materialId: "cf-plate",
   // null = let the studio pick from the published reference for this prop class
   fixedDimMm: null,

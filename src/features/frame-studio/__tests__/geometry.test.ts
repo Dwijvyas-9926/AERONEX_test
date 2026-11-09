@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { designFrame, type FrameSpec, minSpacing, minWheelbaseFor, motorPositions, polygonArea, roundedRect } from "../geometry";
+import { designFrame, type FrameSpec, minSpacing, minWheelbaseFor, motorPositions, pointInPolygon, polygonArea, roundedRect } from "../geometry";
 
 const baseSpec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   layout: "true-x",
@@ -12,6 +12,7 @@ const baseSpec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   stackBolt: 3,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
+  construction: "bolted",
   materialId: "cf-plate",
   fixedDimMm: 4,
   plateThicknessMm: null,
@@ -159,5 +160,72 @@ describe("profile primitives", () => {
     const arm = d.profiles.find((p) => p.id === "arm")!;
     expect(arm.holes.length).toBe(6);
     expect(arm.qty).toBe(4);
+  });
+});
+
+describe("construction", () => {
+  const uni = (over: Partial<FrameSpec> = {}) => designFrame(baseSpec({ construction: "unibody", ...over }));
+
+  it("a unibody is one chassis plus a top plate, with no arm bolts", () => {
+    const d = uni();
+    expect(d.profiles.map((p) => p.id)).toEqual(["chassis", "top-plate"]);
+    const chassis = d.profiles.find((p) => p.id === "chassis")!;
+    // stack (4) + standoffs (4) + four motors × 4 bolts
+    expect(chassis.holes).toHaveLength(4 + 4 + 16);
+    expect(chassis.qty).toBe(1);
+  });
+
+  it("the chassis encloses the plate and all four arms", () => {
+    const bolted = designFrame(baseSpec());
+    const d = uni();
+    const chassis = d.profiles.find((p) => p.id === "chassis")!;
+    const plate = bolted.profiles.find((p) => p.id === "bottom-plate")!;
+    const arm = bolted.profiles.find((p) => p.id === "arm")!;
+    // The union must be bigger than the plate, and bigger than plate + arms
+    // would be if they merely touched, but less than their disjoint sum.
+    expect(polygonArea(chassis.outline)).toBeGreaterThan(polygonArea(plate.outline));
+    expect(polygonArea(chassis.outline)).toBeLessThan(
+      polygonArea(plate.outline) + 4 * polygonArea(arm.outline),
+    );
+    // Every motor bolt lands in material.
+    for (const h of chassis.holes) expect(pointInPolygon(h.c, chassis.outline)).toBe(true);
+  });
+
+  it("a unibody saves the arm hardware but not weight at this size", () => {
+    const bolted = designFrame(baseSpec());
+    const d = uni();
+    // No separate arm parts to bolt on.
+    expect(d.profiles.some((p) => p.cantileverMm !== undefined)).toBe(false);
+    expect(bolted.profiles.filter((p) => p.cantileverMm !== undefined)).toHaveLength(1);
+  });
+});
+
+describe("arms are grouped by how far out their motor sits", () => {
+  it("a symmetric layout needs one arm part, fitted four times", () => {
+    for (const layout of ["true-x", "stretched-x", "h"] as const) {
+      const d = designFrame(baseSpec({ layout }));
+      const arms = d.profiles.filter((p) => p.cantileverMm !== undefined);
+      expect(arms, layout).toHaveLength(1);
+      expect(arms[0].qty, layout).toBe(4);
+    }
+  });
+
+  it("a dead cat needs two, because its front motors sit further out", () => {
+    /*
+      This is the bug the grouping exists to prevent: drawing one arm and
+      fitting it four times puts every motor at the same radius, which is a
+      true X with crooked bearings rather than a dead cat.
+    */
+    const d = designFrame(baseSpec({ layout: "deadcat" }));
+    const arms = d.profiles.filter((p) => p.cantileverMm !== undefined);
+    expect(arms).toHaveLength(2);
+    expect(arms.reduce((s, a) => s + a.qty, 0)).toBe(4);
+
+    const radii = [...new Set(d.motors.map((m) => Math.round(Math.hypot(m[0], m[1]) * 10) / 10))].sort((a, b) => b - a);
+    expect(radii).toHaveLength(2);
+    // Each arm part must reach its own motors exactly.
+    for (const [i, arm] of arms.entries()) {
+      expect(arm.cantileverMm! + d.rootRadiusMm).toBeCloseTo(radii[i], 0);
+    }
   });
 });

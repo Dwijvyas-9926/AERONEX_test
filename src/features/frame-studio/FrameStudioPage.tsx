@@ -4,7 +4,7 @@ import { FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS, materialB
 import { ExportPanel } from "./components/ExportPanel";
 import { PlanView } from "./components/PlanView";
 import { SheetView } from "./components/SheetView";
-import { LAYOUTS, designFrame, type Layout } from "./geometry";
+import { CONSTRUCTIONS, LAYOUTS, designFrame, type Layout } from "./geometry";
 import { LAYOUT_HINT, STEPS, defaultFixedDim, useStudio } from "./store";
 import { validateDesign, worstSeverity, type Finding } from "./validate";
 
@@ -216,6 +216,26 @@ export function FrameStudioPage() {
                   <small>
                     This is not a style preference — it sets the crash load the arms are sized against, which is what
                     actually decides how thick they are.
+                  </small>
+                </div>
+
+                <div className="field">
+                  <span>How it goes together</span>
+                  <div className="fs-choices">
+                    {CONSTRUCTIONS.map((c) => (
+                      <button
+                        key={c.id}
+                        className={`fs-choice${spec.construction === c.id ? " is-on" : ""}`}
+                        onClick={() => setSpec("construction", c.id)}
+                      >
+                        <b>{c.name}</b>
+                        <small>{c.blurb}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <small>
+                    Small frames are usually unibody and big ones usually bolted, but either works at any size — it is a
+                    trade between weight and build simplicity on one side and repairability on the other.
                   </small>
                 </div>
 

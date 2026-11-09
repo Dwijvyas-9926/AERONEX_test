@@ -30,8 +30,10 @@ export function standardBoltLength(mm: number): number {
 }
 
 export function buildBOM(d: FrameDesign): BomLine[] {
-  const arm = d.profiles.find((p) => p.id === "arm")!;
-  const bottom = d.profiles.find((p) => p.id === "bottom-plate")!;
+  const unibody = d.spec.construction === "unibody";
+  // In a unibody the chassis is the arm — same piece, same thickness.
+  const arm = d.profiles.find((p) => p.cantileverMm !== undefined) ?? d.profiles.find((p) => p.id === "chassis")!;
+  const bottom = d.profiles.find((p) => p.id === "bottom-plate" || p.id === "chassis")!;
   const top = d.profiles.find((p) => p.id === "top-plate")!;
   const rootBolt = d.rootBoltMm;
 
@@ -41,7 +43,11 @@ export function buildBOM(d: FrameDesign): BomLine[] {
     standoff, so two diameters of engagement are added.
   */
   const standoffMm = Math.max(5, Math.ceil(arm.thicknessMm + 2));
-  const clampStack = bottom.thicknessMm + arm.thicknessMm + top.thicknessMm + standoffMm;
+  // Bolted: top plate + standoff + arm + bottom plate. Unibody: there is no
+  // separate arm in the stack, so the bolt only spans plate + standoff + plate.
+  const clampStack = unibody
+    ? bottom.thicknessMm + top.thicknessMm + standoffMm
+    : bottom.thicknessMm + arm.thicknessMm + top.thicknessMm + standoffMm;
   const clampBolt = standardBoltLength(clampStack + rootBolt * 2);
 
   // Motor bolts thread into the motor bell and must not reach the windings.
@@ -54,23 +60,41 @@ export function buildBOM(d: FrameDesign): BomLine[] {
       purpose: "Motor mounting, four per motor",
       note: `Measure your motors before ordering: too long and the bolt reaches the windings. ${arm.thicknessMm} mm of arm plus roughly 4 mm into the bell.`,
     },
-    {
-      qty: 8,
-      item: `M${rootBolt} × ${clampBolt} mm cap head`,
-      purpose: "Arm clamp, two per arm through both plates",
-      note: `Clamps ${round(clampStack)} mm of plate, arm and standoff.`,
-    },
-    {
-      qty: 8,
-      item: `M${rootBolt} nyloc nut`,
-      purpose: "Arm clamp bolts",
-      note: "Nyloc, not plain — plain nuts back off under vibration.",
-    },
-    {
-      qty: 4,
-      item: `M${rootBolt} × ${standoffMm} mm standoff`,
-      purpose: "Spacing the top plate clear of the arms",
-    },
+    ...(unibody
+      ? [
+          {
+            qty: 8,
+            item: `M${rootBolt} × ${standardBoltLength(Math.max(bottom.thicknessMm, top.thicknessMm) + rootBolt * 2)} mm cap head`,
+            purpose: "Top plate to standoffs, and standoffs to the chassis",
+            note: "Four down into the standoffs from the top plate, four up from underneath the chassis.",
+          },
+          {
+            qty: 4,
+            item: `M${rootBolt} × ${standoffMm} mm standoff, female both ends`,
+            purpose: "Holding the top plate off the chassis",
+            note: `Sits in the gaps between the arms. Spans ${round(standoffMm)} mm.`,
+          },
+        ]
+      : [
+          {
+            qty: 8,
+            item: `M${rootBolt} × ${clampBolt} mm cap head`,
+            purpose: "Arm clamp, two per arm through both plates",
+            note: `Clamps ${round(clampStack)} mm of plate, arm and standoff.`,
+          },
+          {
+            qty: 8,
+            item: `M${rootBolt} nyloc nut`,
+            purpose: "Arm clamp bolts",
+            note: "Nyloc, not plain — plain nuts back off under vibration.",
+          },
+          {
+            qty: 8,
+            item: `M${rootBolt} × ${standoffMm} mm standoff`,
+            purpose: "Two per arm, holding the top plate off the arms",
+            note: "One on every clamp bolt. The top plate has to sit level, so each bolt that passes through it needs its own spacer.",
+          },
+        ]),
     {
       qty: 4,
       item: `M${d.spec.stackBolt} × 20 mm cap head + soft mounts`,
@@ -124,16 +148,33 @@ export interface RecipeStep {
  * has its layer lines running across the arm, which is the weak direction.
  */
 export function buildRecipe(d: FrameDesign): RecipeStep[] {
+  const unibody = d.spec.construction === "unibody";
+
   if (d.material.method === "cut") {
     return [
+      ...(unibody
+        ? [
+            {
+              title: "One piece, so get the orientation right first time",
+              detail:
+                "The arms and the centre plate are a single part. That makes the build far simpler — there are no arm bolts to torque and nothing to work loose — but it also means a snapped arm is a whole new chassis. Cut a spare while the setup is on the machine; it costs a fraction of a second cut later.",
+            },
+          ]
+        : [
+            {
+              title: "Fit the arms before you fit anything else",
+              detail:
+                "Bolt all four arms between the plates and tighten evenly before the stack or the motors go on. Doing it the other way round means fighting the stack wiring every time an arm needs adjusting.",
+            },
+          ]),
       {
         title: "Order two thicknesses, not one",
-        detail: `The arms are ${d.stock.armDimMm} mm and the plates are ${d.stock.bottomPlateMm} mm (top plate ${d.stock.topPlateMm} mm). This is how production frames are made and it is not an oversight: the arm is a cantilever and wants thickness, while the plates are only a clamp. Cutting the whole frame from one sheet gives you either floppy arms or a needlessly heavy centre.`,
+        detail: `${unibody ? `The chassis is ${d.stock.armDimMm} mm — its arms set the thickness — and the top plate is ${d.stock.topPlateMm} mm` : `The arms are ${d.stock.armDimMm} mm and the plates are ${d.stock.bottomPlateMm} mm (top plate ${d.stock.topPlateMm} mm)`}. This is how production frames are made and it is not an oversight: the arm is a cantilever and wants thickness, while the plates are only a clamp. Cutting the whole frame from one sheet gives you either floppy arms or a needlessly heavy centre.`,
       },
-      {
+      ...(unibody ? [] : [{
         title: "If you would rather cut one plate thickness",
         detail: `The plates differ by ${round(Math.abs(d.stock.bottomPlateMm - d.stock.topPlateMm), 1)} mm, which is worth a few grams and one less setup at the cutter. Cutting both from the thicker ${d.stock.bottomPlateMm} mm stock is a perfectly reasonable simplification — just do not do the same with the arms, which need every bit of their ${d.stock.armDimMm} mm.`,
-      },
+      }]),
       {
         title: "Send the DXF as it is",
         detail:
@@ -145,6 +186,11 @@ export function buildRecipe(d: FrameDesign): RecipeStep[] {
           d.material.id === "cf-plate"
             ? "Carbon must be cut by a service or a shop with proper extraction. The dust is a respiratory hazard and is electrically conductive, so it also ruins electronics and tooling."
             : d.material.note,
+      },
+      {
+        title: "Ask for the arms to be cut along the weave",
+        detail:
+          "Carbon plate is strongest along its weave and markedly weaker at 45° to it. Nest the arms so their length runs with the weave, not diagonally across it — it costs nothing and it is one of the few free gains in frame strength.",
       },
       {
         title: "Ask for holes cut, not drilled after",
