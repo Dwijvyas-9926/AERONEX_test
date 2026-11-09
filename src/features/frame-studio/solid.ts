@@ -11,7 +11,8 @@
   out, so the outline is normalised to counter-clockwise before extrusion.
 */
 
-import { ExtrudeGeometry, Mesh, MeshBasicMaterial, Path, Shape, Vector2 } from "three";
+import { BufferGeometry, ExtrudeGeometry, Mesh, MeshBasicMaterial, Path, Shape, Vector2 } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { type Hole, type Pt, type Profile } from "./geometry";
 
@@ -48,12 +49,64 @@ export function shapeFor(profile: Profile): Shape {
 }
 
 /** Extruded geometry for a profile, swept through its own thickness. */
-export function geometryFor(profile: Profile): ExtrudeGeometry {
-  return new ExtrudeGeometry(shapeFor(profile), {
+export function geometryFor(profile: Profile): BufferGeometry {
+  const outer = new ExtrudeGeometry(shapeFor(profile), {
     depth: profile.thicknessMm,
     bevelEnabled: false,
     curveSegments: HOLE_SEGMENTS,
   });
+  if (!profile.cavity) return outer;
+
+  /*
+    Hollow the arm.
+
+    The void is enclosed on every side, so it cannot be expressed as a hole in
+    the extruded profile — a hole would open out through the top and bottom
+    faces and the part would be a channel, not a box. Instead the cavity is
+    extruded as its own solid, flipped inside out, and merged in: a surface
+    whose normals point inward reads as a void to every slicer, and the result
+    is still one closed manifold.
+  */
+  const { outline, wallMm } = profile.cavity;
+  const innerDepth = profile.thicknessMm - 2 * wallMm;
+  if (innerDepth <= 0.2) return outer;
+
+  const path = new Shape(toCCW(outline).map(([x, y]) => new Vector2(x, y)));
+  const inner = new ExtrudeGeometry(path, { depth: innerDepth, bevelEnabled: false, curveSegments: 4 });
+  inner.translate(0, 0, wallMm);
+  flipNormals(inner);
+
+  const merged = mergeGeometries([outer.toNonIndexed(), inner.toNonIndexed()], false);
+  outer.dispose();
+  inner.dispose();
+  return merged ?? outer;
+}
+
+/** Reverse winding and normals in place, turning a solid into a void. */
+function flipNormals(geo: BufferGeometry): void {
+  const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
+  const pos = nonIndexed.getAttribute("position");
+  for (let i = 0; i < pos.count; i += 3) {
+    for (const attr of [nonIndexed.getAttribute("position"), nonIndexed.getAttribute("normal"), nonIndexed.getAttribute("uv")]) {
+      if (!attr) continue;
+      for (let c = 0; c < attr.itemSize; c++) {
+        const a = attr.getComponent(i, c);
+        const b = attr.getComponent(i + 2, c);
+        attr.setComponent(i, c, b);
+        attr.setComponent(i + 2, c, a);
+      }
+    }
+  }
+  if (nonIndexed !== geo) {
+    geo.copy(nonIndexed);
+    nonIndexed.dispose();
+  }
+  geo.computeVertexNormals();
+  const normal = geo.getAttribute("normal");
+  for (let i = 0; i < normal.count; i++) {
+    normal.setXYZ(i, -normal.getX(i), -normal.getY(i), -normal.getZ(i));
+  }
+  normal.needsUpdate = true;
 }
 
 export interface StlPart {
@@ -81,7 +134,7 @@ export function toSTLParts(profiles: Profile[]): StlPart[] {
     const data = parsed.buffer.slice(parsed.byteOffset, parsed.byteOffset + parsed.byteLength) as ArrayBuffer;
     mesh.geometry.dispose();
     return {
-      filename: `${profile.id}-x${profile.qty}-${profile.thicknessMm}mm.stl`,
+      filename: `${profile.id}-x${profile.qty}-${Math.round(profile.thicknessMm * 10) / 10}mm.stl`,
       name: profile.name,
       qty: profile.qty,
       thicknessMm: profile.thicknessMm,

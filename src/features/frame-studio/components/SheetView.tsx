@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { nestParts } from "../exporters";
+import { useMemo, useState } from "react";
+import { planSheets } from "../exporters";
 import { type FrameDesign, type Pt } from "../geometry";
 import { useStudio } from "../store";
 
@@ -17,10 +17,13 @@ const toPath = (pts: Pt[]) => `${pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toF
 export function SheetView({ design }: { design: FrameDesign }) {
   const sheetWidthMm = useStudio((s) => s.sheetWidthMm);
   const labelParts = useStudio((s) => s.labelParts);
-  const nest = useMemo(
-    () => nestParts(design.profiles, { sheetWidthMm, labels: labelParts }),
+  const sheets = useMemo(
+    () => planSheets(design.profiles, { sheetWidthMm, labels: labelParts }),
     [design.profiles, sheetWidthMm, labelParts],
   );
+  const [active, setActive] = useState(0);
+  const sheet = sheets[Math.min(active, sheets.length - 1)];
+  const nest = sheet.nest;
 
   const pad = 12;
   const W = nest.widthMm;
@@ -28,6 +31,22 @@ export function SheetView({ design }: { design: FrameDesign }) {
 
   return (
     <div className="fs-sheet">
+      {sheets.length > 1 && (
+        <div className="fs-sheet-tabs" role="tablist">
+          {sheets.map((s, i) => (
+            <button
+              key={s.thicknessMm}
+              role="tab"
+              aria-selected={i === active}
+              className={i === active ? "is-on" : ""}
+              onClick={() => setActive(i)}
+            >
+              {s.thicknessMm} mm
+              <small>{s.partNames.join(", ")}</small>
+            </button>
+          ))}
+        </div>
+      )}
       <svg
         className="fs-sheet-svg"
         viewBox={`${-pad} ${-pad} ${W + pad * 2} ${H + pad * 2}`}
@@ -60,7 +79,7 @@ export function SheetView({ design }: { design: FrameDesign }) {
           <b>{Math.ceil(W)} × {Math.ceil(H)} mm</b> of {design.material.name.toLowerCase()}
         </span>
         <span>{nest.parts.length} parts · {Math.round(nest.utilisation * 100)}% material used</span>
-        <span>{design.material.method === "cut" ? `${design.spec.fixedDimMm} mm sheet` : "plates and arms, printed separately"}</span>
+        <span>{design.material.method === "cut" ? `${sheet.thicknessMm} mm sheet` : "printed, not cut"}</span>
       </footer>
     </div>
   );

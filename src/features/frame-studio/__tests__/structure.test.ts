@@ -20,6 +20,7 @@ const ref = (over: Partial<SectionInput> = {}): SectionInput => ({
   motorBolt: 3,
   rootBolt: 3,
   fixedDimMm: 4,
+  wallMm: 2.5,
   ...over,
 });
 

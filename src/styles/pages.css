@@ -2558,3 +2558,77 @@ input[type="range"]::-moz-range-thumb {
   .fs-stage { min-height: 420px; }
 }
 .fs-dim-tick { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: none; }
+
+/* ---- Frame Studio: drafting furniture on the plan view ---- */
+/* A drawing sheet's own markings: scale bar, title block and section detail.
+   All are drawn in millimetre space, so the scale bar stays truthful. */
+.fs-scalebar line { stroke: var(--ink-2); stroke-width: 1.2; }
+.fs-scalebar text { fill: var(--ink-2); font-size: 5px; font-family: var(--font-ui); font-weight: 600; }
+
+.fs-titleblock rect { fill: rgba(18, 12, 8, 0.82); stroke: var(--accent-line); stroke-width: 1; }
+.fs-titleblock line { stroke: var(--accent-line); stroke-width: 1; }
+.fs-tb-title { fill: var(--accent); font-size: 4.6px; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.12em; }
+.fs-tb-key { fill: var(--muted); font-size: 4.2px; font-family: var(--font-ui); letter-spacing: 0.06em; }
+.fs-tb-val { fill: var(--ink); font-size: 4.6px; font-family: var(--font-ui); font-weight: 600; }
+
+.fs-section rect { fill: #4a3a28; stroke: var(--accent); stroke-width: 1.2; }
+.fs-section-void { fill: var(--midnight-deep) !important; stroke-dasharray: 2 1.5; }
+.fs-section-title { fill: var(--accent); font-size: 4.6px; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.1em; }
+.fs-section-dim { fill: var(--ink-2); font-size: 4.4px; font-family: var(--font-ui); }
+
+/* ---- Frame Studio: resolved-stock callout ---- */
+.fs-chosen {
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+}
+.fs-chosen header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
+.fs-chosen b { font-size: var(--t-xs); color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-display); }
+.fs-chosen-reset {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  color: var(--muted); font-size: var(--t-xs); text-decoration: underline; text-underline-offset: 3px;
+}
+.fs-chosen-reset:hover { color: var(--ink); }
+.fs-chosen dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin: var(--s3) 0 var(--s2); }
+.fs-chosen dt { font-size: var(--t-xs); color: var(--muted); }
+.fs-chosen dd { font-family: var(--font-display); font-size: var(--t-md); font-weight: 600; color: var(--ink); }
+.fs-chosen p { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.5; }
+
+.fs-flag { font-style: normal; font-size: var(--t-xs); color: var(--warn); }
+
+/* ---- Frame Studio: per-thickness sheets ---- */
+.fs-xsheets { display: grid; gap: 6px; }
+.fs-xsheets li {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 2px var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-ctl);
+  background: var(--midnight-deep);
+  border: 1px solid var(--line-soft);
+  font-size: var(--t-xs);
+}
+.fs-xsheets b { grid-row: 1 / 3; align-self: center; font-family: var(--font-display); font-size: var(--t-md); color: var(--accent); }
+.fs-xsheets span { color: var(--ink); }
+.fs-xsheets i { font-style: normal; color: var(--muted); }
+
+.fs-sheet-tabs { display: flex; gap: var(--s2); padding: var(--s3) var(--s5) 0; }
+.fs-sheet-tabs button {
+  display: grid;
+  gap: 1px;
+  padding: 6px var(--s3);
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--line);
+  background: var(--midnight-deep);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.fs-sheet-tabs button small { font-weight: 400; color: var(--muted); }
+.fs-sheet-tabs button.is-on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+.fs-sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
+.fs-section-wit line { stroke: var(--muted); stroke-width: 1; }
+.fs-section-note { fill: var(--muted); font-size: 4.6px; font-family: var(--font-ui); }

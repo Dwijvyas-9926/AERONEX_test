@@ -17,6 +17,8 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   electronicsMassG: 120,
   materialId: "cf-plate",
   fixedDimMm: 4,
+  plateThicknessMm: null,
+  wallMm: 2.5,
   styleId: "freestyle",
   safetyFactor: 2,
   ...over,
@@ -305,10 +307,24 @@ describe("bill of materials", () => {
 });
 
 describe("making instructions", () => {
-  it("tells a printed build to stand the arms on edge", () => {
+  it("tells a printed build to lay the arms flat along the bed", () => {
+    /*
+      This reverses earlier guidance in this file, deliberately. Bending an arm
+      stresses it along its length; printed flat, that stress is in-plane
+      within each layer, and the layer bonds only see transverse shear (well
+      under 1 MPa here against tens of MPa of capability). Standing the arm on
+      edge would put bending stress across the layer lines instead.
+    */
     const steps = buildRecipe(printDesign());
-    expect(steps[0].title.toLowerCase()).toContain("on edge");
+    expect(steps[0].title.toLowerCase()).toContain("flat");
+    expect(steps[0].title.toLowerCase()).not.toContain("on edge");
     expect(steps.some((s) => /dry/i.test(s.title))).toBe(true);
+    expect(steps.some((s) => /solid/i.test(s.title))).toBe(true);
+  });
+
+  it("tells a cut build that arms and plates are different thicknesses", () => {
+    const steps = buildRecipe(cutDesign());
+    expect(steps[0].title.toLowerCase()).toContain("two thicknesses");
   });
 
   it("tells a cut build not to let the file be scaled", () => {
@@ -321,5 +337,92 @@ describe("making instructions", () => {
     const ply = buildRecipe(designFrame(spec({ materialId: "ply-birch", fixedDimMm: 4 }))).map((s) => s.detail).join(" ");
     expect(carbon).toMatch(/respiratory|dust/i);
     expect(ply).not.toMatch(/conductive/i);
+  });
+});
+
+/**
+ * Signed volume of a binary STL, mm³.
+ *
+ * Summing the signed volume of each triangle's tetrahedron to the origin gives
+ * the enclosed volume of a closed mesh, and gives it correctly for a part with
+ * an inward-facing internal void: the void's triangles carry the opposite sign
+ * and subtract themselves out.
+ */
+function stlVolume(data: ArrayBuffer): number {
+  const view = new DataView(data);
+  const count = view.getUint32(80, true);
+  let v = 0;
+  for (let i = 0; i < count; i++) {
+    const o = 84 + i * 50 + 12; // skip the facet normal
+    const p: number[][] = [];
+    for (let k = 0; k < 3; k++) {
+      p.push([view.getFloat32(o + k * 12, true), view.getFloat32(o + k * 12 + 4, true), view.getFloat32(o + k * 12 + 8, true)]);
+    }
+    const [a, b, c] = p;
+    v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+  }
+  return Math.abs(v);
+}
+
+describe("exported solids match the quoted design", () => {
+  const bigPrint = () =>
+    designFrame(
+      spec({
+        propIn: 10,
+        motorId: "3110",
+        motorThrustG: 2600,
+        materialId: "pa-cf",
+        styleId: "gentle",
+        electronicsMassG: 300,
+        battery: { l: 170, w: 55, h: 50, massG: 900 },
+      }),
+    );
+
+  it("hollows a deep printed arm, and the void is real volume removed", () => {
+    const d = bigPrint();
+    const arm = d.profiles.find((p) => p.id === "arm")!;
+    expect(d.section.hollow, "a 10\" printed arm is deep enough to hollow").toBe(true);
+    expect(arm.cavity).toBeTruthy();
+
+    const armStl = toSTLParts(d.profiles).find((p) => p.name === "Arm")!;
+    const hollowVolume = stlVolume(armStl.data);
+    const solidVolume = arm.areaMm2 * arm.thicknessMm;
+
+    // A box section only pays for its walls, so the real part must come in
+    // well under the solid bar it would otherwise be.
+    expect(hollowVolume).toBeLessThan(solidVolume * 0.9);
+    expect(hollowVolume).toBeGreaterThan(solidVolume * 0.3);
+  });
+
+  it("leaves a shallow section solid rather than pretending to hollow it", () => {
+    /*
+      A 5" printed arm comes out about 6 mm deep. With 2.5 mm walls that
+      leaves a 1 mm slot, which is not worth building and which no slicer
+      would render usefully. The solver must agree with that decision, or it
+      quotes the weight of a hollow part and exports a solid one.
+    */
+    const d = printDesign();
+    const arm = d.profiles.find((p) => p.id === "arm")!;
+    expect(arm.thicknessMm).toBeLessThanOrEqual(2 * 2.5 + 1);
+    expect(d.section.hollow).toBe(false);
+    expect(arm.cavity).toBeUndefined();
+  });
+
+  it("the quoted frame mass matches the volume actually exported", () => {
+    /*
+      The weight shown to the user is computed from the solved cross-section,
+      while the STL is built from the drawn outline. Nothing forces those two
+      to agree, so this checks them against each other — if the mass model and
+      the geometry ever drift apart, the studio starts quoting a weight for a
+      part it does not export.
+    */
+    for (const d of [cutDesign(), printDesign()]) {
+      const exported = toSTLParts(d.profiles).reduce(
+        (sum, p, i) => sum + stlVolume(p.data) * d.profiles[i].qty,
+        0,
+      );
+      const quotedVolume = (d.mass.frameG / d.material.density) * 1000; // g → mm³
+      expect(Math.abs(exported - quotedVolume) / quotedVolume, `${d.material.name}`).toBeLessThan(0.05);
+    }
   });
 });

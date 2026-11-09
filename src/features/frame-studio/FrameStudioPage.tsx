@@ -103,6 +103,7 @@ export function FrameStudioPage() {
 
   const [showProps, setShowProps] = useState(true);
   const [showDims, setShowDims] = useState(true);
+  const [showSection, setShowSection] = useState(true);
   const [focus, setFocus] = useState<string | null>(null);
 
   // One solve per spec change feeds the drawing, the numbers, the review and
@@ -306,13 +307,13 @@ export function FrameStudioPage() {
                   <div className="fs-seg">
                     <button
                       className={isCut ? "is-on" : ""}
-                      onClick={() => patchSpec({ materialId: "cf-plate", fixedDimMm: defaultFixedDim("cf-plate") })}
+                      onClick={() => patchSpec({ materialId: "cf-plate", fixedDimMm: defaultFixedDim(), plateThicknessMm: null })}
                     >
                       Cutting flat sheet
                     </button>
                     <button
                       className={!isCut ? "is-on" : ""}
-                      onClick={() => patchSpec({ materialId: "pa-cf", fixedDimMm: defaultFixedDim("pa-cf") })}
+                      onClick={() => patchSpec({ materialId: "pa-cf", fixedDimMm: defaultFixedDim(), plateThicknessMm: null })}
                     >
                       3D printing
                     </button>
@@ -324,7 +325,7 @@ export function FrameStudioPage() {
                   <select
                     className="select"
                     value={spec.materialId}
-                    onChange={(e) => patchSpec({ materialId: e.target.value, fixedDimMm: defaultFixedDim(e.target.value) })}
+                    onChange={(e) => patchSpec({ materialId: e.target.value, fixedDimMm: defaultFixedDim(), plateThicknessMm: null })}
                   >
                     {MATERIALS.filter((m) => (isCut ? m.method === "cut" : m.method === "print")).map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
@@ -333,27 +334,104 @@ export function FrameStudioPage() {
                   <small>{material.note}</small>
                 </label>
 
+                {/*
+                  Thickness is chosen for the user by default. It is the single
+                  most consequential number in the design — stiffness goes with
+                  its cube — and the published reference for each prop class is
+                  a far better starting point than a guess.
+                */}
+                <div className="fs-chosen">
+                  <header>
+                    <b>Chosen for you</b>
+                    {(spec.fixedDimMm !== null || spec.plateThicknessMm !== null) && (
+                      <button className="fs-chosen-reset" onClick={() => patchSpec({ fixedDimMm: null, plateThicknessMm: null })}>
+                        Reset to recommended
+                      </button>
+                    )}
+                  </header>
+                  <dl>
+                    <div>
+                      <dt>{isCut ? "Arm stock" : "Arm width"}</dt>
+                      <dd>{n1(design.stock.armDimMm)} mm</dd>
+                    </div>
+                    <div>
+                      <dt>Bottom plate</dt>
+                      <dd>{n1(design.stock.bottomPlateMm)} mm</dd>
+                    </div>
+                    <div>
+                      <dt>Top plate</dt>
+                      <dd>{n1(design.stock.topPlateMm)} mm</dd>
+                    </div>
+                  </dl>
+                  <p>
+                    {isCut
+                      ? `Production ${spec.propIn}" frames run arms around ${n1(design.stock.referenceArmMm)} mm against plates of 2–3 mm. The arm is a cantilever and wants thickness; the plates only clamp it.`
+                      : `The arm is a hollow box ${n1(design.section.widthMm)} × ${n1(design.section.heightMm)} mm with ${n1(design.stock.wallMm)} mm walls. Printed plates are thicker than carbon ones because the material is far less stiff.`}
+                  </p>
+                </div>
+
                 {isCut ? (
                   <label className="field">
-                    <span>Sheet thickness</span>
-                    <select className="select" value={spec.fixedDimMm} onChange={(e) => setSpec("fixedDimMm", Number(e.target.value))}>
+                    <span>Arm stock thickness</span>
+                    <select
+                      className="select"
+                      value={spec.fixedDimMm ?? "auto"}
+                      onChange={(e) => setSpec("fixedDimMm", e.target.value === "auto" ? null : Number(e.target.value))}
+                    >
+                      <option value="auto">Recommended — {n1(design.stock.referenceArmMm)} mm</option>
                       {(material.stock ?? [2, 3, 4]).map((t) => (
                         <option key={t} value={t}>{t} mm</option>
                       ))}
                     </select>
                     <small>
-                      Stiffness rises with the cube of thickness, so a thicker sheet buys far narrower arms than you would expect.
+                      Stiffness rises with the cube of thickness, so going one size thicker buys more than making the arm much
+                      wider — and weighs less doing it.
                     </small>
                   </label>
                 ) : (
+                  <label className="field">
+                    <span>Arm width</span>
+                    <input
+                      className="input"
+                      type="number"
+                      value={spec.fixedDimMm ?? ""}
+                      placeholder={`Auto — ${n1(design.stock.referenceArmMm)} mm`}
+                      min={5}
+                      max={60}
+                      onChange={(e) => setSpec("fixedDimMm", e.target.value === "" ? null : Number(e.target.value))}
+                    />
+                    <small>
+                      Leave blank to let the studio choose. Width is the cheap dimension on a printed arm, so widening it is how
+                      the studio keeps the section from growing deep and narrow.
+                    </small>
+                  </label>
+                )}
+
+                {isCut ? (
+                  <label className="field">
+                    <span>Plate stock thickness</span>
+                    <select
+                      className="select"
+                      value={spec.plateThicknessMm ?? "auto"}
+                      onChange={(e) => setSpec("plateThicknessMm", e.target.value === "auto" ? null : Number(e.target.value))}
+                    >
+                      <option value="auto">Recommended — {n1(design.stock.bottomPlateMm)} mm</option>
+                      {(material.stock ?? [2, 3, 4]).map((t) => (
+                        <option key={t} value={t}>{t} mm</option>
+                      ))}
+                    </select>
+                    <small>Cut separately from the arms. Two sheets, two files.</small>
+                  </label>
+                ) : (
                   <Num
-                    label="Arm width"
-                    value={spec.fixedDimMm}
-                    onChange={(v) => setSpec("fixedDimMm", v)}
+                    label="Wall thickness"
+                    value={spec.wallMm}
+                    onChange={(v) => setSpec("wallMm", v)}
                     suffix="mm"
-                    min={5}
-                    max={40}
-                    hint="You choose the width; the studio solves for the depth it needs. A printed arm gets its stiffness from depth, so this stays modest."
+                    min={1.2}
+                    max={6}
+                    step={0.5}
+                    hint="Wall of the hollow arm. 2–3 mm is the usual range — thinner and the walls stop being whole perimeters."
                   />
                 )}
 
@@ -448,6 +526,10 @@ export function FrameStudioPage() {
                     <input type="checkbox" checked={showDims} onChange={(e) => setShowDims(e.target.checked)} />
                     <span>Dimensions</span>
                   </label>
+                  <label className="fs-check">
+                    <input type="checkbox" checked={showSection} onChange={(e) => setShowSection(e.target.checked)} />
+                    <span>Section</span>
+                  </label>
                 </>
               )}
               {view === "solid" && (
@@ -460,7 +542,7 @@ export function FrameStudioPage() {
           </div>
 
           <div className="fs-stage">
-            {view === "plan" && <PlanView design={design} focus={focus} onFocus={setFocus} showProps={showProps} showDims={showDims} />}
+            {view === "plan" && <PlanView design={design} focus={focus} onFocus={setFocus} showProps={showProps} showDims={showDims} showSection={showSection} />}
             {view === "solid" && (
               <Suspense fallback={<div className="fs-loading"><Shapes /> Building the solid model…</div>}>
                 <Frame3D design={design} exploded={exploded} />
@@ -495,11 +577,35 @@ export function FrameStudioPage() {
               <Stat label="Hover throttle" value={String(Math.round(design.hoverThrottle * 100))} unit="%" />
             </div>
 
+            <h5 className="fs-sub">Made from</h5>
+            <dl className="fs-dl">
+              <div>
+                <dt>Arm{isCut ? " stock" : " section"}</dt>
+                <dd>
+                  {isCut ? `${n1(design.stock.armDimMm)} mm` : `${n1(design.section.widthMm)} × ${n1(design.section.heightMm)} mm`}
+                  {design.stock.escalated && <em className="fs-flag"> stepped up</em>}
+                </dd>
+              </div>
+              <div>
+                <dt>Plates</dt>
+                <dd>{n1(design.stock.bottomPlateMm)} / {n1(design.stock.topPlateMm)} mm</dd>
+              </div>
+              {design.section.hollow && (
+                <div>
+                  <dt>Arm walls</dt>
+                  <dd>{n1(design.stock.wallMm)} mm, hollow</dd>
+                </div>
+              )}
+            </dl>
+
             <h5 className="fs-sub">The arm</h5>
             <dl className="fs-dl">
               <div>
                 <dt>Section</dt>
-                <dd>{n1(design.section.widthMm)} × {n1(design.section.heightMm)} mm</dd>
+                <dd>
+                  {n1(design.section.widthMm)} × {n1(design.section.heightMm)} mm
+                  {design.section.hollow ? " box" : ""}
+                </dd>
               </div>
               <div>
                 <dt>Exposed length</dt>

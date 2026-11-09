@@ -53,6 +53,36 @@ export interface Nest {
   thicknessMm: number;
 }
 
+/**
+ * One nest per material thickness.
+ *
+ * Arms and plates are no longer the same thickness — a 10" frame runs 7 mm
+ * arms against 3 mm plates — so they cannot come off one sheet. Each
+ * thickness is a separate sheet and a separate setup at the cutter, and
+ * putting them in one file would describe a part that cannot be made.
+ */
+export interface SheetPlan {
+  thicknessMm: number;
+  nest: Nest;
+  /** Names of the parts on this sheet, for labelling the download. */
+  partNames: string[];
+}
+
+export function planSheets(profiles: Profile[], opts: Partial<NestOptions> = {}): SheetPlan[] {
+  const byThickness = new Map<number, Profile[]>();
+  for (const p of profiles) {
+    const key = Math.round(p.thicknessMm * 100) / 100;
+    byThickness.set(key, [...(byThickness.get(key) ?? []), p]);
+  }
+  return [...byThickness.entries()]
+    .sort((a, b) => b[0] - a[0]) // thickest first: the arms lead
+    .map(([thicknessMm, group]) => ({
+      thicknessMm,
+      nest: nestParts(group, opts),
+      partNames: group.map((p) => (p.qty > 1 ? `${p.name} ×${p.qty}` : p.name)),
+    }));
+}
+
 /* ------------------------------------------------------------------ bounds */
 
 export interface Bounds { minX: number; minY: number; maxX: number; maxY: number }

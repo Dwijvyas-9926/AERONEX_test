@@ -50,7 +50,7 @@ export const MATERIALS: Material[] = [
     strength: 600,
     modulus: 64,
     knockdown: 1,
-    stock: [1.5, 2, 2.5, 3, 4, 5, 6],
+    stock: [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 10],
     structural: true,
     note: "The industry standard for frames — stiffest per gram by a wide margin. Must be cut by a service or a shop with proper extraction: carbon dust is a respiratory hazard and is electrically conductive.",
   },
@@ -62,7 +62,7 @@ export const MATERIALS: Material[] = [
     strength: 400,
     modulus: 20,
     knockdown: 1,
-    stock: [1.5, 2, 2.5, 3, 4, 5],
+    stock: [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8],
     structural: true,
     note: "Tougher and far cheaper than carbon, and safe to cut on a hobby laser or router. Heavier and about a third as stiff, so arms come out wider.",
   },
@@ -74,7 +74,7 @@ export const MATERIALS: Material[] = [
     strength: 276,
     modulus: 69,
     knockdown: 1,
-    stock: [1.5, 2, 2.5, 3, 4, 5, 6],
+    stock: [1.5, 2, 2.5, 3, 4, 5, 6, 8, 10],
     structural: true,
     note: "Stiff and ductile — it bends rather than shatters in a crash. Heavy, and needs a router or waterjet rather than a laser.",
   },
@@ -86,7 +86,7 @@ export const MATERIALS: Material[] = [
     strength: 60,
     modulus: 10,
     knockdown: 1,
-    stock: [2, 3, 4, 5, 6],
+    stock: [2, 3, 4, 5, 6, 8],
     structural: true,
     note: "Light, cheap and laser-friendly — a good choice for a first build or a classroom. Weak and moisture-sensitive, so expect wide arms and treat it as a learning frame.",
   },
@@ -98,7 +98,7 @@ export const MATERIALS: Material[] = [
     strength: 100,
     modulus: 3.2,
     knockdown: 1,
-    stock: [2, 3, 4, 5],
+    stock: [2, 3, 4, 5, 6],
     structural: false,
     note: "Looks superb and lasers cleanly, but it is brittle and shatters on impact. Use it for canopies and decorative plates, never for arms.",
   },
@@ -214,6 +214,95 @@ export const WHEELBASE_REFERENCE: { prop: number; min: number; max: number }[] =
 ];
 
 export const PROP_SIZES = WHEELBASE_REFERENCE.map((w) => w.prop);
+
+/**
+ * Published part thicknesses from production frames, by prop class.
+ *
+ * The single most important thing this table encodes is that **arms and plates
+ * are not the same thickness**. Every commercial frame cuts its arms from thick
+ * stock and its plates from thin stock, because the arm is a cantilever and the
+ * plates are only a clamp and a mounting surface. Treating a frame as one
+ * uniform sheet is what produces either absurdly wide arms or absurdly heavy
+ * plates, depending on which thickness you pick.
+ *
+ * Measured reference points:
+ *   Apex 5"      225 mm   arm 5.5   bottom 2.5   top 2.0   138 g
+ *   Mark4 7"     295 mm   arm 5.0   bottom 2.5   top 2.5   140 g
+ *   Mark4 V2 10" 427 mm   arm 7.5   bottom 3.0   top 2.0
+ *   LiftChuang LX10 V2  405 mm   arm 7.0
+ *
+ * Note how little the plates change across the range (2–3 mm from a 5" to a
+ * 10") while the arms nearly double. Arm thickness is the lever; plate
+ * thickness barely moves.
+ */
+export interface ThicknessReference {
+  prop: number;
+  /** Arm stock thickness, mm. */
+  armMm: number;
+  /** Bottom plate, mm — carries the arms and the battery. */
+  bottomMm: number;
+  /** Top plate, mm — a clamp, so it can be thinner. */
+  topMm: number;
+}
+
+export const THICKNESS_REFERENCE: ThicknessReference[] = [
+  { prop: 2, armMm: 2.5, bottomMm: 1.5, topMm: 1.5 },
+  { prop: 2.5, armMm: 3, bottomMm: 1.5, topMm: 1.5 },
+  { prop: 3, armMm: 3, bottomMm: 2, topMm: 1.5 },
+  { prop: 3.5, armMm: 3, bottomMm: 2, topMm: 1.5 },
+  { prop: 4, armMm: 4, bottomMm: 2, topMm: 2 },
+  { prop: 5, armMm: 5, bottomMm: 2.5, topMm: 2 },
+  { prop: 6, armMm: 5, bottomMm: 2.5, topMm: 2 },
+  { prop: 7, armMm: 5.5, bottomMm: 2.5, topMm: 2 },
+  { prop: 8, armMm: 6, bottomMm: 3, topMm: 2 },
+  { prop: 9, armMm: 7, bottomMm: 3, topMm: 2 },
+  { prop: 10, armMm: 7.5, bottomMm: 3, topMm: 2 },
+];
+
+/** Interpolate the reference table, clamping outside its range. */
+export function thicknessReferenceFor(propIn: number): ThicknessReference {
+  const t = THICKNESS_REFERENCE;
+  if (propIn <= t[0].prop) return t[0];
+  if (propIn >= t[t.length - 1].prop) return t[t.length - 1];
+  for (let i = 1; i < t.length; i++) {
+    if (propIn <= t[i].prop) {
+      const a = t[i - 1];
+      const b = t[i];
+      const f = (propIn - a.prop) / (b.prop - a.prop);
+      const lerp = (x: number, y: number) => x + (y - x) * f;
+      return { prop: propIn, armMm: lerp(a.armMm, b.armMm), bottomMm: lerp(a.bottomMm, b.bottomMm), topMm: lerp(a.topMm, b.topMm) };
+    }
+  }
+  return t[t.length - 1];
+}
+
+/**
+ * Nearest stocked thickness, preferring the thinner one on a tie.
+ *
+ * Rounding up would be the cautious choice, but the reference values sit
+ * deliberately between stock sizes (5.5 mm for a 7", 7.5 mm for a 10") because
+ * real frames are cut from custom stock. Rounding to nearest lands on the
+ * 5 mm and 7 mm that production frames in those classes actually use; rounding
+ * up lands a size heavier on every single frame.
+ */
+export function snapToStock(mm: number, stock: number[] | undefined): number {
+  if (!stock || stock.length === 0) return mm;
+  let best = stock[0];
+  for (const s of stock) {
+    const d = Math.abs(s - mm);
+    const bd = Math.abs(best - mm);
+    if (d < bd - 1e-9 || (Math.abs(d - bd) < 1e-9 && s < best)) best = s;
+  }
+  return best;
+}
+
+/**
+ * Printed arms are hollow box sections; this is the default wall, mm.
+ * Published guidance for printed arms is a 2–3 mm wall with generous internal
+ * fillets, which is also about as thin as a wall can be and still be made of
+ * whole perimeters rather than thin-wall gap fill.
+ */
+export const DEFAULT_WALL_MM = 2.5;
 
 /** How hard the aircraft will be flown — drives the crash/landing load case. */
 export interface FlyingStyle {

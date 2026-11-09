@@ -17,6 +17,7 @@ interface Props {
   onFocus?: (id: string | null) => void;
   showProps: boolean;
   showDims: boolean;
+  showSection: boolean;
 }
 
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
@@ -33,7 +34,7 @@ function placeArm(pts: Pt[], bearing: number, shift: number): Pt[] {
 
 const toPath = (pts: Pt[]) => `${pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join("")}Z`;
 
-export function PlanView({ design: d, focus, onFocus, showProps, showDims }: Props) {
+export function PlanView({ design: d, focus, onFocus, showProps, showDims, showSection }: Props) {
   const [hover, setHover] = useState<string | null>(null);
   const active = focus ?? hover;
 
@@ -59,7 +60,7 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims }: Pro
   // Frame the drawing on its true extent, with room for the dimension lines.
   const reach = Math.max(...d.motors.map((m) => Math.hypot(m[0], m[1]))) + d.section.padWidthMm / 2;
   const span = showProps ? reach + d.propDiaMm / 2 : reach;
-  const pad = Math.max(22, span * 0.13);
+  const pad = Math.max(34, span * 0.2);
   const half = span + pad;
 
   /*
@@ -190,6 +191,126 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims }: Pro
         <path d="M0,-6 L5,4 L0,1.5 L-5,4 Z" />
         <text y={14} textAnchor="middle">FWD</text>
       </g>
+
+      {/*
+        Drawing furniture: a scale bar and a title block, drawn in the same
+        millimetre space as everything else so the scale bar is honest at any
+        zoom. Both sit outside the Y flip so their text reads normally.
+      */}
+      {showDims && <ScaleBar half={half} pad={pad} />}
+      {showDims && <TitleBlock d={d} half={half} pad={pad} />}
+
+      {/* Section detail: what the arm actually looks like cut through. */}
+      {showSection && <SectionDetail d={d} half={half} pad={pad} />}
     </svg>
+  );
+}
+
+/** A bar of a round number of millimetres, so the drawing can be eyeballed. */
+function ScaleBar({ half, pad }: { half: number; pad: number }) {
+  // Pick a round length around a fifth of the drawing width.
+  const target = (half * 2) / 5;
+  const step = [5, 10, 20, 25, 50, 100, 200].reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a), 5);
+  const x = -half + pad * 0.7;
+  const y = half - pad * 0.5;
+  return (
+    <g className="fs-scalebar">
+      <line x1={x} y1={y} x2={x + step} y2={y} />
+      <line x1={x} y1={y - 3} x2={x} y2={y + 3} />
+      <line x1={x + step} y1={y - 3} x2={x + step} y2={y + 3} />
+      <line x1={x + step / 2} y1={y - 2} x2={x + step / 2} y2={y + 2} />
+      <text x={x + step / 2} y={y - 5} textAnchor="middle">{step} mm</text>
+    </g>
+  );
+}
+
+/** Drawing identification, the way a real sheet carries it. */
+function TitleBlock({ d, half, pad }: { d: FrameDesign; half: number; pad: number }) {
+  const rows: [string, string][] = [
+    ["LAYOUT", d.spec.layout.replace("-", " ").toUpperCase()],
+    ["WHEELBASE", `${fmt(d.wheelbaseMm)} mm`],
+    ["ARM", `${fmt(d.section.widthMm)} × ${fmt(d.section.heightMm)} mm${d.section.hollow ? " BOX" : ""}`],
+    ["PLATES", `${fmt(d.stock.bottomPlateMm)} / ${fmt(d.stock.topPlateMm)} mm`],
+    ["MATERIAL", d.material.name.toUpperCase()],
+    ["AUW", `${fmt(d.mass.auwG)} g · T/W ${d.thrustToWeight.toFixed(1)}`],
+  ];
+  const w = Math.max(74, half * 0.46);
+  const rowH = 7.5;
+  const h = rowH * rows.length + 9;
+  const x = half - pad * 0.4 - w;
+  const y = half - pad * 0.4 - h;
+  return (
+    <g className="fs-titleblock" transform={`translate(${x} ${y})`}>
+      <rect width={w} height={h} />
+      <line x1={0} y1={9} x2={w} y2={9} />
+      <text className="fs-tb-title" x={3.5} y={6.4}>AERONEX FRAME STUDIO</text>
+      {rows.map(([k, v], i) => (
+        <g key={k} transform={`translate(0 ${9 + rowH * i})`}>
+          <text className="fs-tb-key" x={3.5} y={5.4}>{k}</text>
+          <text className="fs-tb-val" x={w - 3.5} y={5.4} textAnchor="end">{v}</text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+/**
+ * Cut-through of the arm, drawn to the same scale as the plan.
+ *
+ * This is the one view that shows what the solver actually decided: a printed
+ * arm is a box, and no plan view can show that. Drawing it at true scale beside
+ * the frame also makes the proportion obvious at a glance — an arm that is too
+ * deep for its width looks wrong here long before the numbers say so.
+ */
+function SectionDetail({ d, half, pad }: { d: FrameDesign; half: number; pad: number }) {
+  const s = d.section;
+  /*
+    Detail views are drawn enlarged, and are labelled with the enlargement.
+    A 16 x 7 mm section on a 400 mm frame is four pixels at true scale, which
+    tells the user nothing — so it is blown up to a readable size and the ratio
+    is stated, exactly as it would be on a real sheet.
+  */
+  const target = half * 0.42;
+  const raw = target / Math.max(s.widthMm, 1);
+  const scale = [1, 2, 2.5, 4, 5, 8, 10, 16, 20].reduce((a, b) => (Math.abs(b - raw) < Math.abs(a - raw) ? b : a), 1);
+  const w = s.widthMm * scale;
+  const h = s.heightMm * scale;
+  const wall = s.wallMm * scale;
+  const x = -half + pad * 0.6;
+  const y = -half + pad * 0.6;
+
+  return (
+    <g className="fs-section" transform={`translate(${x} ${y})`}>
+      <text className="fs-section-title" y={-6}>
+        SECTION A–A · ARM ROOT ({scale}:1)
+      </text>
+      <rect width={w} height={h} />
+      {s.hollow && (
+        <rect
+          className="fs-section-void"
+          x={wall}
+          y={wall}
+          width={Math.max(0, w - 2 * wall)}
+          height={Math.max(0, h - 2 * wall)}
+        />
+      )}
+      {/* Width and depth witness lines, so the enlargement is unambiguous. */}
+      <g className="fs-section-wit">
+        <line x1={0} y1={h + 4} x2={w} y2={h + 4} />
+        <line x1={0} y1={h + 2} x2={0} y2={h + 6} />
+        <line x1={w} y1={h + 2} x2={w} y2={h + 6} />
+        <line x1={w + 4} y1={0} x2={w + 4} y2={h} />
+        <line x1={w + 2} y1={0} x2={w + 6} y2={0} />
+        <line x1={w + 2} y1={h} x2={w + 6} y2={h} />
+      </g>
+      <text className="fs-section-dim" x={w / 2} y={h + 13} textAnchor="middle">{fmt(s.widthMm)} mm</text>
+      <text className="fs-section-dim" x={w + 8} y={h / 2 + 2}>{fmt(s.heightMm)} mm</text>
+      <text className="fs-section-note" y={h + 21}>
+        {s.hollow ? `hollow box · ${fmt(s.wallMm)} mm wall` : "solid"}
+      </text>
+      <text className="fs-section-note" y={h + 28}>
+        I = {Math.round(s.inertiaMm4)} mm⁴ · A = {Math.round(s.areaMm2)} mm²
+      </text>
+    </g>
   );
 }

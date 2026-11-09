@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { materialById, motorById } from "./catalog";
+import { DEFAULT_WALL_MM, motorById } from "./catalog";
 import { type FrameSpec, type Layout } from "./geometry";
 
 export type StepId = "aircraft" | "components" | "material" | "review" | "export";
@@ -50,7 +50,10 @@ export const DEFAULT_SPEC: FrameSpec = {
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
   materialId: "cf-plate",
-  fixedDimMm: 4,
+  // null = let the studio pick from the published reference for this prop class
+  fixedDimMm: null,
+  plateThicknessMm: null,
+  wallMm: DEFAULT_WALL_MM,
   styleId: "freestyle",
   safetyFactor: 2,
 };
@@ -96,10 +99,11 @@ export const useStudio = create<StudioState>()(
  * sensible carbon sheet and a uselessly thin printed arm, so reusing the number
  * across the switch produces a design the user never asked for.
  */
-export function defaultFixedDim(materialId: string): number {
-  const m = materialById(materialId);
-  if (m.method === "print") return 12; // arm width for a printed section
-  return m.stock?.includes(4) ? 4 : (m.stock?.[Math.floor((m.stock.length - 1) / 2)] ?? 3);
+export function defaultFixedDim(): number | null {
+  // null means "let the studio choose". Switching material should hand the
+  // decision back to the reference table rather than carrying a number across
+  // that meant something different for the old material.
+  return null;
 }
 
 /** Props a motor is usually flown on, used to keep the two selectors in step. */

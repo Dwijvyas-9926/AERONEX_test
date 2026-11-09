@@ -11,7 +11,7 @@
   motor windings.
 */
 
-import { nestParts } from "./exporters";
+import { planSheets } from "./exporters";
 import { type FrameDesign } from "./geometry";
 import { round } from "./structure";
 
@@ -85,14 +85,20 @@ export function buildBOM(d: FrameDesign): BomLine[] {
   ];
 
   if (d.material.method === "cut") {
-    // Quote the sheet the parts actually nest onto, not a guessed size.
-    const nest = nestParts(d.profiles);
-    lines.unshift({
-      qty: 1,
-      item: `${d.material.name}, ${d.spec.fixedDimMm} mm sheet`,
-      purpose: "All frame parts",
-      note: `Everything nests onto ${Math.ceil(nest.widthMm)} × ${Math.ceil(nest.heightMm)} mm at ${Math.round(nest.utilisation * 100)}% material use. Order at least that, with a margin for the cutter to clamp.`,
-    });
+    /*
+      One line per thickness. Arms and plates are different stock, so quoting
+      them as one sheet would have the student order material they cannot use
+      and leave out material they need.
+    */
+    const sheets = planSheets(d.profiles);
+    for (const sheet of [...sheets].reverse()) {
+      lines.unshift({
+        qty: 1,
+        item: `${d.material.name}, ${sheet.thicknessMm} mm sheet`,
+        purpose: sheet.partNames.join(", "),
+        note: `Nests onto ${Math.ceil(sheet.nest.widthMm)} × ${Math.ceil(sheet.nest.heightMm)} mm at ${Math.round(sheet.nest.utilisation * 100)}% material use. Order a little larger so the cutter has something to clamp.`,
+      });
+    }
   } else {
     const volumeMm3 = d.profiles.reduce((s, p) => s + p.areaMm2 * p.thicknessMm * p.qty, 0);
     const grams = Math.ceil((volumeMm3 / 1000) * d.material.density);
@@ -121,12 +127,20 @@ export function buildRecipe(d: FrameDesign): RecipeStep[] {
   if (d.material.method === "cut") {
     return [
       {
+        title: "Order two thicknesses, not one",
+        detail: `The arms are ${d.stock.armDimMm} mm and the plates are ${d.stock.bottomPlateMm} mm (top plate ${d.stock.topPlateMm} mm). This is how production frames are made and it is not an oversight: the arm is a cantilever and wants thickness, while the plates are only a clamp. Cutting the whole frame from one sheet gives you either floppy arms or a needlessly heavy centre.`,
+      },
+      {
+        title: "If you would rather cut one plate thickness",
+        detail: `The plates differ by ${round(Math.abs(d.stock.bottomPlateMm - d.stock.topPlateMm), 1)} mm, which is worth a few grams and one less setup at the cutter. Cutting both from the thicker ${d.stock.bottomPlateMm} mm stock is a perfectly reasonable simplification — just do not do the same with the arms, which need every bit of their ${d.stock.armDimMm} mm.`,
+      },
+      {
         title: "Send the DXF as it is",
         detail:
           "The file is 1:1 in millimetres on a single CUT layer, with part names on a separate LABEL layer the cutter can ignore. Do not let anyone scale it to fit.",
       },
       {
-        title: `Specify ${d.spec.fixedDimMm} mm ${d.material.name}`,
+        title: `Specify ${d.stock.armDimMm} mm and ${d.stock.bottomPlateMm} mm ${d.material.name}`,
         detail:
           d.material.id === "cf-plate"
             ? "Carbon must be cut by a service or a shop with proper extraction. The dust is a respiratory hazard and is electrically conductive, so it also ruins electronics and tooling."
@@ -151,31 +165,36 @@ export function buildRecipe(d: FrameDesign): RecipeStep[] {
 
   return [
     {
-      title: "Print the arms on edge, not flat",
+      title: "Print the arms flat, length along the bed",
       detail:
-        "This is the one that matters. Lay an arm flat and its layer lines run across the arm, which is the direction it bends in — the weak axis of a printed part. Stand it on edge so the layers run along the arm and the load is carried along the layer lines instead of trying to peel them apart.",
+        "Lay each arm down with its length in the X-Y plane. Bending an arm stretches and compresses material along its length, and in this orientation that stress runs inside each layer, where the part is strongest. The layer bonds are left carrying transverse shear instead, which here is well under 1 MPa against the tens of MPa a printed bond will take. Standing the arm on end would put the bending stress straight across the layer lines.",
     },
     {
       title: "Walls, not infill",
       detail:
-        "Set 5 or more perimeters and 30–40% infill. In a part this slender the perimeters carry nearly all the bending load, so extra walls buy far more strength per gram than extra infill.",
+        "Run 6-8 perimeters and 30-50% gyroid or cubic infill. In a hollow section like this one the perimeters are the structure — they are the box walls the stiffness was calculated from — so extra walls buy far more strength per gram than extra infill ever will.",
+    },
+    {
+      title: "Solid for the first 15 mm at the root",
+      detail:
+        "The root carries the whole bending moment and both clamp bolts. Set a modifier to 100% infill for the first 15 mm out from the inboard tip so the bolts are not pulling against a hollow shell.",
     },
     {
       title: `Dry the ${d.material.name} first`,
       detail:
         d.material.id.startsWith("pa")
-          ? "Nylon absorbs water from the air within hours and prints weak, stringy and visibly bubbled when it is wet. Dry at 70 °C for at least 6 hours and print straight from a dry box."
+          ? "Nylon absorbs water from the air within hours and prints weak, stringy and visibly bubbled when it is wet. Dry at 70 \u00b0C for at least 6 hours and print straight from a dry box."
           : "Even forgiving filaments lose inter-layer strength when damp. A few hours in a dryer is cheap insurance for a structural part.",
     },
     {
       title: "Print hot and slow",
       detail:
-        "Layer adhesion is what fails in a crash, and it improves with nozzle temperature and time. Run near the top of the material's range, 30–40 mm/s on the perimeters, and turn part cooling down to the minimum the geometry allows.",
+        "Layer adhesion is what fails in a crash, and it improves with nozzle temperature and time. Run near the top of the material's range, 30-40 mm/s on the perimeters, and turn part cooling down to the minimum the geometry allows.",
     },
     {
-      title: "Add washers under every bolt head",
+      title: "Fillet the root and cap the bolts with washers",
       detail:
-        "Printed material creeps under a concentrated clamp load, so a bolt tightened directly against plastic works loose within a few flights. Spread the load with a washer and re-check the bolts after your first pack.",
+        "Blend the arm into the motor pad with at least a 5 mm radius — a sharp change of section is where printed arms break. Printed material also creeps under a concentrated clamp load, so put a washer under every bolt head and re-check them after the first pack.",
     },
     {
       title: "Test before you trust it",

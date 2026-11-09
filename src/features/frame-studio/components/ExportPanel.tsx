@@ -2,7 +2,7 @@ import { Box, Download, FileCode2, Hammer, Package, Scissors } from "lucide-reac
 import { useMemo } from "react";
 import { notify } from "../../../state/notifyStore";
 import { buildBOM, buildRecipe } from "../bom";
-import { nestParts, toDXF, toSVG } from "../exporters";
+import { planSheets, toDXF, toSVG } from "../exporters";
 import { type FrameDesign } from "../geometry";
 import { toSTLParts } from "../solid";
 import { useStudio } from "../store";
@@ -38,19 +38,24 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
   const setLabelParts = useStudio((s) => s.setLabelParts);
 
   const isCut = d.material.method === "cut";
-  const nest = useMemo(() => nestParts(d.profiles, { sheetWidthMm, labels: labelParts }), [d.profiles, sheetWidthMm, labelParts]);
+  // One sheet per thickness: arms and plates are not cut from the same stock.
+  const sheets = useMemo(() => planSheets(d.profiles, { sheetWidthMm, labels: labelParts }), [d.profiles, sheetWidthMm, labelParts]);
   const bom = useMemo(() => buildBOM(d), [d]);
   const recipe = useMemo(() => buildRecipe(d), [d]);
 
   const blocked = worstSeverity(findings) === "error";
 
   const saveDxf = () => {
-    download(`${slug(d)}.dxf`, toDXF(nest, { labels: labelParts }), "application/dxf");
-    notify("success", "DXF saved", `${nest.parts.length} parts on a ${Math.ceil(nest.widthMm)} × ${Math.ceil(nest.heightMm)} mm sheet, 1:1 in millimetres.`);
+    for (const s of sheets) download(`${slug(d)}-${s.thicknessMm}mm.dxf`, toDXF(s.nest, { labels: labelParts }), "application/dxf");
+    notify(
+      "success",
+      sheets.length > 1 ? `${sheets.length} DXF files saved` : "DXF saved",
+      `One file per thickness — ${sheets.map((s) => `${s.thicknessMm} mm`).join(" and ")} — each 1:1 in millimetres.`,
+    );
   };
   const saveSvg = () => {
-    download(`${slug(d)}.svg`, toSVG(nest, { labels: labelParts }), "image/svg+xml");
-    notify("success", "SVG saved", "Same drawing as the DXF, for checking in a browser.");
+    for (const s of sheets) download(`${slug(d)}-${s.thicknessMm}mm.svg`, toSVG(s.nest, { labels: labelParts }), "image/svg+xml");
+    notify("success", "SVG saved", "Same drawings as the DXFs, for checking in a browser.");
   };
   const saveStl = () => {
     const parts = toSTLParts(d.profiles);
@@ -84,8 +89,8 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
             <>
               <button className="fs-xcard primary" onClick={saveDxf}>
                 <Scissors />
-                <b>DXF R12</b>
-                <small>Universal CAM format. 1:1 mm, {nest.parts.length} parts.</small>
+                <b>DXF R12 × {sheets.length}</b>
+                <small>Universal CAM format, 1:1 mm. One file per thickness.</small>
                 <Download className="fs-xcard-go" />
               </button>
               <button className="fs-xcard" onClick={saveSvg}>
@@ -127,9 +132,15 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
             <input type="checkbox" checked={labelParts} onChange={(e) => setLabelParts(e.target.checked)} />
             <span>Write part names on a separate layer</span>
           </label>
-          <p className="fs-xnest">
-            Nests onto <b>{Math.ceil(nest.widthMm)} × {Math.ceil(nest.heightMm)} mm</b> · {Math.round(nest.utilisation * 100)}% material used
-          </p>
+          <ul className="fs-xsheets">
+            {sheets.map((s) => (
+              <li key={s.thicknessMm}>
+                <b>{s.thicknessMm} mm</b>
+                <span>{s.partNames.join(", ")}</span>
+                <i>{Math.ceil(s.nest.widthMm)} × {Math.ceil(s.nest.heightMm)} mm · {Math.round(s.nest.utilisation * 100)}%</i>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 

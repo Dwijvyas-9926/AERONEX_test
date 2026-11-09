@@ -10,15 +10,17 @@
 
 import {
   EDGE_DISTANCE_FACTOR,
+  materialById,
+  motorById,
+  snapToStock,
+  styleById,
+  thicknessReferenceFor,
+  WHEELBASE_REFERENCE,
   type FlyingStyle,
   type Material,
-  materialById,
   type MotorSpec,
-  motorById,
-  styleById,
-  WHEELBASE_REFERENCE,
 } from "./catalog";
-import { massOf, PAD_EDGE_FACTOR, round, sizeArm, type SectionResult } from "./structure";
+import { massOf, minRootWidth, motorPadWidth, PAD_EDGE_FACTOR, round, sizeArm, type SectionResult } from "./structure";
 
 export type Layout = "true-x" | "stretched-x" | "h" | "deadcat";
 
@@ -51,6 +53,14 @@ export interface Profile {
   slots: Pt[][];
   /** Material thickness this part is made at, mm. */
   thicknessMm: number;
+  /**
+   * Internal void for a hollow printed section, if any.
+   *
+   * This is NOT a hole: it is enclosed on all six sides, so it never appears
+   * in a cutting file and only exists in the solid model. `outline` is the
+   * cavity in plan, and it spans `wallMm` to `thicknessMm - wallMm` in depth.
+   */
+  cavity?: { outline: Pt[]; wallMm: number };
   /** Planar area of the outline minus holes, mm². */
   areaMm2: number;
 }
@@ -71,8 +81,16 @@ export interface FrameSpec {
   /** FC, ESC, VTX, camera, RX, wiring — everything that isn't frame or battery. */
   electronicsMassG: number;
   materialId: string;
-  /** Sheet thickness (cut) or arm width (printed), mm. */
-  fixedDimMm: number;
+  /**
+   * Cut frames: arm stock thickness, mm. Printed frames: starting outer width
+   * of the arm's box section, mm. `null` lets the studio choose from the
+   * published reference for this prop class.
+   */
+  fixedDimMm: number | null;
+  /** Cut frames: plate stock thickness, mm. `null` = choose from the reference. */
+  plateThicknessMm: number | null;
+  /** Printed frames: wall thickness of the hollow arm, mm. */
+  wallMm: number;
   styleId: string;
   safetyFactor: number;
 }
@@ -104,6 +122,26 @@ export interface FrameDesign {
   rootBoltMm: number;
   section: SectionResult;
   profiles: Profile[];
+  /** What the studio decided each part is made from, and why. */
+  stock: {
+    /** Arm sheet thickness (cut) or arm outer width (printed), mm. */
+    armDimMm: number;
+    bottomPlateMm: number;
+    topPlateMm: number;
+    wallMm: number;
+    /** The published reference value before any escalation. */
+    referenceArmMm: number;
+    /** True when the reference stock was too thin and the studio stepped up. */
+    escalated: boolean;
+    /** True when the studio chose rather than the user. */
+    autoChosen: boolean;
+    /** Thickness the studio would pick on its own, mm. */
+    suggestedArmMm: number;
+    /** Arm width that thickness would produce, mm. */
+    suggestedWidthMm: number;
+    /** Widest the root may be before the arm is really a plate, mm. */
+    widthCapMm: number;
+  };
   mass: {
     frameG: number;
     /** Bolts, nuts and standoffs. */
@@ -249,6 +287,13 @@ export function patternHoles(c: Pt, pattern: number, bolt: number, edgeFactor?: 
   ].map((p) => ({ c: p as Pt, r: bolt / 2, edgeFactor }));
 }
 
+/**
+ * Length of arm kept fully solid at the root, mm.
+ * Published printed-arm guidance is to run the first 15 mm at 100% infill:
+ * it is where the bending moment peaks and where both clamp bolts pull.
+ */
+const SOLID_ROOT_MM = 15;
+
 /** Centre-to-centre spacing of the two root bolts, as a multiple of bolt diameter. */
 const ROOT_BOLT_SPACING_FACTOR = 4;
 
@@ -360,6 +405,8 @@ export function armProfile(opts: {
   motorBolt: number;
   rootBolt: number;
   thicknessMm: number;
+  /** Wall of the hollow box, mm. Omit or zero for a solid cut part. */
+  wallMm?: number;
   id: string;
   name: string;
   qty: number;
@@ -391,7 +438,53 @@ export function armProfile(opts: {
     { c: [b1, 0], r: opts.rootBolt / 2 },
     { c: [b2, 0], r: opts.rootBolt / 2 },
   ];
-  return { id: opts.id, name: opts.name, qty: opts.qty, outline, holes, slots: [], thicknessMm, areaMm2: polygonArea(outline) - holes.reduce((s, h) => s + Math.PI * h.r * h.r, 0) };
+
+  /*
+    Internal void for a printed arm.
+
+    It runs between the solid root and the motor pad only. Both ends stay
+    solid on purpose: the root carries the whole bending moment and both clamp
+    bolts, and the pad carries the motor's. Published guidance is to keep the
+    first 15 mm at the root fully solid, which is what SOLID_ROOT_MM is.
+  */
+  let cavity: { outline: Pt[]; wallMm: number } | undefined;
+  const wall = opts.wallMm ?? 0;
+  if (wall > 0 && thicknessMm > 2 * wall + 1) {
+    const halfWidthAt = (x: number) => {
+      if (x <= taperStart) return wr / 2;
+      if (x >= taperEnd) return padR;
+      return (wr / 2) + ((padR - wr / 2) * (x - taperStart)) / Math.max(1e-6, taperEnd - taperStart);
+    };
+    const xStart = overlapMm + SOLID_ROOT_MM;
+    const xEnd = motorX - padR - wall;
+    if (xEnd - xStart > 8) {
+      const steps = 14;
+      const lower: Pt[] = [];
+      const upper: Pt[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const x = xStart + ((xEnd - xStart) * i) / steps;
+        const hw = Math.max(0, halfWidthAt(x) - wall);
+        lower.push([x, -hw]);
+        upper.push([x, hw]);
+      }
+      if (lower.every((p) => Math.abs(p[1]) > 0.6)) {
+        cavity = { outline: [...lower, ...upper.reverse()], wallMm: wall };
+      }
+    }
+  }
+
+  const holeArea = holes.reduce((s, h) => s + Math.PI * h.r * h.r, 0);
+  return {
+    id: opts.id,
+    name: opts.name,
+    qty: opts.qty,
+    outline,
+    holes,
+    slots: [],
+    thicknessMm,
+    cavity,
+    areaMm2: polygonArea(outline) - holeArea,
+  };
 }
 
 export function polygonArea(pts: Pt[]): number {
@@ -401,6 +494,26 @@ export function polygonArea(pts: Pt[]): number {
 }
 
 /* ------------------------------------------------------------ main design */
+
+/** Reference modulus for plate scaling: carbon plate, GPa. */
+const PLATE_REF_MODULUS = 64;
+/**
+ * Printed arm outer width as a fraction of the motor pad width.
+ * Width is the cheap dimension on a printed arm — it costs plan area, not
+ * height — so starting generous keeps the section from coming out as a deep
+ * narrow fin beside a 3 mm plate.
+ */
+const PRINT_WIDTH_TO_PAD = 0.7;
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** Thickness of each plate, and the wall of a printed arm. */
+export interface PlateStock {
+  bottomMm: number;
+  topMm: number;
+  wallMm: number;
+}
+
 
 export function designFrame(spec: FrameSpec): FrameDesign {
   const material = materialById(spec.materialId);
@@ -442,12 +555,70 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   const motorRadius = Math.min(...motors.map((m) => Math.hypot(m[0], m[1])));
   const armLengthMm = round(Math.max(25, motorRadius - rootRadius));
 
-  // Plate half-dimensions must cover the arm roots, the stack and the battery.
+  /*
+    Plate half-dimensions must cover the arm roots, the stack and the battery,
+    and must also keep some proportion to the aircraft: a 10" frame with a 5"
+    centre plate looks — and handles — like a plank with motors on it.
+  */
   const edgeMargin = EDGE_DISTANCE_FACTOR * ROOT_BOLT + 1;
   const rootHalfW = Math.max(...motors.map((m) => Math.abs(Math.cos(Math.atan2(m[1], m[0]))))) * rootRadius;
   const rootHalfL = Math.max(...motors.map((m) => Math.abs(Math.sin(Math.atan2(m[1], m[0]))))) * rootRadius;
-  const bodyWmm = round(2 * Math.max(rootHalfW + edgeMargin, stackSpan / 2 + 5, spec.battery.w / 2 + 4, 20));
-  const bodyLmm = round(2 * Math.max(rootHalfL + edgeMargin, stackSpan / 2 + 12, spec.battery.l * 0.325, 28));
+  const bodyWmm = round(2 * Math.max(rootHalfW + edgeMargin, stackSpan / 2 + 5, spec.battery.w / 2 + 4, wheelbaseMm * 0.13, 20));
+  const bodyLmm = round(2 * Math.max(rootHalfL + edgeMargin, stackSpan / 2 + 12, spec.battery.l * 0.325, wheelbaseMm * 0.17, 28));
+
+  /*
+    Resolve how thick each part is made.
+
+    Production frames do not cut a whole airframe from one sheet: a 10" frame
+    runs 7.5 mm arms against 2–3 mm plates. Arm thickness is what buys bending
+    stiffness (it enters as t³), so it is the dimension that scales with the
+    aircraft, while plates barely move across the whole size range. Defaults
+    come from the published reference table; the user may override either.
+  */
+  const ref = thicknessReferenceFor(spec.propIn);
+  const stock = material.stock ?? [1.5, 2, 2.5, 3, 4, 5, 6];
+  const padW = motorPadWidth(motor.pattern, motor.bolt);
+  const isCut = material.method === "cut";
+  const wallMm = Math.max(1.2, spec.wallMm);
+
+  const modulusScale = isCut ? 1 : Math.cbrt(PLATE_REF_MODULUS / material.modulus);
+  // Printed thicknesses are rounded to a tenth: nobody slices a 6.6038 mm
+  // plate, and the extra digits only make the file names absurd.
+  const bottomPlateMm = spec.plateThicknessMm
+    ?? (isCut ? snapToStock(ref.bottomMm, stock) : round(clamp(ref.bottomMm * modulusScale, 3, 12), 1));
+  const topPlateMm = spec.plateThicknessMm
+    ?? (isCut ? snapToStock(ref.topMm, stock) : round(clamp(ref.topMm * modulusScale, 2.5, 10), 1));
+
+  /*
+    An arm wider than this stops being an arm and becomes a plate. When the
+    chosen stock cannot meet the stiffness requirement without exceeding it,
+    the studio steps up to the next thickness rather than returning the
+    80 mm-wide paddle the equations would otherwise be happy with.
+  */
+  const widthCap = Math.max(minRootWidth(motor.bolt), minRootWidth(ROOT_BOLT), 0.8 * padW);
+  const autoArm = spec.fixedDimMm === null;
+  const refArmDim = isCut
+    ? snapToStock(ref.armMm, stock)
+    : Math.max(PRINT_WIDTH_TO_PAD * padW, minRootWidth(motor.bolt));
+
+  const solveSection = (auw: number, forceAuto = false) => {
+    const auto = autoArm || forceAuto;
+    const inputAt = (dim: number) => sectionInput(spec, material, motor, armLengthMm, auw, style.loadFactor, ROOT_BOLT, dim, wallMm);
+    if (!isCut) {
+      const dim = auto ? refArmDim : spec.fixedDimMm!;
+      return { section: sizeArm(inputAt(dim)), armDimMm: dim, escalated: false };
+    }
+    const start = auto ? refArmDim : spec.fixedDimMm!;
+    // Step up through stocked thicknesses until the arm stops being a plate.
+    const candidates = auto ? stock.filter((t) => t >= start - 1e-6) : [start];
+    let fallback = { section: sizeArm(inputAt(start)), armDimMm: start, escalated: false };
+    for (const t of candidates) {
+      const section = sizeArm(inputAt(t));
+      fallback = { section, armDimMm: t, escalated: t > start + 1e-6 };
+      if (section.widthMm <= widthCap) return fallback;
+    }
+    return fallback;
+  };
 
   // Arm section and all-up weight are mutually dependent (a heavier aircraft
   // needs stronger arms, which are heavier). Converge in a few passes.
@@ -455,19 +626,28 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   const hardwareG = 25;
   const fixedMass = motor.massG * 4 + spec.battery.massG + spec.electronicsMassG + hardwareG;
   let auwG = fixedMass + 120; // first guess at frame mass
-  let section = sizeArm(sectionInput(spec, material, motor, armLengthMm, auwG, style.loadFactor, ROOT_BOLT));
+  let solved = solveSection(auwG);
+  /*
+    Always work out what the studio *would* have chosen, even when the user has
+    fixed the thickness. That is what lets the review panel say "this would
+    need 7 mm stock" instead of silently drawing an arm as wide as the plate.
+  */
+  let suggested = autoArm ? solved : solveSection(auwG, true);
   const plateGeom: PlateGeom = { motors, rootRadius, armOverlapMm, rootBolt: ROOT_BOLT };
-  let profiles = buildProfiles(spec, motor, section, armLengthMm, bodyWmm, bodyLmm, plateGeom);
-  let frameG = frameMass(profiles, material);
-  for (let i = 0; i < 4; i++) {
+  const plates: PlateStock = { bottomMm: bottomPlateMm, topMm: topPlateMm, wallMm };
+  let profiles = buildProfiles(spec, motor, solved.section, armLengthMm, bodyWmm, bodyLmm, plateGeom, plates);
+  let frameG = frameMass(profiles, material, solved.section, armLengthMm);
+  for (let i = 0; i < 5; i++) {
     auwG = fixedMass + frameG;
-    section = sizeArm(sectionInput(spec, material, motor, armLengthMm, auwG, style.loadFactor, ROOT_BOLT));
-    profiles = buildProfiles(spec, motor, section, armLengthMm, bodyWmm, bodyLmm, plateGeom);
-    const next = frameMass(profiles, material);
+    solved = solveSection(auwG);
+    suggested = autoArm ? solved : solveSection(auwG, true);
+    profiles = buildProfiles(spec, motor, solved.section, armLengthMm, bodyWmm, bodyLmm, plateGeom, plates);
+    const next = frameMass(profiles, material, solved.section, armLengthMm);
     if (Math.abs(next - frameG) < 0.5) { frameG = next; break; }
     frameG = next;
   }
   auwG = fixedMass + frameG;
+  const section = solved.section;
 
   const totalThrustG = spec.motorThrustG * 4;
   const thrustToWeight = auwG > 0 ? totalThrustG / auwG : 0;
@@ -492,6 +672,20 @@ export function designFrame(spec: FrameSpec): FrameDesign {
     rootBoltMm: ROOT_BOLT,
     section,
     profiles,
+    stock: {
+      armDimMm: round(solved.armDimMm, 2),
+      bottomPlateMm: round(bottomPlateMm, 2),
+      topPlateMm: round(topPlateMm, 2),
+      wallMm: round(wallMm, 2),
+      referenceArmMm: round(refArmDim, 2),
+      escalated: solved.escalated,
+      autoChosen: autoArm,
+      /** What the studio would choose on its own, and the arm that would give. */
+      suggestedArmMm: round(suggested.armDimMm, 2),
+      suggestedWidthMm: round(suggested.section.widthMm, 1),
+      /** Widest the arm root may get before it stops being an arm. */
+      widthCapMm: round(widthCap, 1),
+    },
     mass: {
       frameG: round(frameG),
       hardwareG,
@@ -506,7 +700,7 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   };
 }
 
-function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: number, auwG: number, loadFactor: number, rootBolt: number) {
+function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: number, auwG: number, loadFactor: number, rootBolt: number, fixedDimMm: number, wallMm: number) {
   return {
     material,
     safetyFactor: spec.safetyFactor,
@@ -517,7 +711,8 @@ function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: 
     motorPattern: motor.pattern,
     motorBolt: motor.bolt,
     rootBolt,
-    fixedDimMm: spec.fixedDimMm,
+    fixedDimMm,
+    wallMm,
   };
 }
 
@@ -546,23 +741,11 @@ export function armRootHoles(g: PlateGeom): Hole[] {
   return holes;
 }
 
-function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, armLengthMm: number, bodyW: number, bodyL: number, g: PlateGeom): Profile[] {
-  const material = materialById(spec.materialId);
-  const isCut = material.method === "cut";
-  /*
-    Cut frames: every part comes off the one sheet, so the plate is the sheet.
-
-    Printed frames need their plates sized, not guessed. Plate bending stiffness
-    goes with E·t³, so to behave like a reference 2 mm carbon plate a printed
-    plate needs t = 2 · ∛(E_carbon / E_material) — about 4.5 mm in PA-CF and
-    6.5 mm in PETG. A 4 mm PETG plate looks fine on screen and flexes visibly
-    in the hand, which is exactly the mistake this avoids.
-  */
-  const PLATE_REF_T = 2;
-  const PLATE_REF_E = 64; // GPa, carbon plate
-  const plateT = isCut
-    ? spec.fixedDimMm
-    : round(Math.min(10, Math.max(3, PLATE_REF_T * Math.cbrt(PLATE_REF_E / material.modulus))));
+function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, armLengthMm: number, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
+  // Plate thicknesses are resolved by the caller from the published reference
+  // (and scaled for a printed material's much lower modulus), not guessed here.
+  const bottomT = plates.bottomMm;
+  const topT = plates.topMm;
 
   const arm = armProfile({
     cantileverMm: armLengthMm,
@@ -572,7 +755,8 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     motorPattern: motor.pattern,
     motorBolt: motor.bolt,
     rootBolt: g.rootBolt,
-    thicknessMm: isCut ? spec.fixedDimMm : section.heightMm,
+    thicknessMm: section.heightMm,
+    wallMm: section.hollow ? section.wallMm : 0,
     id: "arm",
     name: "Arm",
     qty: 4,
@@ -599,7 +783,7 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     outline: bottomOutline,
     holes: bottomHoles,
     slots,
-    thicknessMm: plateT,
+    thicknessMm: bottomT,
     areaMm2: polygonArea(bottomOutline) - bottomHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0) - slots.reduce((s, p) => s + polygonArea(p), 0),
   };
 
@@ -624,17 +808,35 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     outline: topOutline,
     holes: topHoles,
     slots: [],
-    thicknessMm: Math.max(1.5, plateT * 0.6),
+    thicknessMm: topT,
     areaMm2: polygonArea(topOutline) - topHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0),
   };
 
   return [bottom, top, arm];
 }
 
-function frameMass(profiles: Profile[], material: Material): number {
-  return round(
-    profiles.reduce((sum, p) => sum + massOf(p.areaMm2 * p.thicknessMm, material.density) * p.qty, 0),
-  );
+/**
+ * Frame mass, grams.
+ *
+ * Plates are prismatic, so plan area times thickness is exact. An arm is not:
+ * a printed arm is a hollow box, and multiplying its plan area by its full
+ * depth would charge it for a solid bar it is not made of. Its mass is taken
+ * from the solved cross-section swept along its length instead, with the motor
+ * pad and the clamped root counted as solid because they are.
+ */
+function frameMass(profiles: Profile[], material: Material, section: SectionResult, cantileverMm: number): number {
+  let total = 0;
+  for (const p of profiles) {
+    if (p.id === "arm") {
+      const spanMm = Math.max(0, cantileverMm - section.padWidthMm / 2);
+      const solidEnds = p.areaMm2 - section.widthMm * spanMm;
+      const volume = section.areaMm2 * spanMm + Math.max(0, solidEnds) * p.thicknessMm;
+      total += massOf(volume, material.density) * p.qty;
+      continue;
+    }
+    total += massOf(p.areaMm2 * p.thicknessMm, material.density) * p.qty;
+  }
+  return round(total);
 }
 
 export { TAU };

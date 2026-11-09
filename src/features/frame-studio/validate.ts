@@ -182,13 +182,59 @@ export function validateDesign(d: FrameDesign): Finding[] {
       detail: d.material.note,
     });
   }
-  if (d.material.method === "cut" && d.material.stock && !d.material.stock.includes(d.spec.fixedDimMm)) {
+  if (d.material.method === "cut" && d.material.stock && !d.material.stock.includes(d.stock.armDimMm)) {
     out.push({
       id: "stock-thickness",
       severity: "warn",
       scope: "Material",
       title: "Unusual sheet thickness",
-      detail: `${d.spec.fixedDimMm} mm is not a commonly stocked thickness for ${d.material.name}. Stocked sizes: ${d.material.stock.join(", ")} mm.`,
+      detail: `${d.stock.armDimMm} mm is not a commonly stocked thickness for ${d.material.name}. Stocked sizes: ${d.material.stock.join(", ")} mm.`,
+    });
+  }
+  if (d.stock.escalated) {
+    out.push({
+      id: "stock-escalated",
+      severity: "warn",
+      scope: "Material",
+      title: `Stepped up to ${d.stock.armDimMm} mm arm stock`,
+      detail: `${d.stock.referenceArmMm} mm is what frames this size normally use, but at this arm length and weight it would need an arm ${Math.round(d.section.widthMm)} mm wide to stay stiff enough. Thicker stock is lighter and stronger than a wider arm, because stiffness rises with the cube of thickness.`,
+    });
+  }
+
+  /*
+    The arm-is-really-a-plate check.
+
+    A long arm on thin stock can always be made stiff enough by widening it,
+    and the equations will happily return an 80 mm-wide arm without complaint.
+    It would be strong, and it would also be heavy, draggy and nothing like a
+    frame anyone builds. Because stiffness rises with t³ and mass only with t,
+    going thicker is strictly better than going wider — so when the arm passes
+    this proportion, say so and name the thickness that fixes it.
+  */
+  if (d.material.method === "cut" && d.section.widthMm > d.stock.widthCapMm + 0.5) {
+    const canFix = d.stock.suggestedArmMm > d.stock.armDimMm + 1e-6 && d.stock.suggestedWidthMm <= d.stock.widthCapMm + 0.5;
+    out.push({
+      id: "arm-too-wide",
+      severity: canFix ? "warn" : "error",
+      scope: "Arm",
+      title: "Arm is as wide as a plate",
+      detail: canFix
+        ? `At ${d.stock.armDimMm} mm thick this arm has to be ${Math.round(d.section.widthMm)} mm wide to stay stiff enough, which is wider than the motor pad it feeds. Use ${d.stock.suggestedArmMm} mm stock instead and the arm comes down to about ${Math.round(d.stock.suggestedWidthMm)} mm — stiffer, lighter and far more like a real frame.`
+        : `This arm needs to be ${Math.round(d.section.widthMm)} mm wide to stay stiff enough, which is not a sensible frame. Shorten the arms, use a stiffer material, or accept a more flexible aircraft.`,
+      measured: `${Math.round(d.section.widthMm)} mm wide`,
+      limit: `${Math.round(d.stock.widthCapMm)} mm`,
+    });
+  }
+
+  if (d.material.method === "print" && d.section.heightMm > d.section.widthMm * 0.85) {
+    out.push({
+      id: "arm-too-deep",
+      severity: "warn",
+      scope: "Arm",
+      title: "Arm section is deeper than it is wide",
+      detail:
+        "A tall narrow section resists vertical bending well but twists easily, and it is a tall thin wall to print. Widen the arm and the studio can take depth out of it.",
+      measured: `${d.section.heightMm} × ${d.section.widthMm} mm`,
     });
   }
 
