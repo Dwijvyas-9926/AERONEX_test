@@ -76,18 +76,37 @@ export function geometryFor(profile: Profile): BufferGeometry {
   inner.translate(0, 0, wallMm);
   flipNormals(inner);
 
-  const merged = mergeGeometries([outer.toNonIndexed(), inner.toNonIndexed()], false);
-  outer.dispose();
+  const outerFlat = outer.toNonIndexed();
+  const innerFlat = inner.toNonIndexed();
+  const merged = mergeGeometries([outerFlat, innerFlat], false);
+  innerFlat.dispose();
   inner.dispose();
-  return merged ?? outer;
+  if (!merged) {
+    // Merging failed: keep the solid outer shell rather than returning a
+    // geometry that has already been disposed, which renders as nothing.
+    outerFlat.dispose();
+    return outer;
+  }
+  outerFlat.dispose();
+  outer.dispose();
+  return merged;
 }
 
-/** Reverse winding and normals in place, turning a solid into a void. */
+/**
+ * Reverse the winding, turning a solid into a void.
+ *
+ * Swapping two vertices of every triangle is the whole job: recomputing the
+ * vertex normals afterwards then yields inward-facing normals on its own. An
+ * earlier version also negated the normals explicitly, which put them back
+ * the way they started and left the cavity's 116 triangles disagreeing with
+ * their own winding. It never reached the STL — the exporter recomputes every
+ * facet normal from the vertex order — but anything trusting the normal
+ * attribute, the 3D preview included, saw it.
+ */
 function flipNormals(geo: BufferGeometry): void {
-  const nonIndexed = geo.index ? geo.toNonIndexed() : geo;
-  const pos = nonIndexed.getAttribute("position");
+  const pos = geo.getAttribute("position");
   for (let i = 0; i < pos.count; i += 3) {
-    for (const attr of [nonIndexed.getAttribute("position"), nonIndexed.getAttribute("normal"), nonIndexed.getAttribute("uv")]) {
+    for (const attr of [pos, geo.getAttribute("normal"), geo.getAttribute("uv")]) {
       if (!attr) continue;
       for (let c = 0; c < attr.itemSize; c++) {
         const a = attr.getComponent(i, c);
@@ -97,16 +116,7 @@ function flipNormals(geo: BufferGeometry): void {
       }
     }
   }
-  if (nonIndexed !== geo) {
-    geo.copy(nonIndexed);
-    nonIndexed.dispose();
-  }
   geo.computeVertexNormals();
-  const normal = geo.getAttribute("normal");
-  for (let i = 0; i < normal.count; i++) {
-    normal.setXYZ(i, -normal.getX(i), -normal.getY(i), -normal.getZ(i));
-  }
-  normal.needsUpdate = true;
 }
 
 export interface StlPart {
@@ -133,6 +143,7 @@ export function toSTLParts(profiles: Profile[]): StlPart[] {
     const parsed = exporter.parse(mesh, { binary: true }) as unknown as DataView;
     const data = parsed.buffer.slice(parsed.byteOffset, parsed.byteOffset + parsed.byteLength) as ArrayBuffer;
     mesh.geometry.dispose();
+    (mesh.material as { dispose(): void }).dispose();
     return {
       filename: `${profile.id}-x${profile.qty}-${Math.round(profile.thicknessMm * 10) / 10}mm.stl`,
       name: profile.name,

@@ -178,20 +178,20 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
       {/* Dimensions sit outside the flip — see the note on `dim`. */}
       {showDims && (
         <g>
-          {dim(d.motors[0], d.motors[2], `${fmt(d.wheelbaseMm)} mm wheelbase`, 0.86, 7)}
+          {dim(d.motors[0], d.motors[2], `${fmt(d.wheelbaseMm)} mm wheelbase`, 0.93, pad * 0.3)}
           {(() => {
             // Exposed arm length, measured along one arm's own bearing.
             const m = d.motors[1];
             const a = Math.atan2(m[1], m[0]);
             const root: Pt = [d.rootRadiusMm * Math.cos(a), d.rootRadiusMm * Math.sin(a)];
-            return dim(root, m, `arm ${fmt(d.armLengthMm)} mm`, 0.5, d.section.padWidthMm / 2 + 7);
+            return dim(root, m, `arm ${fmt(d.armLengthMm)} mm`, 0.5, d.section.padWidthMm / 2 + pad * 0.3);
           })()}
           {dim(
-            [-d.bodyWmm / 2, -d.bodyLmm / 2 - 8],
-            [d.bodyWmm / 2, -d.bodyLmm / 2 - 8],
+            [-d.bodyWmm / 2, -d.bodyLmm / 2 - pad * 0.3],
+            [d.bodyWmm / 2, -d.bodyLmm / 2 - pad * 0.3],
             `plate ${fmt(d.bodyWmm)} × ${fmt(d.bodyLmm)} mm`,
             0.5,
-            8,
+            pad * 0.35,
           )}
         </g>
       )}
@@ -241,23 +241,43 @@ function TitleBlock({ d, half, pad }: { d: FrameDesign; half: number; pad: numbe
     ["WHEELBASE", `${fmt(d.wheelbaseMm)} mm`],
     ["ARM", `${fmt(d.section.widthMm)} × ${fmt(d.section.heightMm)} mm${d.section.hollow ? " BOX" : ""}`],
     ["PLATES", `${fmt(d.stock.bottomPlateMm)} / ${fmt(d.stock.topPlateMm)} mm`],
-    ["MATERIAL", d.material.name.toUpperCase()],
+    ["MATERIAL", d.material.name.replace(/\s*\(.*\)$/, "").toUpperCase()],
     ["AUW", `${fmt(d.mass.auwG)} g · T/W ${d.thrustToWeight.toFixed(1)}`],
   ];
-  const w = Math.max(74, half * 0.46);
-  const rowH = 7.5;
-  const h = rowH * rows.length + 9;
+  /*
+    Scale the lettering with the box rather than fixing it in millimetres.
+    A title block is a fixed fraction of the sheet, but the text was a fixed
+    height, so on a small frame a long material name ran straight out of both
+    sides of its own border.
+  */
+  const w = Math.max(84, half * 0.46);
+  const fs = w / 18;
+  const rowH = fs * 1.62;
+  const h = rowH * rows.length + fs * 2.1;
   const x = half - pad * 0.4 - w;
   const y = half - pad * 0.4 - h;
   return (
     <g className="fs-titleblock" transform={`translate(${x} ${y})`}>
       <rect width={w} height={h} />
-      <line x1={0} y1={9} x2={w} y2={9} />
-      <text className="fs-tb-title" x={3.5} y={6.4}>AERONEX FRAME STUDIO</text>
+      <line x1={0} y1={fs * 2.1} x2={w} y2={fs * 2.1} />
+      <text className="fs-tb-title" x={fs * 0.8} y={fs * 1.45} style={{ fontSize: fs }}>
+        AERONEX FRAME STUDIO
+      </text>
       {rows.map(([k, v], i) => (
-        <g key={k} transform={`translate(0 ${9 + rowH * i})`}>
-          <text className="fs-tb-key" x={3.5} y={5.4}>{k}</text>
-          <text className="fs-tb-val" x={w - 3.5} y={5.4} textAnchor="end">{v}</text>
+        <g key={k} transform={`translate(0 ${fs * 2.1 + rowH * i})`}>
+          <text className="fs-tb-key" x={fs * 0.8} y={rowH * 0.72} style={{ fontSize: fs * 0.92 }}>{k}</text>
+          {/* Squeeze rather than overflow: a long material name must stay inside its own border. */}
+          <text
+            className="fs-tb-val"
+            x={w - fs * 0.8}
+            y={rowH * 0.72}
+            textAnchor="end"
+            style={{ fontSize: fs }}
+            textLength={v.length * fs * 0.54 > w * 0.6 ? w * 0.6 : undefined}
+            lengthAdjust="spacingAndGlyphs"
+          >
+            {v}
+          </text>
         </g>
       ))}
     </g>

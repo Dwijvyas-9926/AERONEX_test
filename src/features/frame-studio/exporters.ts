@@ -14,7 +14,9 @@
 
   DXF carries no unit of its own — the numbers *are* the unit — so a file whose
   coordinates were written in centimetres cuts at a tenth size with no warning.
-  Writing mm and declaring $INSUNITS = 4 is what avoids that.
+  R12 has no way to declare units at all; $INSUNITS came later and is written
+  here only because modern readers honour it. The real safeguard is the note to
+  the cutter in the build instructions, not anything in this file.
 */
 
 import { type Hole, type Pt, type Profile } from "./geometry";
@@ -45,6 +47,8 @@ export interface PlacedPart {
 
 export interface Nest {
   parts: PlacedPart[];
+  /** Parts too wide for the chosen sheet. The nest is still drawn, oversized. */
+  oversized: string[];
   /** Overall extent of the laid-out sheet, mm. */
   widthMm: number;
   heightMm: number;
@@ -113,6 +117,7 @@ const translate = (pts: Pt[], dx: number, dy: number): Pt[] => pts.map(([x, y]) 
 export function nestParts(profiles: Profile[], opts: Partial<NestOptions> = {}): Nest {
   const o = { ...DEFAULT_NEST, ...opts };
   const parts: PlacedPart[] = [];
+  const oversized: string[] = [];
   let cursorX = o.gapMm;
   let cursorY = o.gapMm;
   let rowHeight = 0;
@@ -123,6 +128,13 @@ export function nestParts(profiles: Profile[], opts: Partial<NestOptions> = {}):
     const b = boundsOf(profile.outline);
     const w = b.maxX - b.minX;
     const h = b.maxY - b.minY;
+    /*
+      A part wider than the usable sheet cannot be wrapped onto a new row — it
+      does not fit on any row. The old code placed it anyway, so the layout ran
+      straight off the stock while the footer and the bill of materials quoted
+      the sheet width the user had chosen.
+    */
+    if (w > o.sheetWidthMm - 2 * o.gapMm) oversized.push(profile.name);
     for (let copy = 1; copy <= profile.qty; copy++) {
       if (cursorX > o.gapMm && cursorX + w > o.sheetWidthMm - o.gapMm) {
         cursorX = o.gapMm;
@@ -164,6 +176,7 @@ export function nestParts(profiles: Profile[], opts: Partial<NestOptions> = {}):
   const sheetArea = widthMm * heightMm;
   return {
     parts,
+    oversized,
     widthMm,
     heightMm,
     utilisation: sheetArea > 0 ? round(partArea / sheetArea, 3) : 0,
@@ -209,7 +222,8 @@ class DxfWriter {
   }
 
   text(at: Pt, height: number, value: string, layer: string): this {
-    return this.pair(0, "TEXT").pair(8, layer).pair(10, n(at[0])).pair(20, n(at[1])).pair(30, n(0)).pair(40, n(height)).pair(1, value);
+    return this.pair(0, "TEXT").pair(8, layer).pair(10, n(at[0])).pair(20, n(at[1])).pair(30, n(0))
+      .pair(40, n(height)).pair(1, value).pair(7, "STANDARD");
   }
 
   toString(): string {
@@ -234,9 +248,19 @@ export function toDXF(nest: Nest, opts: { labels?: boolean } = {}): string {
   w.pair(0, "TABLE").pair(2, "LTYPE").pair(70, 1);
   w.pair(0, "LTYPE").pair(2, "CONTINUOUS").pair(70, 0).pair(3, "Solid line").pair(72, 65).pair(73, 0).pair(40, n(0));
   w.pair(0, "ENDTAB");
-  w.pair(0, "TABLE").pair(2, "LAYER").pair(70, 2);
+  /*
+    Layer "0" and a text style are mandatory in DXF even when nothing is drawn
+    on them. Lenient readers synthesise both; a strict one rejects the file or
+    silently drops the TEXT entities, which are the part labels.
+  */
+  w.pair(0, "TABLE").pair(2, "LAYER").pair(70, 3);
+  w.pair(0, "LAYER").pair(2, "0").pair(70, 0).pair(62, 7).pair(6, "CONTINUOUS");
   w.pair(0, "LAYER").pair(2, CUT_LAYER).pair(70, 0).pair(62, 7).pair(6, "CONTINUOUS");
   w.pair(0, "LAYER").pair(2, LABEL_LAYER).pair(70, 0).pair(62, 1).pair(6, "CONTINUOUS");
+  w.pair(0, "ENDTAB");
+  w.pair(0, "TABLE").pair(2, "STYLE").pair(70, 1);
+  w.pair(0, "STYLE").pair(2, "STANDARD").pair(70, 0).pair(40, n(0)).pair(41, n(1))
+    .pair(50, n(0)).pair(71, 0).pair(42, n(2.5)).pair(3, "txt").pair(4, "");
   w.pair(0, "ENDTAB");
   w.pair(0, "ENDSEC");
 

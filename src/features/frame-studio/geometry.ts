@@ -29,7 +29,7 @@ export type Construction = "bolted" | "unibody";
 
 export const CONSTRUCTIONS: { id: Construction; name: string; blurb: string }[] = [
   { id: "bolted", name: "Bolted arms", blurb: "Arms clamped between two plates. Stiffer, and a broken arm swaps out on its own." },
-  { id: "unibody", name: "Unibody", blurb: "Arms and bottom plate cut as one piece. Lighter and far simpler to build — but a broken arm is a new plate." },
+  { id: "unibody", name: "Unibody", blurb: "Arms and bottom plate cut as one piece. Far simpler to build, with much less hardware — but the centre is cut at arm thickness, and a broken arm is a new plate." },
 ];
 
 export const LAYOUTS: { id: Layout; name: string; blurb: string }[] = [
@@ -142,6 +142,15 @@ export interface FrameDesign {
   armGroups: ArmGroup[];
   /** Diameter of the arm clamp bolts, mm. */
   rootBoltMm: number;
+  /**
+   * True when the frame had to grow past its propeller-clearance minimum just
+   * to fit the stack and the arm roots.
+   */
+  wheelbaseCrowded: boolean;
+  /** Smallest wheelbase the propellers alone would allow, mm. */
+  propMinWheelbaseMm: number;
+  /** Length of each battery strap slot, mm — the widest strap that fits. */
+  strapSlotMm: number;
   section: SectionResult;
   profiles: Profile[];
   /** What the studio decided each part is made from, and why. */
@@ -153,6 +162,8 @@ export interface FrameDesign {
     wallMm: number;
     /** The published reference value before any escalation. */
     referenceArmMm: number;
+    /** The published reference plate thickness, before any user override. */
+    referenceBottomMm: number;
     /** True when the reference stock was too thin and the studio stepped up. */
     escalated: boolean;
     /** True when the studio chose rather than the user. */
@@ -491,10 +502,21 @@ export function armProfile(opts: {
   let cavity: { outline: Pt[]; wallMm: number } | undefined;
   const wall = opts.wallMm ?? 0;
   if (wall > 0 && thicknessMm > 2 * wall + 1) {
+    /*
+      Inset from the SAME curve the outline uses.
+
+      The outline blends root to pad with a smoothstep; insetting from a
+      straight line instead leaves the wall thinnest where the two diverge —
+      up to 10% of (padR − wr/2), which on a thin-walled arm took a nominal
+      1.2 mm wall down to 0.46 mm. That is under one extrusion width, so the
+      slicer leaves a gap rather than a wall.
+    */
     const halfWidthAt = (x: number) => {
       if (x <= taperStart) return wr / 2;
       if (x >= taperEnd) return padR;
-      return (wr / 2) + ((padR - wr / 2) * (x - taperStart)) / Math.max(1e-6, taperEnd - taperStart);
+      const t = (x - taperStart) / Math.max(1e-6, taperEnd - taperStart);
+      const blend = t * t * (3 - 2 * t);
+      return wr / 2 + (padR - wr / 2) * blend;
     };
     const xStart = overlapMm + SOLID_ROOT_MM;
     const xEnd = motorX - padR - wall;
@@ -536,6 +558,13 @@ export function polygonArea(pts: Pt[]): number {
 }
 
 /* ------------------------------------------------------------ main design */
+
+/**
+ * Shortest exposed arm worth building, mm.
+ * Below this the "arm" is a stub and the motor pad is effectively part of the
+ * plate — and, more practically, there is nowhere to route the motor wires.
+ */
+export const MIN_CANTILEVER_MM = 25;
 
 /** Reference modulus for plate scaling: carbon plate, GPa. */
 const PLATE_REF_MODULUS = 64;
@@ -588,42 +617,75 @@ export interface PlateStock {
 }
 
 
-export function designFrame(spec: FrameSpec): FrameDesign {
-  const material = materialById(spec.materialId);
+export function designFrame(rawSpec: FrameSpec): FrameDesign {
+  const material = materialById(rawSpec.materialId);
+  /*
+    Unibody is a cut-only construction here, and deliberately so.
+
+    The chassis is one extrusion at one thickness, and its thickness is set by
+    the arms. On a cut frame that is exactly right — a unibody IS a single
+    sheet at arm thickness. Printed, the same rule gives a centre plate as
+    thick as a printed arm is deep: a 21 mm solid slab on a 10" frame, four
+    times the weight of the bolted equivalent and nothing anyone would print.
+    Modelling it properly needs a variable-thickness solid, which the
+    extrusion-based pipeline cannot express, so rather than quietly export
+    something unbuildable the studio builds it bolted.
+  */
+  const spec: FrameSpec =
+    material.method === "print" && rawSpec.construction === "unibody"
+      ? { ...rawSpec, construction: "bolted" }
+      : rawSpec;
   const motor = motorById(spec.motorId);
   const style = styleById(spec.styleId);
   const propDiaMm = spec.propIn * IN_TO_MM;
 
-  const minWheelbaseMm = minWheelbaseFor(spec.layout, propDiaMm, spec.clearanceMm);
+  const propMinWheelbaseMm = minWheelbaseFor(spec.layout, propDiaMm, spec.clearanceMm);
   const band = WHEELBASE_REFERENCE.find((w) => Math.abs(w.prop - spec.propIn) < 0.01) ?? null;
+
+  /*
+    Plate sizing works outward from what has to fit on it.
+
+    On a bolted frame the arms are not butted against the plate edge — they
+    reach inboard and are clamped between the two plates, which is how every
+    production frame does it and the only way the root bolts land in material:
+
+      root radius ≥ stack hole outer edge + clearance + arm overlap
+
+    A unibody needs no overlap, because there is nothing to clamp. That is not
+    a detail — the overlap is exactly what makes a bolted 2" or 3" frame
+    geometrically impossible, since the stack and two clamp bolts already
+    reach further out than the motors do.
+  */
+  // Arm bolts match the class of hardware the build already uses: micro frames
+  // run M2 throughout, full-size frames M3. Using M3 on a 3" frame would force
+  // an overlap — and therefore a centre plate — far larger than it needs.
+  const ROOT_BOLT = spec.stackPattern <= 20 || motor.bolt <= 2 ? 2 : 3;
+  const armOverlapMm = spec.construction === "unibody" ? 0 : armOverlap(ROOT_BOLT);
+  const stackSpan = spec.stackPattern + 2 * EDGE_DISTANCE_FACTOR * spec.stackBolt;
+  // Stack holes sit on a square; its corners are the furthest out.
+  const stackHoleEdgeR = spec.stackPattern * Math.SQRT1_2 + spec.stackBolt / 2;
+  const rootRadius = round(stackHoleEdgeR + ROOT_BOLT + 2 + armOverlapMm);
+
+  /*
+    The frame has a geometric minimum as well as a propeller one: the motors
+    cannot sit closer in than the arm roots plus a usable length of arm.
+
+    Getting this wrong was silent and nasty. The cantilever used to be clamped
+    at 25 mm instead, which drew the motor pads further out than the layout
+    said they were — a nominal 2" frame came out with a real 136 mm wheelbase
+    while every readout, the clearance check and the exported drawing's title
+    block all still said 86 mm.
+  */
+  const geometricMinWheelbaseMm = Math.ceil(2 * (rootRadius + MIN_CANTILEVER_MM));
+  const minWheelbaseMm = Math.max(propMinWheelbaseMm, geometricMinWheelbaseMm);
+  const wheelbaseCrowded = geometricMinWheelbaseMm > propMinWheelbaseMm;
+
   // Bare clearance is the hard floor, but production frames in each prop class
   // run a little larger, so default into the published band when one exists.
   const recommendedWheelbaseMm = Math.max(minWheelbaseMm, band?.min ?? 0);
   const wheelbaseMm = Math.max(spec.wheelbaseMm ?? recommendedWheelbaseMm, minWheelbaseMm);
   const motors = motorPositions(spec.layout, wheelbaseMm);
   const minMotorSpacingMm = round(minSpacing(motors));
-
-  /*
-    Plate sizing works outward from what has to fit on it.
-
-    The arms are not butted against the plate edge — they reach inboard and are
-    clamped between the two plates, which is how every production frame does it
-    and the only way the root bolts land in material. So the plate has to be
-    large enough to cover that overlap without its bolts fouling the stack:
-
-      root radius ≥ stack hole outer edge + clearance + arm overlap
-
-    and the plate must then contain the root point along every arm bearing.
-  */
-  // Arm bolts match the class of hardware the build already uses: micro frames
-  // run M2 throughout, full-size frames M3. Using M3 on a 3" frame would force
-  // an overlap — and therefore a centre plate — far larger than it needs.
-  const ROOT_BOLT = spec.stackPattern <= 20 || motor.bolt <= 2 ? 2 : 3;
-  const armOverlapMm = armOverlap(ROOT_BOLT);
-  const stackSpan = spec.stackPattern + 2 * EDGE_DISTANCE_FACTOR * spec.stackBolt;
-  // Stack holes sit on a square; its corners are the furthest out.
-  const stackHoleEdgeR = spec.stackPattern * Math.SQRT1_2 + spec.stackBolt / 2;
-  const rootRadius = round(stackHoleEdgeR + ROOT_BOLT + 2 + armOverlapMm);
 
   /*
     Arms are grouped by how far out their motor sits.
@@ -657,6 +719,14 @@ export function designFrame(spec: FrameSpec): FrameDesign {
     aircraft, while plates barely move across the whole size range. Defaults
     come from the published reference table; the user may override either.
   */
+  /*
+    Clamp the inputs the solver cannot survive.
+    A safety factor of zero divides the allowable stress to Infinity, which
+    then compares false against every check and reports "23.9 of Infinity MPa"
+    rather than failing. The UI limits these too, but the UI is not the only
+    way a spec arrives here — a stale localStorage record is another.
+  */
+  const safetyFactor = clamp(Number.isFinite(spec.safetyFactor) ? spec.safetyFactor : 2, 1, 10);
   const ref = thicknessReferenceFor(spec.propIn);
   const stock = material.stock ?? [1.5, 2, 2.5, 3, 4, 5, 6];
   const padW = motorPadWidth(motor.pattern, motor.bolt);
@@ -685,7 +755,7 @@ export function designFrame(spec: FrameSpec): FrameDesign {
 
   const solveSection = (auw: number, forceAuto = false) => {
     const auto = autoArm || forceAuto;
-    const inputAt = (dim: number) => sectionInput(spec, material, motor, armLengthMm, auw, style.loadFactor, ROOT_BOLT, dim, wallMm, widthCap);
+    const inputAt = (dim: number) => sectionInput(safetyFactor, spec, material, motor, armLengthMm, auw, style.loadFactor, ROOT_BOLT, dim, wallMm, widthCap);
     if (!isCut) {
       const dim = auto ? refArmDim : spec.fixedDimMm!;
       return { section: sizeArm(inputAt(dim)), armDimMm: dim, escalated: false };
@@ -693,11 +763,18 @@ export function designFrame(spec: FrameSpec): FrameDesign {
     const start = auto ? refArmDim : spec.fixedDimMm!;
     // Step up through stocked thicknesses until the arm stops being a plate.
     const candidates = auto ? stock.filter((t) => t >= start - 1e-6) : [start];
+    /*
+      Judge each candidate on what the stiffness calculation DEMANDED, not on
+      the width that was built. sizeArm clamps the built width to the cap so
+      the drawing stays sane, which means testing the built width would pass
+      on the first candidate every time and the step-up would never happen.
+    */
     let fallback = { section: sizeArm(inputAt(start)), armDimMm: start, escalated: false };
     for (const t of candidates) {
       const section = sizeArm(inputAt(t));
       fallback = { section, armDimMm: t, escalated: t > start + 1e-6 };
-      if (section.widthMm <= widthCap) return fallback;
+      const demanded = Math.max(...Object.values(section.required));
+      if (demanded <= widthCap) return fallback;
     }
     return fallback;
   };
@@ -705,7 +782,12 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   // Arm section and all-up weight are mutually dependent (a heavier aircraft
   // needs stronger arms, which are heavier). Converge in a few passes.
   // Fasteners and standoffs: small but not negligible on a light airframe.
-  const hardwareG = 25;
+  /*
+    Fasteners and standoffs. A unibody deletes eight clamp bolts, eight nuts
+    and four standoffs and adds four longer standoffs, so it carries roughly
+    ten grams less ironmongery than the bolted equivalent.
+  */
+  const hardwareG = spec.construction === "unibody" ? 15 : 25;
   const fixedMass = motor.massG * 4 + spec.battery.massG + spec.electronicsMassG + hardwareG;
   let auwG = fixedMass + 120; // first guess at frame mass
   let solved = solveSection(auwG);
@@ -753,14 +835,19 @@ export function designFrame(spec: FrameSpec): FrameDesign {
     armOverlapMm,
     armGroups,
     rootBoltMm: ROOT_BOLT,
+    wheelbaseCrowded,
+    propMinWheelbaseMm,
+    strapSlotMm: round(Math.min(bodyWmm * 0.55, 26)),
     section,
     profiles,
     stock: {
       armDimMm: round(solved.armDimMm, 2),
-      bottomPlateMm: round(bottomPlateMm, 2),
+      // A unibody has no separate bottom plate; the chassis is the arm stock.
+      bottomPlateMm: round(spec.construction === "unibody" ? solved.armDimMm : bottomPlateMm, 2),
       topPlateMm: round(topPlateMm, 2),
       wallMm: round(wallMm, 2),
       referenceArmMm: round(refArmDim, 2),
+      referenceBottomMm: round(isCut ? snapToStock(ref.bottomMm, stock) : clamp(ref.bottomMm * modulusScale, 3, 12), 2),
       escalated: solved.escalated,
       autoChosen: autoArm,
       /** What the studio would choose on its own, and the arm that would give. */
@@ -783,10 +870,10 @@ export function designFrame(spec: FrameSpec): FrameDesign {
   };
 }
 
-function sectionInput(spec: FrameSpec, material: Material, motor: MotorSpec, L: number, auwG: number, loadFactor: number, rootBolt: number, fixedDimMm: number, wallMm: number, maxWidthMm: number) {
+function sectionInput(safetyFactor: number, spec: FrameSpec, material: Material, motor: MotorSpec, L: number, auwG: number, loadFactor: number, rootBolt: number, fixedDimMm: number, wallMm: number, maxWidthMm: number) {
   return {
     material,
-    safetyFactor: spec.safetyFactor,
+    safetyFactor,
     armLengthMm: L,
     motorThrustG: spec.motorThrustG,
     auwG,

@@ -23,6 +23,18 @@ export interface BomLine {
   note?: string;
 }
 
+/**
+ * Standoff height for a unibody, mm.
+ *
+ * Here the standoff's job is to clear the flight-controller stack, which is a
+ * completely different requirement from the bolted case's "match the arm".
+ * A 30.5 mm stack is two or three boards plus soft mounts; 20 mm is the usual
+ * answer and 25-30 mm is common on taller stacks.
+ */
+function stackStandoffMm(d: FrameDesign): number {
+  return d.spec.stackPattern >= 30 ? 30 : d.spec.stackPattern >= 25 ? 25 : 20;
+}
+
 /** Nearest standard metric bolt length at or above `mm`. */
 export function standardBoltLength(mm: number): number {
   const stock = [4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40];
@@ -38,16 +50,25 @@ export function buildBOM(d: FrameDesign): BomLine[] {
   const rootBolt = d.rootBoltMm;
 
   /*
-    The arm sandwich: bottom plate + arm + standoff up to the top plate. The
-    bolt has to clear all three and still take a nut or thread into the
-    standoff, so two diameters of engagement are added.
+    The arm clamp is a sandwich, not a column.
+
+    Bottom plate, arm, top plate — the standoffs sit *beside* the arms, in
+    parallel with them, not stacked in series. Adding the standoff height to
+    the bolt length made every clamp bolt 9-15 mm too long, and the note that
+    went with it contradicted its own arithmetic.
+
+    The standoff has to be exactly as thick as the arm it sits next to. One
+    even a millimetre taller and the top plate rests on the standoffs with the
+    arms swinging loose underneath, which is the failure this list exists to
+    prevent.
   */
-  const standoffMm = Math.max(5, Math.ceil(arm.thicknessMm + 2));
-  // Bolted: top plate + standoff + arm + bottom plate. Unibody: there is no
-  // separate arm in the stack, so the bolt only spans plate + standoff + plate.
+  const standoffMm = unibody
+    ? stackStandoffMm(d)
+    : round(arm.thicknessMm, 1);
   const clampStack = unibody
     ? bottom.thicknessMm + top.thicknessMm + standoffMm
-    : bottom.thicknessMm + arm.thicknessMm + top.thicknessMm + standoffMm;
+    : bottom.thicknessMm + arm.thicknessMm + top.thicknessMm;
+  // Two diameters of thread engagement past the sandwich for the nut.
   const clampBolt = standardBoltLength(clampStack + rootBolt * 2);
 
   // Motor bolts thread into the motor bell and must not reach the windings.
@@ -72,7 +93,7 @@ export function buildBOM(d: FrameDesign): BomLine[] {
             qty: 4,
             item: `M${rootBolt} × ${standoffMm} mm standoff, female both ends`,
             purpose: "Holding the top plate off the chassis",
-            note: `Sits in the gaps between the arms. Spans ${round(standoffMm)} mm.`,
+            note: `Sits in the gaps between the arms. ${standoffMm} mm clears a ${d.spec.stackPattern} mm stack with its soft mounts — measure yours before ordering.`,
           },
         ]
       : [
@@ -80,7 +101,7 @@ export function buildBOM(d: FrameDesign): BomLine[] {
             qty: 8,
             item: `M${rootBolt} × ${clampBolt} mm cap head`,
             purpose: "Arm clamp, two per arm through both plates",
-            note: `Clamps ${round(clampStack)} mm of plate, arm and standoff.`,
+            note: `Clamps ${round(clampStack)} mm of plate and arm.`,
           },
           {
             qty: 8,
@@ -92,7 +113,7 @@ export function buildBOM(d: FrameDesign): BomLine[] {
             qty: 8,
             item: `M${rootBolt} × ${standoffMm} mm standoff`,
             purpose: "Two per arm, holding the top plate off the arms",
-            note: "One on every clamp bolt. The top plate has to sit level, so each bolt that passes through it needs its own spacer.",
+            note: `Exactly as thick as the arm (${round(arm.thicknessMm, 1)} mm). They sit beside the arms and set the top plate's height — a taller standoff leaves the arms loose.`,
           },
         ]),
     {
@@ -103,7 +124,7 @@ export function buildBOM(d: FrameDesign): BomLine[] {
     },
     {
       qty: 2,
-      item: "Battery strap, 20 mm wide",
+      item: `Battery strap, ${d.strapSlotMm >= 20 ? 20 : Math.max(10, Math.floor(d.strapSlotMm / 5) * 5)} mm wide`,
       purpose: "Through the slots in the bottom plate",
     },
   ];
@@ -124,8 +145,13 @@ export function buildBOM(d: FrameDesign): BomLine[] {
       });
     }
   } else {
-    const volumeMm3 = d.profiles.reduce((s, p) => s + p.areaMm2 * p.thicknessMm * p.qty, 0);
-    const grams = Math.ceil((volumeMm3 / 1000) * d.material.density);
+    /*
+      Use the design's own frame mass rather than recomputing it. Charging
+      every part as solid area × thickness over-states a hollow arm, and left
+      the "what to order" tab quoting a different weight from the results
+      panel for the same frame.
+    */
+    const grams = Math.ceil(d.mass.frameG);
     lines.unshift({
       qty: 1,
       item: `${d.material.name} filament`,

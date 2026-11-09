@@ -74,6 +74,17 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
         </div>
       )}
 
+      {sheets.some((s) => s.nest.oversized.length > 0) && (
+        <div className="callout warn">
+          <span>
+            <strong>
+              {sheets.flatMap((s) => s.nest.oversized).join(", ")} will not fit on a {sheetWidthMm} mm sheet.
+            </strong>{" "}
+            The layout is still drawn, but it runs past the stock — pick a wider sheet before ordering.
+          </span>
+        </div>
+      )}
+
       <section className="fs-xsec">
         <header>
           <h4>{isCut ? "Cutting files" : "Print files"}</h4>

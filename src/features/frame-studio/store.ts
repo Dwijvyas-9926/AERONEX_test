@@ -87,10 +87,38 @@ export const useStudio = create<StudioState>()(
         error. Merging over the defaults means a stale save degrades to a
         working design instead of a blank screen.
       */
+      /*
+        A saved spec is merged over the defaults so a record from an older
+        build degrades to a working design rather than a blank screen. Two
+        things that caught this out:
+
+        - `battery` is a nested object, and a one-level spread replaces it
+          wholesale. An older save missing `massG` produced NaN all the way
+          through the solver and threw inside the 3D extrusion.
+        - a persisted `step` that is no longer one of the five ids gave
+          findIndex -1, and STEPS[-1].label threw on render.
+      */
       merge: (persisted, current) => {
-        const p = persisted as Partial<StudioState> | undefined;
-        return { ...current, ...p, spec: { ...DEFAULT_SPEC, ...(p?.spec ?? {}) } };
+        const p = (persisted ?? {}) as Partial<StudioState>;
+        const spec = { ...DEFAULT_SPEC, ...(p.spec ?? {}) };
+        spec.battery = { ...DEFAULT_SPEC.battery, ...(p.spec?.battery ?? {}) };
+        // Any non-finite number from an older or hand-edited record falls
+        // back to the default rather than poisoning the solve.
+        for (const [k, v] of Object.entries(spec) as [keyof FrameSpec, unknown][]) {
+          if (typeof v === "number" && !Number.isFinite(v)) {
+            (spec as Record<string, unknown>)[k] = DEFAULT_SPEC[k];
+          }
+        }
+        const step = STEPS.some((s) => s.id === p.step) ? p.step! : "aircraft";
+        return { ...current, ...p, spec, step };
       },
+      /*
+        Without a migrate, zustand throws a version mismatch away silently and
+        the user is dropped back to defaults with their record overwritten on
+        the next edit. The merge above already tolerates old shapes, so the
+        migration is simply to let it run.
+      */
+      migrate: (persisted) => persisted as StudioState,
     },
   ),
 );

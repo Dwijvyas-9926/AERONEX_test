@@ -71,6 +71,40 @@ function checkPart(part: Profile): Finding[] {
     }
   }
 
+  /*
+    Slots were previously never looked at — not for containment, not for edge
+    distance, not for how close they run to a bolt. A strap slot cut through
+    the plate is as much a stress raiser as a hole is.
+  */
+  for (const [i, slot] of part.slots.entries()) {
+    for (const p of slot) {
+      if (!pointInPolygon(p, part.outline)) {
+        out.push({
+          id: `${part.id}-slot-${i}-outside`,
+          severity: "error",
+          scope: part.name,
+          title: "Slot runs off the part",
+          detail: "A battery strap slot extends past the edge of the plate, so this part cannot be made as drawn.",
+        });
+        break;
+      }
+    }
+    for (const [j, h] of part.holes.entries()) {
+      const gap = Math.min(...slot.map((p) => Math.hypot(p[0] - h.c[0], p[1] - h.c[1]))) - h.r;
+      if (gap < MIN_WALL_BETWEEN_HOLES - 0.05) {
+        out.push({
+          id: `${part.id}-slot-${i}-hole-${j}`,
+          severity: gap <= 0 ? "error" : "warn",
+          scope: part.name,
+          title: gap <= 0 ? "A slot runs into a bolt hole" : "Slot nearly touches a bolt hole",
+          detail: "Material between a strap slot and a bolt is what stops the plate tearing between them.",
+          measured: `${round(gap)} mm`,
+          limit: `${MIN_WALL_BETWEEN_HOLES} mm`,
+        });
+      }
+    }
+  }
+
   // Hole-to-hole walls, within this part only.
   for (let i = 0; i < part.holes.length; i++) {
     for (let j = i + 1; j < part.holes.length; j++) {
@@ -213,7 +247,7 @@ export function validateDesign(d: FrameDesign): Finding[] {
       severity: "warn",
       scope: "Material",
       title: `Stepped up to ${d.stock.armDimMm} mm arm stock`,
-      detail: `${d.stock.referenceArmMm} mm is what frames this size normally use, but at this arm length and weight it would need an arm ${Math.round(d.section.widthMm)} mm wide to stay stiff enough. Thicker stock is lighter and stronger than a wider arm, because stiffness rises with the cube of thickness.`,
+      detail: `${d.stock.referenceArmMm} mm is what frames this size normally use, but at this arm length and weight that would need an arm wider than the motor pad it feeds. At ${d.stock.armDimMm} mm the arm comes out ${Math.round(d.section.widthMm)} mm — thicker stock is lighter and stronger than a wider arm, because stiffness rises with the cube of thickness.`,
     });
   }
 
@@ -226,7 +260,9 @@ export function validateDesign(d: FrameDesign): Finding[] {
     only with t, going thicker is strictly better than going wider, so when
     the demand exceeds the proportion limit the fix is named explicitly.
   */
-  const demanded = d.section.required.stiffness;
+  // Whichever case demanded the most material, not just stiffness — an
+  // impact-governed design was previously left with no guidance at all.
+  const demanded = Math.max(...Object.values(d.section.required));
   if (d.material.method === "cut" && demanded > d.stock.widthCapMm + 0.5) {
     const canFix = d.stock.suggestedArmMm > d.stock.armDimMm + 1e-6 && d.stock.suggestedWidthMm <= d.stock.widthCapMm + 0.5;
     out.push({
@@ -264,7 +300,7 @@ export function validateDesign(d: FrameDesign): Finding[] {
       title: "Not enough thrust to fly",
       detail: "The four motors cannot lift the aircraft with any authority left over for control. Lighter build, bigger motors, or a smaller battery.",
       measured: `${tw}:1`,
-      limit: "2:1 minimum",
+      limit: "1.5:1 to leave the ground",
     });
   } else if (tw < 2) {
     out.push({
@@ -299,17 +335,50 @@ export function validateDesign(d: FrameDesign): Finding[] {
   }
 
   /* --- fit ------------------------------------------------------------ */
-  if (d.spec.battery.w > d.bodyWmm) {
+  /*
+    The plate is always sized at least `battery width + 8`, so the old
+    width check could never fire. What does overhang is the length: the plate
+    is deliberately shorter than the pack, so this measures the real
+    cantilever of battery hanging off each end.
+  */
+  const overhangMm = round((d.spec.battery.l - d.bodyLmm) / 2);
+  if (overhangMm > Math.max(25, d.bodyLmm * 0.45)) {
     out.push({
-      id: "battery-width",
+      id: "battery-overhang",
       severity: "warn",
       scope: "Fit",
-      title: "Battery is wider than the plate",
-      detail: "It will still strap on, but it overhangs the frame and is exposed in a crash.",
-      measured: `${d.spec.battery.w} mm`,
-      limit: `${d.bodyWmm} mm`,
+      title: "Battery overhangs the frame a long way",
+      detail:
+        "A pack hanging well past the plate at both ends is exposed in a crash and adds pitch inertia, which makes the aircraft feel sluggish. Either a shorter pack or a longer plate.",
+      measured: `${overhangMm} mm each end`,
+      limit: `${round(d.bodyLmm * 0.45)} mm`,
     });
   }
+  if (d.strapSlotMm < 18) {
+    out.push({
+      id: "strap-slot",
+      severity: "warn",
+      scope: "Fit",
+      title: "Strap slots are narrow",
+      detail: `This plate only fits a ${Math.floor(d.strapSlotMm)} mm strap. Order one to match — a 20 mm strap will not pass through.`,
+      measured: `${d.strapSlotMm} mm`,
+    });
+  }
+  if (d.wheelbaseCrowded) {
+    out.push({
+      id: "wheelbase-crowded",
+      severity: "warn",
+      scope: "Layout",
+      title: "The frame is bigger than the propellers need",
+      detail:
+        d.spec.construction === "bolted"
+          ? `The propellers would clear at ${d.propMinWheelbaseMm} mm, but the stack and the arm clamp bolts need ${d.minWheelbaseMm} mm of frame to sit in. A smaller flight controller stack, or unibody construction — which has no clamp bolts to make room for — would let this frame shrink to what the propellers actually want.`
+          : `The propellers would clear at ${d.propMinWheelbaseMm} mm, but the stack needs ${d.minWheelbaseMm} mm of frame around it. A smaller flight controller stack would let this frame shrink.`,
+      measured: `${d.minWheelbaseMm} mm`,
+      limit: `${d.propMinWheelbaseMm} mm`,
+    });
+  }
+
   if (d.referenceBand && d.wheelbaseMm > d.referenceBand.max) {
     out.push({
       id: "wheelbase-large",

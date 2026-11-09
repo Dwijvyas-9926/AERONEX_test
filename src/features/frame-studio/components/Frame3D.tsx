@@ -100,24 +100,52 @@ export function Frame3D({ design: d, exploded }: Props) {
   const graphics = useSettings((s) => s.graphics);
   const preset = GRAPHICS[graphics];
 
-  const geos = useMemo(() => {
-    const bottom = d.profiles.find((p) => p.id === "bottom-plate")!;
+  /*
+    Build the scene from whatever parts the design actually has.
+
+    Looking up a part by a hard-coded id was wrong in two ways at once: a
+    unibody has a "chassis" and no separate arms at all, and a dead cat has
+    "arm-long" and "arm-short" rather than "arm". Both cases found undefined
+    and threw. Deriving the scene from the profiles means any future part
+    layout renders without touching this file.
+  */
+  const scene = useMemo(() => {
+    const base = d.profiles.find((p) => p.id === "chassis" || p.id === "bottom-plate")!;
     const top = d.profiles.find((p) => p.id === "top-plate")!;
-    const arm = d.profiles.find((p) => p.id === "arm")!;
+    const armParts = d.profiles.filter((p) => p.cantileverMm !== undefined);
     return {
-      bottom: geometryFor(bottom),
+      base: geometryFor(base),
       top: geometryFor(top),
-      arm: geometryFor(arm),
-      bottomT: bottom.thicknessMm,
+      baseT: base.thicknessMm,
       topT: top.thicknessMm,
-      armT: arm.thicknessMm,
+      armT: armParts[0]?.thicknessMm ?? base.thicknessMm,
+      arms: armParts.map((part) => ({
+        geometry: geometryFor(part),
+        bearings: d.armGroups.find((g) => g.id === part.id)?.bearings ?? [],
+      })),
     };
-  }, [d.profiles]);
+  }, [d.profiles, d.armGroups]);
+
+  /*
+    Extruded geometries hold GPU buffers, and a new set is built on every
+    change to the design — which is every keystroke in the spec panel. Without
+    this the page leaks a few hundred kilobytes per edit until the tab is
+    reloaded.
+  */
+  useEffect(() => {
+    return () => {
+      scene.base.dispose();
+      scene.top.dispose();
+      for (const a of scene.arms) a.geometry.dispose();
+    };
+  }, [scene]);
 
   // Real stack-up: bottom plate, arms resting on it, standoffs, top plate.
-  const gap = exploded ? Math.max(18, geos.armT * 3) : 0;
-  const zArm = geos.bottomT + gap;
-  const zTop = zArm + geos.armT + Math.max(5, geos.armT + 2) + gap;
+  const gap = exploded ? Math.max(18, scene.armT * 3) : 0;
+  const zArm = scene.baseT + gap;
+  const zTop = scene.arms.length > 0
+    ? zArm + scene.armT + Math.max(5, scene.armT + 2) + gap
+    : scene.baseT + Math.max(5, scene.baseT + 2) + gap;
 
   const look = MATERIAL_LOOK[d.material.id] ?? FALLBACK_LOOK;
   const topLook = { ...look, color: lighten(look.color, 0.22) };
@@ -146,18 +174,20 @@ export function Frame3D({ design: d, exploded }: Props) {
       <ContactShadows position={[0, -1, 0]} scale={reach * 3} blur={2.4} opacity={0.5} far={reach} />
 
       <group>
-        <Part geometry={geos.bottom} look={look} z={0} />
-        {d.motors.map((m, i) => (
-          <Part
-            key={i}
-            geometry={geos.arm}
-            look={look}
-            z={zArm}
-            rotation={Math.atan2(m[1], m[0])}
-            shift={shift}
-          />
-        ))}
-        <Part geometry={geos.top} look={topLook} z={zTop} />
+        <Part geometry={scene.base} look={look} z={0} />
+        {scene.arms.map((group, gi) =>
+          group.bearings.map((bearing, bi) => (
+            <Part
+              key={`${gi}-${bi}`}
+              geometry={group.geometry}
+              look={look}
+              z={zArm}
+              rotation={bearing}
+              shift={shift}
+            />
+          )),
+        )}
+        <Part geometry={scene.top} look={topLook} z={zTop} />
       </group>
 
       <OrbitControls

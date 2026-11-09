@@ -34,6 +34,31 @@ function Num({
   step?: number;
   hint?: string;
 }) {
+  /*
+    Keep what the user is typing separate from the committed number.
+
+    A controlled number input driven straight off the store cannot be typed
+    into. A partially entered value — "", "-", "1." — reads back as "" from
+    the DOM, Number("") is 0, and 0 is finite, so the store takes 0 and React
+    re-renders the field as "0". The practical effect is that no field can be
+    cleared and no decimal can be typed at all: from "2", typing "1.5" goes
+    1 → 0 → 5. Holding the draft locally lets the field show exactly what was
+    typed, and only well-formed numbers reach the store.
+  */
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(value);
+
+  const commit = (text: string) => {
+    setDraft(text);
+    if (text.trim() === "") return; // mid-edit, not a value yet
+    const v = Number(text);
+    if (!Number.isFinite(v)) return;
+    // Clamp on the way in: the min/max attributes only bind the steppers.
+    const lo = min ?? Number.NEGATIVE_INFINITY;
+    const hi = max ?? Number.POSITIVE_INFINITY;
+    onChange(Math.min(hi, Math.max(lo, v)));
+  };
+
   return (
     <label className="field fs-num">
       <span>{label}</span>
@@ -41,14 +66,13 @@ function Num({
         <input
           className="input"
           type="number"
-          value={value}
+          inputMode="decimal"
+          value={shown}
           min={min}
           max={max}
           step={step}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            if (Number.isFinite(v)) onChange(v);
-          }}
+          onChange={(e) => commit(e.target.value)}
+          onBlur={() => setDraft(null)}
         />
         {suffix && <i>{suffix}</i>}
       </div>
@@ -327,13 +351,13 @@ export function FrameStudioPage() {
                   <div className="fs-seg">
                     <button
                       className={isCut ? "is-on" : ""}
-                      onClick={() => patchSpec({ materialId: "cf-plate", fixedDimMm: defaultFixedDim(), plateThicknessMm: null })}
+                      onClick={() => { if (!isCut) patchSpec({ materialId: "cf-plate", fixedDimMm: defaultFixedDim(), plateThicknessMm: null }); }}
                     >
                       Cutting flat sheet
                     </button>
                     <button
                       className={!isCut ? "is-on" : ""}
-                      onClick={() => patchSpec({ materialId: "pa-cf", fixedDimMm: defaultFixedDim(), plateThicknessMm: null })}
+                      onClick={() => { if (isCut) patchSpec({ materialId: "pa-cf", fixedDimMm: defaultFixedDim(), plateThicknessMm: null }); }}
                     >
                       3D printing
                     </button>
@@ -372,7 +396,10 @@ export function FrameStudioPage() {
                   <dl>
                     <div>
                       <dt>{isCut ? "Arm stock" : "Arm width"}</dt>
-                      <dd>{n1(design.stock.armDimMm)} mm</dd>
+                      {/* For a printed arm the solver may widen past its
+                          starting width, so show what was built, not what
+                          went in. */}
+                      <dd>{n1(isCut ? design.stock.armDimMm : design.section.widthMm)} mm</dd>
                     </div>
                     <div>
                       <dt>Bottom plate</dt>
@@ -386,7 +413,9 @@ export function FrameStudioPage() {
                   <p>
                     {isCut
                       ? `Production ${spec.propIn}" frames run arms around ${n1(design.stock.referenceArmMm)} mm against plates of 2–3 mm. The arm is a cantilever and wants thickness; the plates only clamp it.`
-                      : `The arm is a hollow box ${n1(design.section.widthMm)} × ${n1(design.section.heightMm)} mm with ${n1(design.stock.wallMm)} mm walls. Printed plates are thicker than carbon ones because the material is far less stiff.`}
+                      : design.section.hollow
+                        ? `The arm is a hollow box ${n1(design.section.widthMm)} × ${n1(design.section.heightMm)} mm with ${n1(design.section.wallMm)} mm walls. Printed plates are thicker than carbon ones because the material is far less stiff.`
+                        : `The arm is solid at ${n1(design.section.widthMm)} × ${n1(design.section.heightMm)} mm — too shallow for a cavity to be worth building. Printed plates are thicker than carbon ones because the material is far less stiff.`}
                   </p>
                 </div>
 
@@ -414,11 +443,19 @@ export function FrameStudioPage() {
                     <input
                       className="input"
                       type="number"
+                      inputMode="decimal"
                       value={spec.fixedDimMm ?? ""}
                       placeholder={`Auto — ${n1(design.stock.referenceArmMm)} mm`}
                       min={5}
                       max={60}
-                      onChange={(e) => setSpec("fixedDimMm", e.target.value === "" ? null : Number(e.target.value))}
+                      onChange={(e) => {
+                        // Empty means "let the studio choose"; anything that is
+                        // not a usable width is ignored rather than stored as 0.
+                        const text = e.target.value.trim();
+                        if (text === "") return setSpec("fixedDimMm", null);
+                        const v = Number(text);
+                        if (Number.isFinite(v) && v > 0) setSpec("fixedDimMm", Math.min(60, Math.max(5, v)));
+                      }}
                     />
                     <small>
                       Leave blank to let the studio choose. Width is the cheap dimension on a printed arm, so widening it is how
@@ -435,7 +472,7 @@ export function FrameStudioPage() {
                       value={spec.plateThicknessMm ?? "auto"}
                       onChange={(e) => setSpec("plateThicknessMm", e.target.value === "auto" ? null : Number(e.target.value))}
                     >
-                      <option value="auto">Recommended — {n1(design.stock.bottomPlateMm)} mm</option>
+                      <option value="auto">Recommended — {n1(design.stock.referenceBottomMm)} mm</option>
                       {(material.stock ?? [2, 3, 4]).map((t) => (
                         <option key={t} value={t}>{t} mm</option>
                       ))}
