@@ -1,0 +1,115 @@
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { materialById, motorById } from "./catalog";
+import { type FrameSpec, type Layout } from "./geometry";
+
+export type StepId = "aircraft" | "components" | "material" | "review" | "export";
+
+export const STEPS: { id: StepId; label: string; blurb: string }[] = [
+  { id: "aircraft", label: "Aircraft", blurb: "Prop size, layout and how you fly." },
+  { id: "components", label: "Components", blurb: "The motors, stack and battery you already have." },
+  { id: "material", label: "Material", blurb: "What you will cut or print it from." },
+  { id: "review", label: "Review", blurb: "What the studio worked out, and what it is unhappy about." },
+  { id: "export", label: "Make it", blurb: "Files, hardware list and build instructions." },
+];
+
+export type ViewMode = "plan" | "solid" | "sheet";
+
+interface StudioState {
+  spec: FrameSpec;
+  step: StepId;
+  view: ViewMode;
+  /** Explode the 3D view to show how the parts stack up. */
+  exploded: boolean;
+  sheetWidthMm: number;
+  labelParts: boolean;
+  setSpec: <K extends keyof FrameSpec>(k: K, v: FrameSpec[K]) => void;
+  patchSpec: (p: Partial<FrameSpec>) => void;
+  setStep: (s: StepId) => void;
+  setView: (v: ViewMode) => void;
+  setExploded: (v: boolean) => void;
+  setSheetWidth: (v: number) => void;
+  setLabelParts: (v: boolean) => void;
+  reset: () => void;
+}
+
+/*
+  A 5" freestyle quad on 2207 motors: the most common build in the world, and
+  the one a student is most likely to be copying. Starting anywhere else means
+  the first thing they see is a design they have to fix.
+*/
+export const DEFAULT_SPEC: FrameSpec = {
+  layout: "true-x",
+  propIn: 5,
+  clearanceMm: 10,
+  wheelbaseMm: null,
+  motorId: "2207",
+  motorThrustG: 1350,
+  stackPattern: 30.5,
+  stackBolt: 3,
+  battery: { l: 105, w: 35, h: 30, massG: 180 },
+  electronicsMassG: 120,
+  materialId: "cf-plate",
+  fixedDimMm: 4,
+  styleId: "freestyle",
+  safetyFactor: 2,
+};
+
+export const useStudio = create<StudioState>()(
+  persist(
+    (set) => ({
+      spec: DEFAULT_SPEC,
+      step: "aircraft",
+      view: "plan",
+      exploded: false,
+      sheetWidthMm: 300,
+      labelParts: true,
+      setSpec: (k, v) => set((s) => ({ spec: { ...s.spec, [k]: v } })),
+      patchSpec: (p) => set((s) => ({ spec: { ...s.spec, ...p } })),
+      setStep: (step) => set({ step }),
+      setView: (view) => set({ view }),
+      setExploded: (exploded) => set({ exploded }),
+      setSheetWidth: (sheetWidthMm) => set({ sheetWidthMm }),
+      setLabelParts: (labelParts) => set({ labelParts }),
+      reset: () => set({ spec: DEFAULT_SPEC, step: "aircraft" }),
+    }),
+    {
+      name: "avion.frame-studio.v1",
+      storage: createJSONStorage(() => localStorage),
+      version: 1,
+      /*
+        A spec saved by an older build can be missing fields the solver now
+        needs, and a half-filled spec produces NaN geometry rather than an
+        error. Merging over the defaults means a stale save degrades to a
+        working design instead of a blank screen.
+      */
+      merge: (persisted, current) => {
+        const p = persisted as Partial<StudioState> | undefined;
+        return { ...current, ...p, spec: { ...DEFAULT_SPEC, ...(p?.spec ?? {}) } };
+      },
+    },
+  ),
+);
+
+/**
+ * Switching the make method has to carry the thickness field with it: 4 is a
+ * sensible carbon sheet and a uselessly thin printed arm, so reusing the number
+ * across the switch produces a design the user never asked for.
+ */
+export function defaultFixedDim(materialId: string): number {
+  const m = materialById(materialId);
+  if (m.method === "print") return 12; // arm width for a printed section
+  return m.stock?.includes(4) ? 4 : (m.stock?.[Math.floor((m.stock.length - 1) / 2)] ?? 3);
+}
+
+/** Props a motor is usually flown on, used to keep the two selectors in step. */
+export function propsForMotor(motorId: string): number[] {
+  return motorById(motorId).props;
+}
+
+export const LAYOUT_HINT: Record<Layout, string> = {
+  "true-x": "Equal arms, neutral handling. The default for a reason.",
+  "stretched-x": "Longer than it is wide. Settles faster in forward flight.",
+  h: "Wide battery bay between the arms. Easy to build and to service.",
+  deadcat: "Front arms swept out of a camera's view. For anything you film with.",
+};

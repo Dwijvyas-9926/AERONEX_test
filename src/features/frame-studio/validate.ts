@@ -1,0 +1,275 @@
+/*
+  Frame Studio — design validation.
+
+  A design studio that only draws shapes is a liability: it will happily hand a
+  student a frame whose bolts miss the plate, whose props overlap, or that
+  cannot lift itself. Every check here is one a person would otherwise have to
+  know to make, expressed in the same units as the rest of the studio.
+
+  Checks are geometric and physical facts about the design, not opinions. Each
+  returns the measured number alongside the limit, so the user can see how much
+  margin they have rather than just being told "ok".
+*/
+
+import {
+  distanceToBoundary,
+  pointInPolygon,
+  requiredEdgeClearance,
+  type FrameDesign,
+  type Hole,
+  type Pt,
+  type Profile,
+} from "./geometry";
+import { round } from "./structure";
+
+export type Severity = "error" | "warn" | "ok";
+
+export interface Finding {
+  id: string;
+  severity: Severity;
+  /** Which part or aspect this concerns, for grouping in the UI. */
+  scope: string;
+  title: string;
+  detail: string;
+  /** Measured value and the limit it was compared against, where meaningful. */
+  measured?: string;
+  limit?: string;
+}
+
+/** Minimum wall of material left between two holes, mm. */
+const MIN_WALL_BETWEEN_HOLES = 1.5;
+
+/* ------------------------------------------------------------ part checks */
+
+function checkPart(part: Profile): Finding[] {
+  const out: Finding[] = [];
+
+  for (const [i, h] of part.holes.entries()) {
+    if (!pointInPolygon(h.c, part.outline)) {
+      out.push({
+        id: `${part.id}-hole-${i}-outside`,
+        severity: "error",
+        scope: part.name,
+        title: "Hole falls outside the part",
+        detail: `A ${round(h.r * 2)} mm hole sits off the edge of the ${part.name.toLowerCase()}, so this part cannot be made as drawn.`,
+      });
+      continue;
+    }
+    const required = requiredEdgeClearance(h);
+    const clear = distanceToBoundary(h.c, part.outline) - h.r;
+    if (clear < required - 0.05) {
+      out.push({
+        id: `${part.id}-hole-${i}-edge`,
+        severity: clear < h.r ? "error" : "warn",
+        scope: part.name,
+        title: "Bolt too close to the edge",
+        detail: `A bolt needs about ${round(required)} mm of material between its hole and the part edge, or the edge tears out under load.`,
+        measured: `${round(clear)} mm`,
+        limit: `${round(required)} mm`,
+      });
+    }
+  }
+
+  // Hole-to-hole walls, within this part only.
+  for (let i = 0; i < part.holes.length; i++) {
+    for (let j = i + 1; j < part.holes.length; j++) {
+      const a = part.holes[i];
+      const b = part.holes[j];
+      const gap = Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) - a.r - b.r;
+      if (gap < MIN_WALL_BETWEEN_HOLES - 0.05) {
+        out.push({
+          id: `${part.id}-holes-${i}-${j}`,
+          severity: gap <= 0 ? "error" : "warn",
+          scope: part.name,
+          title: gap <= 0 ? "Two holes overlap" : "Holes nearly touch",
+          detail:
+            gap <= 0
+              ? `Two holes on the ${part.name.toLowerCase()} run into each other. Move the stack or change its mounting pattern.`
+              : `Only a sliver of material is left between two holes on the ${part.name.toLowerCase()}.`,
+          measured: `${round(gap)} mm`,
+          limit: `${MIN_WALL_BETWEEN_HOLES} mm`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/* ----------------------------------------------------------- whole design */
+
+export function validateDesign(d: FrameDesign): Finding[] {
+  const out: Finding[] = [];
+  for (const p of d.profiles) out.push(...checkPart(p));
+
+  /* --- propeller clearance ------------------------------------------- */
+  const needed = d.propDiaMm + d.spec.clearanceMm;
+  if (d.minMotorSpacingMm < d.propDiaMm) {
+    out.push({
+      id: "prop-overlap",
+      severity: "error",
+      scope: "Layout",
+      title: "Propellers overlap",
+      detail: "Adjacent propeller discs intersect. The frame cannot be flown at this wheelbase.",
+      measured: `${d.minMotorSpacingMm} mm apart`,
+      limit: `${round(d.propDiaMm)} mm minimum`,
+    });
+  } else if (d.minMotorSpacingMm < needed - 0.5) {
+    out.push({
+      id: "prop-clearance",
+      severity: "warn",
+      scope: "Layout",
+      title: "Tight propeller clearance",
+      detail: "The discs clear each other but by less than the gap you asked for, which leaves little room for flex or a bent prop.",
+      measured: `${round(d.minMotorSpacingMm - d.propDiaMm)} mm gap`,
+      limit: `${d.spec.clearanceMm} mm`,
+    });
+  }
+
+  /* --- arm roots must be clamped by both plates ---------------------- */
+  const arm = d.profiles.find((p) => p.id === "arm");
+  const bottom = d.profiles.find((p) => p.id === "bottom-plate");
+  const top = d.profiles.find((p) => p.id === "top-plate");
+  if (arm && bottom && top) {
+    // Root bolt positions in global coordinates, derived from the design.
+    const rootBolts = bottom.holes.filter((h) => {
+      const r = Math.hypot(h.c[0], h.c[1]);
+      return r > d.rootRadiusMm - d.armOverlapMm - 0.5 && r < d.rootRadiusMm + 0.5;
+    });
+    const uncovered = rootBolts.filter((h) => !holeFullyInside(h, top.outline));
+    if (uncovered.length > 0) {
+      out.push({
+        id: "root-clamp",
+        severity: "error",
+        scope: "Top plate",
+        title: "Top plate does not reach every arm bolt",
+        detail: "The arms are clamped between the plates, so the top plate has to cover all of their bolts. As drawn it misses some, and those arms would be held by one plate only.",
+        measured: `${uncovered.length} of ${rootBolts.length} bolts uncovered`,
+      });
+    }
+  }
+
+  /* --- structure ----------------------------------------------------- */
+  const s = d.section;
+  if (s.stressMPa > s.allowableMPa) {
+    out.push({
+      id: "arm-stress",
+      severity: "error",
+      scope: "Arm",
+      title: "Arm overstressed",
+      detail: `Peak bending stress at the arm root exceeds the allowable for ${d.material.name} with a safety factor of ${d.spec.safetyFactor}. Use a thicker section, a shorter arm, or a stronger material.`,
+      measured: `${s.stressMPa} MPa`,
+      limit: `${s.allowableMPa} MPa`,
+    });
+  }
+  const deflLimit = Math.max(0.5, d.armLengthMm / 150);
+  if (s.deflectionMm > deflLimit * 1.05) {
+    out.push({
+      id: "arm-deflection",
+      severity: "warn",
+      scope: "Arm",
+      title: "Arm flexes more than is comfortable",
+      detail: "A floppy arm lowers the frame's natural frequency, which the flight controller sees as vibration and which makes tuning harder.",
+      measured: `${s.deflectionMm} mm at full thrust`,
+      limit: `${round(deflLimit)} mm`,
+    });
+  }
+  if (!d.material.structural) {
+    out.push({
+      id: "material-structural",
+      severity: "warn",
+      scope: "Material",
+      title: `${d.material.name} is not suited to arms`,
+      detail: d.material.note,
+    });
+  }
+  if (d.material.method === "cut" && d.material.stock && !d.material.stock.includes(d.spec.fixedDimMm)) {
+    out.push({
+      id: "stock-thickness",
+      severity: "warn",
+      scope: "Material",
+      title: "Unusual sheet thickness",
+      detail: `${d.spec.fixedDimMm} mm is not a commonly stocked thickness for ${d.material.name}. Stocked sizes: ${d.material.stock.join(", ")} mm.`,
+    });
+  }
+
+  /* --- flight performance -------------------------------------------- */
+  const tw = d.thrustToWeight;
+  if (tw < 1.5) {
+    out.push({
+      id: "tw-cannot-hover",
+      severity: "error",
+      scope: "Performance",
+      title: "Not enough thrust to fly",
+      detail: "The four motors cannot lift the aircraft with any authority left over for control. Lighter build, bigger motors, or a smaller battery.",
+      measured: `${tw}:1`,
+      limit: "2:1 minimum",
+    });
+  } else if (tw < 2) {
+    out.push({
+      id: "tw-marginal",
+      severity: "warn",
+      scope: "Performance",
+      title: "Marginal thrust-to-weight",
+      detail: "Below about 2:1 the aircraft struggles to arrest a descent and has little margin for a recovery. Fine for a tethered bench test, not for free flight.",
+      measured: `${tw}:1`,
+      limit: "2:1",
+    });
+  } else if (tw > 14) {
+    out.push({
+      id: "tw-very-high",
+      severity: "warn",
+      scope: "Performance",
+      title: "Very high thrust-to-weight",
+      detail: "Plenty of power, but hover sits very low on the stick and the aircraft will feel twitchy to a new pilot. Consider a smaller prop or a heavier payload.",
+      measured: `${tw}:1`,
+    });
+  }
+  if (d.hoverThrottle > 0.6) {
+    out.push({
+      id: "hover-high",
+      severity: "warn",
+      scope: "Performance",
+      title: "Hovers high on the throttle",
+      detail: "Holding altitude needs most of the available thrust, which leaves little authority for manoeuvring and runs the motors hot.",
+      measured: `${Math.round(d.hoverThrottle * 100)}%`,
+      limit: "60%",
+    });
+  }
+
+  /* --- fit ------------------------------------------------------------ */
+  if (d.spec.battery.w > d.bodyWmm) {
+    out.push({
+      id: "battery-width",
+      severity: "warn",
+      scope: "Fit",
+      title: "Battery is wider than the plate",
+      detail: "It will still strap on, but it overhangs the frame and is exposed in a crash.",
+      measured: `${d.spec.battery.w} mm`,
+      limit: `${d.bodyWmm} mm`,
+    });
+  }
+  if (d.referenceBand && d.wheelbaseMm > d.referenceBand.max) {
+    out.push({
+      id: "wheelbase-large",
+      severity: "warn",
+      scope: "Layout",
+      title: "Larger than typical for this prop",
+      detail: `Frames for ${d.spec.propIn}" props usually run ${d.referenceBand.min}–${d.referenceBand.max} mm. A longer arm is heavier and more flexible for no extra lift.`,
+      measured: `${d.wheelbaseMm} mm`,
+      limit: `${d.referenceBand.max} mm`,
+    });
+  }
+
+  return out;
+}
+
+function holeFullyInside(h: Hole, poly: Pt[]): boolean {
+  return pointInPolygon(h.c, poly) && distanceToBoundary(h.c, poly) >= h.r;
+}
+
+/** Worst severity present, for a single status line in the UI. */
+export function worstSeverity(findings: Finding[]): Severity {
+  if (findings.some((f) => f.severity === "error")) return "error";
+  if (findings.some((f) => f.severity === "warn")) return "warn";
+  return "ok";
+}

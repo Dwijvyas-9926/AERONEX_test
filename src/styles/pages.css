@@ -2135,3 +2135,426 @@ input[type="range"]::-moz-range-thumb {
 @media (max-width: 900px) {
   .hero-hud-tel, .hero-hud-ruler { display: none; }
 }
+
+/* ============================================================ Frame Studio */
+/*
+  Three columns: what you choose, what it looks like, what it works out to.
+  The preview column is the widest because it is the thing being judged, and
+  it sticks while the inputs scroll so the drawing never leaves the screen.
+*/
+.fs-page { max-width: 1680px; }
+
+.fs-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--s2);
+  margin-bottom: var(--s5);
+}
+
+.fs-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  text-align: left;
+  border-radius: var(--r-panel);
+  border: 1px solid var(--line-soft);
+  background: var(--graphite);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
+}
+.fs-step:hover { background: var(--slate); }
+.fs-step i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--midnight-deep);
+  font-family: var(--font-display);
+  font-size: var(--t-xs);
+  font-style: normal;
+  font-weight: 700;
+  color: var(--muted);
+}
+.fs-step span { display: grid; gap: 2px; min-width: 0; }
+.fs-step b { font-size: var(--t-sm); color: var(--ink); }
+.fs-step small { font-size: var(--t-xs); color: var(--muted); line-height: 1.35; }
+.fs-step.is-done i { background: var(--ok-soft); border-color: rgba(156, 178, 87, 0.4); color: var(--ok); }
+.fs-step.is-current {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.fs-step.is-current i { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.fs-step.is-current b { color: var(--accent); }
+
+.fs-layout {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr) 320px;
+  gap: var(--s5);
+  align-items: start;
+}
+
+/* The drawing is what should stay in view while the inputs scroll — the
+   export step in particular is far taller than the viewport, and pinning
+   that column instead would strand its lower half. */
+.fs-preview { position: sticky; top: var(--s4); }
+.fs-fields { display: grid; gap: var(--s5); }
+.fs-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.fs-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s3); }
+
+/* Numeric entry with its unit inside the field, so the number stays readable
+   and the unit can never be mistaken for part of the value. */
+.fs-num-wrap { position: relative; }
+.fs-num-wrap .input { padding-right: 38px; }
+.fs-num-wrap i {
+  position: absolute;
+  right: var(--s3);
+  top: 50%;
+  translate: 0 -50%;
+  font-style: normal;
+  font-size: var(--t-xs);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.fs-choices { display: grid; gap: var(--s2); }
+.fs-choice {
+  display: grid;
+  gap: 2px;
+  padding: var(--s3) var(--s4);
+  text-align: left;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--line);
+  background: var(--midnight-deep);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.fs-choice:hover { background: var(--slate); }
+.fs-choice b { font-size: var(--t-sm); color: var(--ink); }
+.fs-choice small { font-size: var(--t-xs); color: var(--muted); line-height: 1.4; }
+.fs-choice.is-on { border-color: var(--accent-line); background: var(--accent-soft); }
+.fs-choice.is-on b { color: var(--accent); }
+
+.fs-seg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--line);
+  background: var(--midnight-deep);
+}
+.fs-seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 var(--s4);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.fs-seg button:hover { color: var(--ink); }
+.fs-seg button.is-on { background: var(--accent); color: var(--accent-ink); }
+.fs-seg-sm button { height: 26px; padding: 0 var(--s3); }
+
+.fs-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.fs-check input { accent-color: var(--accent); }
+
+.fs-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-top: var(--s6);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---------------------------------------------------------- preview stage */
+.fs-preview { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.fs-stage {
+  position: relative;
+  min-height: 560px;
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(216, 166, 72, 0.06), transparent 60%),
+    var(--midnight-deep);
+  overflow: hidden;
+}
+.fs-toggles { display: flex; gap: var(--s4); align-items: center; }
+.fs-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s3);
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.fs-loading svg { color: var(--accent); animation: fs-pulse 1.6s var(--ease-out) infinite; }
+@keyframes fs-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+.fs-canvas { position: absolute; inset: 0; }
+
+/* The plan drawing. Strokes are set in absolute user units (= mm), with
+   vector-effect keeping them crisp at any zoom. */
+.fs-plan { width: 100%; height: 100%; display: block; }
+.fs-plan * { vector-effect: non-scaling-stroke; }
+.fs-props circle { fill: rgba(216, 166, 72, 0.05); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.5; }
+.fs-axes line { stroke: var(--line); stroke-width: 1; }
+.fs-part path { stroke-width: 1.25; transition: fill var(--dur-fast), stroke var(--dur-fast); }
+.fs-arm path { fill: #2b221b; stroke: #8d7a5f; }
+.fs-plate path { fill: #3a2c20; stroke: var(--accent); }
+.fs-topplate path { fill: none; stroke: #7fd4c1; stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.85; }
+.fs-part.is-active path { fill: #4a3722; stroke: var(--accent); }
+.fs-slot { fill: var(--midnight-deep) !important; stroke: var(--accent) !important; }
+.fs-hole { fill: var(--midnight-deep); stroke: rgba(216, 166, 72, 0.6); stroke-width: 0.8; }
+.fs-motors circle { fill: var(--accent); }
+.fs-motor-body { fill: none !important; stroke: rgba(216, 166, 72, 0.35); stroke-width: 1; }
+.fs-dim line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.fs-dim circle { fill: var(--muted); }
+.fs-dim text { fill: var(--ink-2); font-size: 7px; font-family: var(--font-ui); font-weight: 600; }
+.fs-fwd path { fill: var(--accent); }
+.fs-fwd text { fill: var(--muted); font-size: 8px; font-family: var(--font-display); letter-spacing: 0.1em; }
+
+.fs-verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+.fs-verdict.ok { color: var(--ok); background: var(--ok-soft); }
+.fs-verdict.warn { color: var(--warn); background: var(--warn-soft); }
+.fs-verdict.error { color: var(--danger); background: var(--danger-soft); }
+.fs-verdict-go {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ sheet view */
+.fs-sheet { position: absolute; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.fs-sheet-svg { width: 100%; height: 100%; min-height: 0; padding: var(--s4); }
+.fs-sheet-svg * { vector-effect: non-scaling-stroke; }
+.fs-sheet-stock { fill: rgba(216, 166, 72, 0.04); stroke: var(--line); stroke-width: 1; stroke-dasharray: 6 4; }
+.fs-sheet-part path { fill: #2b221b; stroke: var(--accent); stroke-width: 1.1; }
+.fs-sheet-slot { fill: var(--midnight-deep) !important; }
+.fs-sheet-hole { fill: var(--midnight-deep); stroke: rgba(216, 166, 72, 0.55); stroke-width: 0.8; }
+/* 3 mm, matching the TEXT height written into the DXF, so the preview and
+   the exported file letter the parts identically. */
+.fs-sheet-label { fill: var(--muted); font-size: 3px; font-family: var(--font-ui); }
+.fs-sheet-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.fs-sheet-foot b { color: var(--ink); }
+
+/* ---------------------------------------------------------------- results */
+.fs-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-bottom: var(--s5); }
+.fs-stat {
+  display: grid;
+  gap: 2px;
+  padding: var(--s3);
+  border-radius: var(--r-ctl);
+  background: var(--midnight-deep);
+  border: 1px solid var(--line-soft);
+}
+.fs-stat span { font-size: var(--t-xs); color: var(--muted); }
+.fs-stat b { font-family: var(--font-display); font-size: var(--t-lg); font-weight: 600; color: var(--ink); }
+.fs-stat b i { font-style: normal; font-size: var(--t-xs); color: var(--muted); margin-left: 2px; }
+.fs-stat.good b { color: var(--ok); }
+.fs-stat.warn b { color: var(--warn); }
+.fs-stat.bad b { color: var(--danger); }
+
+.fs-sub {
+  font-family: var(--font-display);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: var(--s5) 0 var(--s2);
+}
+.fs-dl { display: grid; gap: 6px; }
+.fs-dl > div { display: flex; justify-content: space-between; gap: var(--s3); font-size: var(--t-sm); }
+.fs-dl dt { color: var(--muted); }
+.fs-dl dd { color: var(--ink); font-weight: 600; text-align: right; }
+
+.fs-governing {
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+}
+.fs-governing span { font-size: var(--t-xs); color: var(--muted); }
+.fs-governing b { display: block; font-family: var(--font-display); font-size: var(--t-md); color: var(--accent); }
+.fs-governing p { margin-top: 4px; font-size: var(--t-xs); color: var(--ink-2); line-height: 1.5; }
+
+.fs-mass { display: grid; gap: 6px; }
+.fs-mass li { display: grid; grid-template-columns: 78px minmax(0, 1fr) 52px; align-items: center; gap: var(--s2); font-size: var(--t-xs); }
+.fs-mass span { color: var(--muted); }
+.fs-mass b { text-align: right; color: var(--ink); }
+.fs-mass-bar { height: 5px; border-radius: 99px; background: var(--midnight-deep); overflow: hidden; }
+.fs-mass-bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+
+.fs-parts { display: grid; gap: 4px; }
+.fs-parts li {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s3);
+  border-radius: var(--r-ctl);
+  font-size: var(--t-sm);
+  cursor: default;
+  transition: background var(--dur-fast);
+}
+.fs-parts li:hover, .fs-parts li.is-on { background: var(--slate); }
+.fs-parts b { color: var(--accent); font-family: var(--font-display); }
+.fs-parts i { font-style: normal; font-size: var(--t-xs); color: var(--muted); }
+
+/* ----------------------------------------------------------- review panel */
+.fs-review { margin-top: var(--s3); }
+.fs-review h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-base);
+  margin-bottom: var(--s3);
+}
+.fs-review-ok { font-size: var(--t-sm); color: var(--ink-2); line-height: 1.6; }
+.fs-findings { display: grid; gap: var(--s2); }
+.fs-finding {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--line-soft);
+  background: var(--midnight-deep);
+}
+.fs-finding.error { border-color: rgba(214, 87, 63, 0.4); }
+.fs-finding.error > svg { color: var(--danger); flex: none; }
+.fs-finding.warn > svg { color: var(--warn); flex: none; }
+.fs-finding b { display: block; font-size: var(--t-sm); color: var(--ink); }
+.fs-finding small { font-size: var(--t-xs); color: var(--muted); }
+.fs-finding p { margin-top: 4px; font-size: var(--t-xs); color: var(--ink-2); line-height: 1.5; }
+.fs-finding-nums {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--slate);
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+}
+
+/* ----------------------------------------------------------- export panel */
+.fs-export { display: grid; gap: var(--s6); }
+.fs-xsec header { margin-bottom: var(--s3); }
+.fs-xsec h4 { display: flex; align-items: center; gap: 6px; font-size: var(--t-base); }
+.fs-xsec header p { margin-top: 4px; font-size: var(--t-xs); color: var(--muted); line-height: 1.5; }
+
+.fs-xgrid { display: grid; gap: var(--s2); }
+.fs-xcard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px var(--s3);
+  padding: var(--s3) var(--s4);
+  text-align: left;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--line);
+  background: var(--midnight-deep);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.fs-xcard:hover { background: var(--slate); border-color: var(--accent-line); }
+.fs-xcard > svg:first-child { grid-row: 1 / 3; color: var(--accent); }
+.fs-xcard b { font-size: var(--t-sm); color: var(--ink); }
+.fs-xcard small { font-size: var(--t-xs); color: var(--muted); }
+.fs-xcard.primary { border-color: var(--accent-line); background: var(--accent-soft); }
+.fs-xcard-go { position: absolute; right: var(--s4); top: 50%; translate: 0 -50%; color: var(--muted); }
+
+.fs-xopts { display: grid; gap: var(--s3); margin-top: var(--s4); }
+.fs-xnest { font-size: var(--t-xs); color: var(--muted); }
+.fs-xnest b { color: var(--ink); }
+
+.fs-bom { width: 100%; border-collapse: collapse; }
+.fs-bom td { padding: var(--s2) 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.fs-bom-qty { width: 40px; font-family: var(--font-display); font-weight: 700; color: var(--accent); }
+.fs-bom b { display: block; font-size: var(--t-sm); color: var(--ink); }
+.fs-bom small { display: block; font-size: var(--t-xs); color: var(--muted); }
+.fs-bom em { display: block; margin-top: 4px; font-size: var(--t-xs); color: var(--ink-2); font-style: normal; line-height: 1.5; }
+
+.fs-recipe { display: grid; gap: var(--s3); counter-reset: fsr; }
+.fs-recipe li {
+  position: relative;
+  padding-left: 30px;
+  counter-increment: fsr;
+}
+.fs-recipe li::before {
+  content: counter(fsr);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+.fs-recipe b { font-size: var(--t-sm); color: var(--ink); }
+.fs-recipe p { margin-top: 3px; font-size: var(--t-xs); color: var(--ink-2); line-height: 1.6; }
+
+@media (max-width: 1400px) {
+  .fs-layout { grid-template-columns: 340px minmax(0, 1fr); }
+  .fs-results { grid-column: 1 / -1; }
+  .fs-results .panel-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 var(--s6); align-content: start; }
+}
+@media (max-width: 1080px) {
+  .fs-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fs-layout { grid-template-columns: minmax(0, 1fr); }
+  .fs-preview { position: static; }
+  .fs-stage { min-height: 420px; }
+}
+.fs-dim-tick { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: none; }

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Activity, Box, Cable, Crosshair, Drone, Gamepad2, Gauge, Info, Keyboard, ListTree, Plane, Route, ScrollText, Settings, ShieldCheck, SlidersVertical, Stethoscope } from "lucide-react";
+import { Activity, Box, Cable, Crosshair, Drone, Gamepad2, Gauge, Info, Keyboard, ListTree, PencilRuler, Plane, Route, ScrollText, Settings, ShieldCheck, SlidersVertical, Stethoscope } from "lucide-react";
 
 /**
  * Build status per module, shown in the navigation so nothing pretends to exist.
@@ -27,6 +27,7 @@ export const ROUTES: RouteDef[] = [
   { path: "/vehicle", label: "Aircraft Profile", icon: Drone, group: "Setup", status: { kind: "ready" }, blurb: "Describe each aircraft you fly — frame, controller and mass." },
   { path: "/connection", label: "Vehicle Connection", icon: Cable, group: "Setup", status: { kind: "partial", note: "USB / radio link" }, blurb: "Connect a Pixhawk over USB or a telemetry radio." },
   { path: "/digital-twin", label: "Digital Twin Studio", icon: Box, group: "Setup", status: { kind: "partial", note: "Import + test flight" }, blurb: "Import your assembly, orient it and test-fly it." },
+  { path: "/frame-studio", label: "Frame Studio", icon: PencilRuler, group: "Setup", status: { kind: "ready" }, blurb: "Design a 3D-printable or CNC-cuttable frame around your own components." },
 
   // Tune & Configure — calibrate, tune and edit parameters.
   { path: "/calibration", label: "Calibration Center", icon: Crosshair, group: "Tune & Configure", status: { kind: "partial", note: "Live on hardware" }, blurb: "Accel, compass, radio, modes, ESC and motor test." },

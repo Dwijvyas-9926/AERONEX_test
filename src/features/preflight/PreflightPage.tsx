@@ -21,6 +21,10 @@ export function PreflightPage() {
   const status = useLink((s) => s.status);
   const tel = useLink((s) => s.telemetry);
   const events = useLink((s) => s.events);
+  // Every hook must run on every render. Reading the clock after the
+  // disconnected early return below would change the hook count the moment a
+  // vehicle connects, which React treats as a fatal error.
+  const now = useNow(500);
   const connected = !!vehicle && (status === "connected" || status === "stale");
 
   if (!connected) {
@@ -41,7 +45,6 @@ export function PreflightPage() {
   }
 
   const armed = vehicle!.armed;
-  const now = useNow(500);
   const isFresh = (at?: number) => at != null && now - at < 3000;
   const sensors = tel.sensors?.value;
   const ekf = tel.ekf?.value;

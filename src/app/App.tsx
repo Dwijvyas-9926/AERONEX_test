@@ -11,6 +11,7 @@ import { ConnectionPage } from "../features/connection/ConnectionPage";
 import { DigitalTwinPage } from "../features/digital-twin/DigitalTwinPage";
 import { DoctorPage } from "../features/doctor/DoctorPage";
 import { FlightDataPage } from "../features/flightdata/FlightDataPage";
+import { FrameStudioPage } from "../features/frame-studio/FrameStudioPage";
 import { LogsPage } from "../features/logs/LogsPage";
 import { MissionPlanningPage } from "../features/mission-planning/MissionPlanningPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
@@ -56,6 +57,7 @@ function AnimatedRoutes() {
           <Route path="/" element={<OverviewPage />} />
           <Route path="/connection" element={<ConnectionPage />} />
           <Route path="/digital-twin" element={<DigitalTwinPage />} />
+          <Route path="/frame-studio" element={<FrameStudioPage />} />
           <Route path="/calibration" element={<CalibrationPage />} />
           <Route path="/doctor" element={<DoctorPage />} />
           <Route path="/vehicle" element={<VehicleConfigPage />} />
