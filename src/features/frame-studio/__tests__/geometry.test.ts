@@ -16,7 +16,7 @@ const baseSpec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   materialId: "cf-plate",
   fixedDimMm: 4,
   plateThicknessMm: null,
-  wallMm: 2.5, lightenPlates: true,
+  wallMm: 2.5, lightenPlates: true, batteryMount: "bottom", cameraId: "micro",
   styleId: "freestyle",
   safetyFactor: 2,
   ...over,
@@ -94,7 +94,10 @@ describe("full design", () => {
     const d = designFrame(baseSpec());
     expect(d.wheelbaseMm).toBeGreaterThan(180);
     expect(d.armLengthMm).toBeGreaterThan(20);
-    expect(d.profiles.map((p) => p.id)).toEqual(["bottom-plate", "top-plate", "arm"]);
+    // The default spec carries a micro camera, so its side plates are parts too.
+    expect(d.profiles.map((p) => p.id)).toEqual(["bottom-plate", "top-plate", "arm", "camera-plate"]);
+    expect(designFrame(baseSpec({ cameraId: "none" })).profiles.map((p) => p.id))
+      .toEqual(["bottom-plate", "top-plate", "arm"]);
     // a 4 mm carbon 5" frame is roughly 90–160 g of plate and arms
     expect(d.mass.frameG).toBeGreaterThan(50);
     expect(d.mass.frameG).toBeLessThan(220);
@@ -168,7 +171,9 @@ describe("construction", () => {
 
   it("a unibody is one chassis plus a top plate, with no arm bolts", () => {
     const d = uni();
-    expect(d.profiles.map((p) => p.id)).toEqual(["chassis", "top-plate"]);
+    // A camera mount adds its side plates to whatever construction is used.
+    expect(d.profiles.map((p) => p.id)).toEqual(["chassis", "top-plate", "camera-plate"]);
+    expect(uni({ cameraId: "none" }).profiles.map((p) => p.id)).toEqual(["chassis", "top-plate"]);
     const chassis = d.profiles.find((p) => p.id === "chassis")!;
     // stack (4) + standoffs (4) + four motors × 4 bolts
     expect(chassis.holes).toHaveLength(4 + 4 + 16);
@@ -176,17 +181,28 @@ describe("construction", () => {
   });
 
   it("the chassis encloses the plate and all four arms", () => {
-    const bolted = designFrame(baseSpec());
     const d = uni();
     const chassis = d.profiles.find((p) => p.id === "chassis")!;
-    const plate = bolted.profiles.find((p) => p.id === "bottom-plate")!;
-    const arm = bolted.profiles.find((p) => p.id === "arm")!;
-    // The union must be bigger than the plate, and bigger than plate + arms
-    // would be if they merely touched, but less than their disjoint sum.
-    expect(polygonArea(chassis.outline)).toBeGreaterThan(polygonArea(plate.outline));
-    expect(polygonArea(chassis.outline)).toBeLessThan(
-      polygonArea(plate.outline) + 4 * polygonArea(arm.outline),
-    );
+    /*
+      Measured against this design's own plate and arms rather than against a
+      bolted design's. A unibody has no clamp overlap, so its arm roots sit
+      closer in and its arms run longer than a bolted frame's of the same
+      wheelbase -- borrowing the bolted arm under-counted the union and the
+      bound only held by luck.
+    */
+    const plateArea = d.bodyWmm * d.bodyLmm;
+    expect(polygonArea(chassis.outline)).toBeGreaterThan(plateArea * 0.9);
+    /*
+      Bounded by the disc that contains every motor, not by plate-plus-arms.
+      unibodyOutline is a star-shaped approximation: it casts rays from the
+      centre and joins the furthest hits, so it fills the concave pockets
+      between the arms and legitimately covers more than the parts it unions.
+      The disc is a true upper bound; the disjoint sum never was.
+    */
+    const reach = d.wheelbaseMm / 2 + d.section.padWidthMm;
+    expect(polygonArea(chassis.outline)).toBeLessThan(Math.PI * reach * reach);
+    // And it really does reach every motor.
+    for (const m of d.motors) expect(pointInPolygon(m, chassis.outline)).toBe(true);
     // Every motor bolt lands in material.
     for (const h of chassis.holes) expect(pointInPolygon(h.c, chassis.outline)).toBe(true);
   });

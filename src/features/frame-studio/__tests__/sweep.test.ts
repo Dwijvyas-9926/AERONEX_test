@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS } from "../catalog";
+import { CAMERAS, FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS } from "../catalog";
 import { designFrame, LAYOUTS, type FrameSpec } from "../geometry";
 import { planSheets, toDXF } from "../exporters";
 import { validateDesign } from "../validate";
@@ -30,7 +30,7 @@ const base: FrameSpec = {
   materialId: "cf-plate",
   fixedDimMm: null,
   plateThicknessMm: null,
-  wallMm: 2.5, lightenPlates: true,
+  wallMm: 2.5, lightenPlates: true, batteryMount: "bottom", cameraId: "micro",
   styleId: "freestyle",
   safetyFactor: 2,
 };
@@ -58,7 +58,32 @@ function* specs(): Generator<[string, FrameSpec]> {
       }
     }
   }
+  // The fitting-out axes: camera size, which side the pack straps to, and
+  // whether the plates are lightened, across the sizes where they bind.
+  for (const camera of CAMERAS) {
+    for (const batteryMount of ["top", "bottom"] as const) {
+      for (const lightenPlates of [true, false]) {
+        for (const propIn of [2, 3, 5, 7, 10]) {
+          for (const construction of ["bolted", "unibody"] as const) {
+            const motor = MOTORS.find((m) => m.props.includes(propIn)) ?? MOTORS[0];
+            yield [
+              `${camera.id} ${batteryMount}-mount ${lightenPlates ? "light" : "solid"} ${propIn}" ${construction}`,
+              { ...base, cameraId: camera.id, batteryMount, lightenPlates, propIn, construction, motorId: motor.id, motorThrustG: motor.thrustG },
+            ];
+          }
+        }
+      }
+    }
+  }
 }
+
+/*
+  The sweep walks several thousand designs through the whole solver and the
+  exporters, so it needs more than the default per-test budget. Raised
+  deliberately rather than by trimming the sweep: the cases it finds are the
+  ones nobody thought to write a unit test for.
+*/
+const SWEEP_TIMEOUT = 60_000;
 
 describe("every combination produces a sane design", () => {
   it("no NaN, no empty geometry, no zero-thickness part", () => {
@@ -81,7 +106,7 @@ describe("every combination produces a sane design", () => {
       }
       expect(() => validateDesign(d), label).not.toThrow();
     }
-  });
+  }, SWEEP_TIMEOUT);
 
   it("the wheelbase a design reports is the wheelbase its parts would build", () => {
     /*
@@ -96,7 +121,7 @@ describe("every combination produces a sane design", () => {
       const nominal = 2 * Math.min(...d.motors.map((m) => Math.hypot(m[0], m[1])));
       expect(Math.abs(drawn - nominal), `${label}: draws ${drawn.toFixed(1)}, reports ${nominal.toFixed(1)}`).toBeLessThan(1);
     }
-  });
+  }, SWEEP_TIMEOUT);
 
   it("exports contain no non-finite coordinate", () => {
     for (const [label, spec] of specs()) {
@@ -105,5 +130,5 @@ describe("every combination produces a sane design", () => {
         expect(/NaN|Infinity/.test(dxf), `${label} @ ${sheet.thicknessMm}mm`).toBe(false);
       }
     }
-  });
+  }, SWEEP_TIMEOUT);
 });

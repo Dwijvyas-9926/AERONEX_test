@@ -19,7 +19,7 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   materialId: "cf-plate",
   fixedDimMm: 4,
   plateThicknessMm: null,
-  wallMm: 2.5, lightenPlates: true,
+  wallMm: 2.5, lightenPlates: true, batteryMount: "bottom", cameraId: "micro",
   styleId: "freestyle",
   safetyFactor: 2,
   ...over,
@@ -48,8 +48,8 @@ const headerValue = (pairs: [number, string][], name: string): string | undefine
 describe("nesting", () => {
   it("lays every copy of every part out without overlapping", () => {
     const nest = nestParts(cutDesign().profiles, { sheetWidthMm: 300, gapMm: 5 });
-    // 1 bottom + 1 top + 4 arms
-    expect(nest.parts).toHaveLength(6);
+    // 1 bottom + 1 top + 4 arms + 2 camera side plates
+    expect(nest.parts).toHaveLength(8);
 
     const boxes = nest.parts.map((p) => boundsOf(p.outline));
     for (let i = 0; i < boxes.length; i++) {

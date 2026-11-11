@@ -1,10 +1,10 @@
 import { AlertTriangle, Box, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Grid3x3, RotateCcw, Ruler, Shapes } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
-import { FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS, materialById, motorById, propFit, type MotorSpec } from "./catalog";
+import { CAMERAS, FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS, cameraById, materialById, motorById, propFit, type MotorSpec } from "./catalog";
 import { ExportPanel } from "./components/ExportPanel";
 import { PlanView } from "./components/PlanView";
 import { SheetView } from "./components/SheetView";
-import { CONSTRUCTIONS, LAYOUTS, designFrame, type Layout } from "./geometry";
+import { BATTERY_MOUNTS, CONSTRUCTIONS, LAYOUTS, designFrame, type Layout } from "./geometry";
 import { LAYOUT_HINT, STEPS, defaultFixedDim, stackHeightFor, useStudio } from "./store";
 import { validateDesign, worstSeverity, type Finding } from "./validate";
 
@@ -367,6 +367,42 @@ export function FrameStudioPage() {
                   <Num label="Height" value={spec.battery.h} onChange={(v) => setSpec("battery", { ...spec.battery, h: v })} suffix="mm" min={5} />
                 </div>
 
+                <div className="field">
+                  <span>Where the battery straps</span>
+                  <div className="fs-choices">
+                    {BATTERY_MOUNTS.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        className={`fs-choice ${spec.batteryMount === b.id ? "on" : ""}`}
+                        onClick={() => setSpec("batteryMount", b.id)}
+                      >
+                        <strong>{b.name}</strong>
+                        <small>{b.blurb}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <small>
+                    The strap slots are cut in whichever plate the pack sits against. On top the mass sits{" "}
+                    {n1(design.cg.belowThrustMm)} mm below the propellers; underneath it would hang further.
+                  </small>
+                </div>
+
+                <label className="field">
+                  <span>FPV camera</span>
+                  <select className="select" value={spec.cameraId} onChange={(e) => setSpec("cameraId", e.target.value)}>
+                    {CAMERAS.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  <small>
+                    {cameraById(spec.cameraId).note}
+                    {cameraById(spec.cameraId).widthMm > 0
+                      ? ` The size is the spacing between the camera's side mounting holes, so measure yours rather than trusting the product name.`
+                      : ""}
+                  </small>
+                </label>
+
                 <div className="fs-row2">
                   <Num label="Battery mass" value={spec.battery.massG} onChange={(v) => setSpec("battery", { ...spec.battery, massG: v })} suffix="g" min={10} step={5} />
                   <Num
@@ -707,6 +743,30 @@ export function FrameStudioPage() {
                 <div>
                   <dt>Arm walls</dt>
                   <dd>{n1(design.stock.wallMm)} mm, hollow</dd>
+                </div>
+              )}
+            </dl>
+
+            <h5 className="fs-sub">How it balances</h5>
+            <dl className="fs-dl">
+              <div>
+                <dt>Battery</dt>
+                <dd>{spec.batteryMount === "top" ? "On top" : "Underneath"}</dd>
+              </div>
+              <div>
+                <dt>Mass below the discs</dt>
+                <dd>{n1(design.cg.belowThrustMm)} mm</dd>
+              </div>
+              {design.lightening.count > 0 && (
+                <div>
+                  <dt>Lightening</dt>
+                  <dd>{design.lightening.count} cut-outs, −{n1(design.lightening.savedG)} g</dd>
+                </div>
+              )}
+              {design.stackClearance.openingMm > 0 && (
+                <div>
+                  <dt>Stack opening</dt>
+                  <dd>{n1(design.stackClearance.openingMm)} mm square</dd>
                 </div>
               )}
             </dl>

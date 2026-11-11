@@ -401,6 +401,59 @@ export function validateDesign(d: FrameDesign): Finding[] {
     });
   }
 
+  /* --- how the mass sits ---------------------------------------------- */
+  /*
+    A top-mounted pack stands up into the plane the propellers sweep. Published
+    guidance on battery mounting names this directly: on a flat frame, a strap
+    that works loose lets a propeller reach the pack, which on a lithium pack
+    is the worst failure on the aircraft.
+  */
+  if (d.spec.batteryMount === "top") {
+    const packTopZ = d.section.heightMm + d.stock.topPlateMm + d.spec.battery.h;
+    const standsProud = round(packTopZ - d.cg.thrustPlaneZMm);
+    if (standsProud > 0) {
+      out.push({
+        id: "battery-in-the-discs",
+        severity: standsProud > d.spec.battery.h * 0.5 ? "error" : "warn",
+        scope: "Fit",
+        title: "A top-mounted pack reaches into the propeller discs",
+        detail:
+          "The pack stands taller than the propellers are mounted, so a strap that works loose — or a hard enough impact — puts a blade into a lithium cell. Either strap it underneath, raise the motors on taller arms, or use a flatter pack.",
+        measured: `${standsProud} mm above the discs`,
+        limit: "level with the discs",
+      });
+    }
+  }
+
+  /*
+    How far the weight hangs below where the thrust acts. A long pendulum is
+    the known cost of mounting the pack underneath: the aircraft swings about
+    the thrust plane rather than rotating around its own mass.
+  */
+  /*
+    Scaled to the frame, because what matters is the lever arm relative to
+    the aircraft's size, not an absolute height: 30 mm below the discs is
+    unremarkable on a 10" and a long way down on a 3". Calibrated so an
+    ordinary 5" build on a 30 mm pack stays quiet (about 22 mm against a
+    31 mm limit) while a tall heavy pack slung underneath trips it.
+  */
+  const pendulumLimit = Math.max(28, d.wheelbaseMm * 0.15);
+  const pendulum = d.cg.belowThrustMm;
+  if (pendulum > pendulumLimit) {
+    out.push({
+      id: "cg-pendulous",
+      severity: "warn",
+      scope: "Performance",
+      title: "The weight hangs a long way below the propellers",
+      detail:
+        d.spec.batteryMount === "bottom"
+          ? "Thrust acts well above the centre of gravity, which adds rotational inertia and gives the aircraft a pendulum feel — it swings rather than rotating cleanly. Strapping the pack on top is the usual fix, and brings the mass up near the thrust plane."
+          : "Thrust acts well above the centre of gravity, which adds rotational inertia and gives the aircraft a pendulum feel. A lighter pack or a shorter stack would bring the mass up.",
+      measured: `${pendulum} mm below the discs`,
+      limit: `${round(pendulumLimit)} mm`,
+    });
+  }
+
   /* --- fit ------------------------------------------------------------ */
   /*
     The plate is always sized at least `battery width + 8`, so the old

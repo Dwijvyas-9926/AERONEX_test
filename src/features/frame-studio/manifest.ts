@@ -14,6 +14,7 @@
 
 import { type BomLine, type RecipeStep } from "./bom";
 import { LAYOUTS, type FrameDesign } from "./geometry";
+import { cameraById } from "./catalog";
 
 const slugify = (s: string) =>
   s
@@ -138,7 +139,15 @@ export function buildManifest({ vehicleName, design: d, kind, files, bom, recipe
   if (Math.abs(d.spec.motorThrustG - d.motor.thrustG) < 1e-9) {
     out.push(row("Thrust assumed at", `${d.motor.thrustCells}S, ${d.motor.kv[0]}–${d.motor.kv[1]} KV (studio default)`));
   }
+  out.push(row("Battery", `${d.spec.batteryMount === "top" ? "Strapped on top" : "Strapped underneath"}, ${d.spec.battery.l} × ${d.spec.battery.w} × ${d.spec.battery.h} mm`));
+  if (d.spec.cameraId !== "none") {
+    out.push(row("Camera", `${cameraById(d.spec.cameraId).name} — side plates ${d.spec.cameraId === "none" ? "" : `${cameraById(d.spec.cameraId).widthMm} mm apart`}`));
+  }
   out.push(row("Frame mass", `${round(d.mass.frameG)} g bare, ${round(d.mass.auwG)} g all-up`));
+  out.push(row("Mass below discs", `${d.cg.belowThrustMm} mm — centre of gravity to the propeller plane`));
+  if (d.lightening.count > 0) {
+    out.push(row("Lightening", `${d.lightening.count} cut-outs, ${d.lightening.savedG} g saved`));
+  }
   out.push(row("Thrust / weight", `${round(d.thrustToWeight, 1)} : 1 — hovers near ${round(d.hoverThrottle * 100)}% throttle`));
   out.push(row("Sized by", `${d.section.governing} load case`));
   out.push(

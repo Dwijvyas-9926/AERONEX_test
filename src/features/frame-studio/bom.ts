@@ -11,7 +11,7 @@
   motor windings.
 */
 
-import { STACK_CLEARANCE_MM } from "./catalog";
+import { cameraById, STACK_CLEARANCE_MM } from "./catalog";
 import { planSheets } from "./exporters";
 import { type FrameDesign } from "./geometry";
 import { round } from "./structure";
@@ -153,10 +153,26 @@ export function buildBOM(d: FrameDesign): BomLine[] {
       */
       qty: 2,
       item: `Battery strap, ${strapWidthMm(d)} mm wide × ${Math.ceil((2 * d.spec.battery.h + d.spec.battery.w + bottom.thicknessMm + 30) / 10) * 10} mm long`,
-      purpose: "Through the slots in the bottom plate",
+      purpose: `Through the slots in the ${d.spec.batteryMount === "top" ? "top" : "bottom"} plate`,
       note: `Long enough to go over a ${d.spec.battery.h} mm tall pack and back through. Buy a little longer rather than shorter — the tail tucks away.`,
     },
   ];
+
+  const camera = cameraById(d.spec.cameraId);
+  if (camera.widthMm > 0) {
+    lines.push({
+      qty: 2,
+      item: `M${camera.bolt} × 12 mm cap head + nut`,
+      purpose: `Camera pivot, through the ${camera.widthMm} mm side plates`,
+      note: `One through the fixed pivot hole and one through whichever of the tilt holes gives the angle you want. ${camera.widthMm} mm is the spacing between your camera's own mounting holes — measure it before cutting.`,
+    });
+    lines.push({
+      qty: 1,
+      item: "Thread-lock or epoxy, small tube",
+      purpose: "Securing the camera side plates in their slots",
+      note: "The side plates locate by tab and slot, which holds them square but not down. A drop in each slot is enough; use thread-lock if you want to be able to take them out again.",
+    });
+  }
 
   if (d.material.method === "cut") {
     /*

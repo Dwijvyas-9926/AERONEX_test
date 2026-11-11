@@ -410,6 +410,44 @@ export const FLYING_STYLES: FlyingStyle[] = [
 
 export const styleById = (id: string) => FLYING_STYLES.find((s) => s.id === id) ?? FLYING_STYLES[1];
 
+/**
+ * FPV camera size classes.
+ *
+ * The class name *is* the mounting-hole spacing: a "19 mm micro" camera is
+ * one whose side mounting holes are 19 mm apart, and the body is that wide
+ * too. That is the whole reason the sizes are quoted in millimetres rather
+ * than as model names, and it is what lets a frame be designed around a
+ * camera nobody has bought yet.
+ *
+ * `bolt` is the pivot screw through those side holes — M2 on everything up to
+ * micro, M2 on most minis, and M2 on full size as well; the larger cameras
+ * use a bigger body, not a bigger screw.
+ */
+export interface CameraSpec {
+  id: string;
+  name: string;
+  /** Distance between the side mounting holes, mm — also the body width. */
+  widthMm: number;
+  /** Pivot screw thread diameter, mm. */
+  bolt: number;
+  /** Representative mass including lens, grams. */
+  massG: number;
+  note: string;
+}
+
+export const CAMERAS: CameraSpec[] = [
+  { id: "none", name: "No camera mount", widthMm: 0, bolt: 0, massG: 0, note: "Leave the front of the frame open — add a printed mount later, or fly line of sight." },
+  { id: "nano", name: "Nano — 14 mm", widthMm: 14, bolt: 2, massG: 4, note: "The smallest class, for 2\" and 3\" builds. Some nano cameras have no mounting holes at all and need a moulded holder." },
+  { id: "micro", name: "Micro — 19 mm", widthMm: 19, bolt: 2, massG: 6, note: "The most common size by a distance, and what most 3\" to 5\" frames are built around." },
+  { id: "mini", name: "Mini — 21 mm", widthMm: 21, bolt: 2, massG: 8, note: "An uncommon middle size. Check your camera really is 21 mm and not a 19 mm micro before cutting." },
+  { id: "full", name: "Full size — 28 mm", widthMm: 28, bolt: 2, massG: 15, note: "Takes M12 lenses, so it is the one to pick if you want to change optics. Needs a tall frame and is rare on anything under 7\"." },
+];
+
+export const cameraById = (id: string) => CAMERAS.find((c) => c.id === id) ?? CAMERAS[0];
+
+/** Clearance each side between the camera body and its side plates, mm. */
+export const CAMERA_SIDE_CLEARANCE_MM = 0.6;
+
 /** Standard metric hardware the studio specifies in the bill of materials. */
 export const BOLT_HEAD_DIA: Record<number, number> = { 2: 3.8, 2.5: 4.5, 3: 5.5, 4: 7 };
 /** Minimum material between a hole edge and the part edge, as a multiple of hole diameter. */

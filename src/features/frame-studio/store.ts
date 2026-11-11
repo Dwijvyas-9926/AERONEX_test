@@ -57,6 +57,8 @@ export const DEFAULT_SPEC: FrameSpec = {
   plateThicknessMm: null,
   wallMm: DEFAULT_WALL_MM,
   lightenPlates: true,
+  batteryMount: "bottom",
+  cameraId: "micro",
   styleId: "freestyle",
   safetyFactor: 2,
 };

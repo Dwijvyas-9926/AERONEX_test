@@ -10,6 +10,8 @@
 
 import {
   BOLT_HEAD_DIA,
+  CAMERA_SIDE_CLEARANCE_MM,
+  cameraById,
   EDGE_DISTANCE_FACTOR,
   materialById,
   motorById,
@@ -20,6 +22,7 @@ import {
   WHEELBASE_REFERENCE,
   type FlyingStyle,
   type Material,
+  type CameraSpec,
   type MotorSpec,
 } from "./catalog";
 import { unibodyOutline } from "./unibody";
@@ -28,6 +31,13 @@ import { massOf, minRootWidth, motorPadWidth, PAD_EDGE_FACTOR, round, sizeArm, t
 export type Layout = "true-x" | "stretched-x" | "h" | "deadcat";
 
 export type Construction = "bolted" | "unibody";
+
+export type BatteryMount = "top" | "bottom";
+
+export const BATTERY_MOUNTS: { id: BatteryMount; name: string; blurb: string }[] = [
+  { id: "bottom", name: "Underneath", blurb: "Lower frame, pack shielded from the props. Racers' choice." },
+  { id: "top", name: "On top", blurb: "Mass near the thrust plane, so it rotates faster. Freestyle's choice." },
+];
 
 export const CONSTRUCTIONS: { id: Construction; name: string; blurb: string }[] = [
   { id: "bolted", name: "Bolted arms", blurb: "Arms clamped between two plates. Stiffer, and a broken arm swaps out on its own." },
@@ -142,6 +152,19 @@ export interface FrameSpec {
    * should be able to have them.
    */
   lightenPlates: boolean;
+  /**
+   * Which side of the frame the battery straps to.
+   *
+   * Not a cosmetic choice. On top the pack sits close to the plane the
+   * propellers thrust in, so the aircraft rotates with less inertia and lands
+   * on a wide flat base; it costs vertical area and drag, and a loose strap
+   * puts the pack where a propeller can reach it. Underneath keeps the frame
+   * low and shields the pack, at the price of swinging the mass further below
+   * the thrust plane.
+   */
+  batteryMount: BatteryMount;
+  /** FPV camera the frame carries, if any — sets the side-plate spacing. */
+  cameraId: string;
   styleId: string;
   safetyFactor: number;
 }
@@ -196,6 +219,27 @@ export interface FrameDesign {
    * The studio follows that: the stack bolts to the bottom plate and the top
    * plate carries an opening for it to pass through.
    */
+  /**
+   * Where the mass sits, relative to where the thrust acts.
+   *
+   * A mass-point sum, not an inertia tensor: each major item is placed at its
+   * own centroid and the heights are added up. That is enough to answer the
+   * question the battery-mount choice actually turns on — how far below the
+   * propeller disc the weight hangs — and not enough to predict handling, so
+   * it is reported as a height rather than dressed up as a simulation.
+   *
+   * Heights are measured from the top face of the bottom plate, positive up.
+   */
+  cg: {
+    /** Height of the centre of gravity, mm. */
+    zMm: number;
+    /** Height of the propeller discs, where thrust acts, mm. */
+    thrustPlaneZMm: number;
+    /** How far the mass hangs below the thrust plane, mm. Larger is more pendulous. */
+    belowThrustMm: number;
+    /** Fore/aft offset from the thrust centroid, mm. Positive is forward. */
+    offsetYMm: number;
+  };
   /** What the plate cut-outs removed, if any were cut. */
   lightening: {
     count: number;
@@ -695,6 +739,7 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
       ? { ...rawSpec, construction: "bolted" }
       : rawSpec;
   const motor = motorById(spec.motorId);
+  const camera = cameraById(spec.cameraId);
   const style = styleById(spec.styleId);
   const propDiaMm = spec.propIn * IN_TO_MM;
 
@@ -767,7 +812,19 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
   const rootHalfW = Math.max(...motors.map((m) => Math.abs(Math.cos(Math.atan2(m[1], m[0]))))) * rootRadius;
   const rootHalfL = Math.max(...motors.map((m) => Math.abs(Math.sin(Math.atan2(m[1], m[0]))))) * rootRadius;
   const bodyWmm = round(2 * Math.max(rootHalfW + edgeMargin, stackSpan / 2 + 5, spec.battery.w / 2 + 4, wheelbaseMm * 0.13, 20));
-  const bodyLmm = round(2 * Math.max(rootHalfL + edgeMargin, stackSpan / 2 + 12, spec.battery.l * 0.325, wheelbaseMm * 0.17, 28));
+  /*
+    A camera lengthens the frame, which is not a side effect — it is why
+    frames built around a camera are longer than racing frames of the same
+    wheelbase. Its side plates stand in slots at the front, and those slots
+    have to sit entirely forward of the stack's bolts and still leave a rim
+    of plate ahead of them. On an 84.7 mm plate with a 30.5 mm stack there is
+    simply not enough length for a micro mount, so the plate grows to make
+    room rather than the mount being quietly cut through the stack bolts.
+  */
+  const cameraHalfL = camera.widthMm > 0
+    ? spec.stackPattern / 2 + spec.stackBolt / 2 + 2 + cameraFootprintL(camera) + 2
+    : 0;
+  const bodyLmm = round(2 * Math.max(rootHalfL + edgeMargin, stackSpan / 2 + 12, spec.battery.l * 0.325, wheelbaseMm * 0.17, cameraHalfL, 28));
 
   /*
     Resolve how thick each part is made.
@@ -847,7 +904,9 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     ten grams less ironmongery than the bolted equivalent.
   */
   const hardwareG = spec.construction === "unibody" ? 15 : 25;
-  const fixedMass = motor.massG * 4 + spec.battery.massG + spec.electronicsMassG + hardwareG;
+  // The camera is carried mass like any other, so it belongs in the figure
+  // the arms are sized against, not bolted on after the solve.
+  const fixedMass = motor.massG * 4 + spec.battery.massG + spec.electronicsMassG + hardwareG + camera.massG;
   let auwG = fixedMass + 120; // first guess at frame mass
   let solved = solveSection(auwG);
   /*
@@ -897,6 +956,44 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     wheelbaseCrowded,
     propMinWheelbaseMm,
     strapSlotMm: round(Math.min(bodyWmm * 0.55, 26)),
+    cg: (() => {
+      /*
+        Heights from the top face of the bottom plate, positive up.
+
+        Motor height is taken from its mass rather than carried as another
+        catalogue column: stator mass and stator height track each other
+        closely enough across this range, and a column of numbers nobody can
+        check is worse than one honest approximation.
+      */
+      const plateT = plates.bottomMm;
+      const armT = section.heightMm;
+      const motorHMm = 8 + motor.massG * 0.25;
+      const propZ = armT + motorHMm;
+      const batteryZ =
+        spec.batteryMount === "top"
+          ? armT + plates.topMm + spec.battery.h / 2
+          : -plateT - spec.battery.h / 2;
+
+      const items: { m: number; z: number; y: number }[] = [
+        // The plate sandwich, taken at its own mid-height.
+        { m: frameG, z: armT / 2, y: 0 },
+        { m: motor.massG * motors.length, z: armT + motorHMm / 2, y: 0 },
+        { m: spec.battery.massG, z: batteryZ, y: 0 },
+        // Stack and wiring, sitting on the bottom plate.
+        { m: spec.electronicsMassG, z: spec.stackHeightMm / 2, y: 0 },
+        ...(camera.massG > 0 ? [{ m: camera.massG, z: armT + camera.widthMm / 2, y: bodyLmm / 2 }] : []),
+      ];
+      const total = items.reduce((s, i) => s + i.m, 0) || 1;
+      const zMm = items.reduce((s, i) => s + i.m * i.z, 0) / total;
+      const offsetYMm = items.reduce((s, i) => s + i.m * i.y, 0) / total;
+
+      return {
+        zMm: round(zMm, 1),
+        thrustPlaneZMm: round(propZ, 1),
+        belowThrustMm: round(propZ - zMm, 1),
+        offsetYMm: round(offsetYMm, 1),
+      };
+    })(),
     lightening: (() => {
       /*
         Count only what the lightening added, not the strap slots or the
@@ -1102,6 +1199,9 @@ function stackOpening(spec: FrameSpec, plateW: number, plateL: number, holes: Ho
   return [poly];
 }
 
+/** Clear material any slot must leave to a bolt or an edge, mm. */
+const MIN_SLOT_CLEARANCE = 1.6;
+
 /* ------------------------------------------------------- lightening holes */
 
 /*
@@ -1258,6 +1358,166 @@ export function lighteningCutouts(opts: {
   return cut;
 }
 
+/* ------------------------------------------------------------ camera mount */
+
+/**
+ * The pair of side plates a camera pivots between, and the slots in the
+ * bottom plate they stand in.
+ *
+ * Two vertical plates with the camera bolted between them is how this is
+ * done — published guidance names "a pair of vertical mounting plates or a
+ * 3D printed mount" — and it is the only version that falls out of flat
+ * stock, which is what this studio cuts. They locate in the bottom plate by
+ * tab and slot, the standard joint for a laser-cut assembly: the tabs are
+ * part of the side plate's outline and the matching slots are cut in the
+ * plate it stands on.
+ *
+ * Each side plate carries a fixed pivot hole and an arc of holes below it.
+ * Moving the lower screw from one hole to the next tilts the camera, which
+ * is how a real mount is adjusted and is far easier to cut accurately than a
+ * curved slot.
+ */
+/*
+  Tilt positions, degrees.
+
+  Spaced wide enough that the holes do not run into each other. The first
+  attempt put five positions on a 15°-ish pitch around an 11 mm radius, which
+  puts their centres 2-3 mm apart for a 2 mm screw — the validator reported
+  them as overlapping, which they were. Three usable angles on a generous
+  radius beats five that cannot be drilled.
+*/
+const CAMERA_TILTS = [0, 20, 40];
+
+/** Smallest arc radius that keeps those positions apart for a given screw. */
+function tiltArcRadius(camera: CameraSpec): number {
+  const stepRad = deg2rad(CAMERA_TILTS[1] - CAMERA_TILTS[0]);
+  // Centre spacing must clear one diameter plus a wall of material.
+  const needed = (camera.bolt + 1.8) / stepRad;
+  return Math.max(camera.widthMm * 0.6, needed);
+}
+
+export interface CameraMount {
+  /** The side plate, cut twice. */
+  plate: Profile;
+  /** Slots to cut in the plate the side plates stand on. */
+  footSlots: Pt[][];
+  /**
+   * How far back from the frame's centreline the mount reaches, mm.
+   *
+   * The camera lives at the very front and the battery sits behind it, so
+   * everything else at the front of the plate — the strap slots above all —
+   * has to start inboard of this. Placing them independently put a strap
+   * slot straight through the camera's tab slots.
+   */
+  rearYMm: number;
+}
+
+/**
+ * Fore-aft dimensions of the mount, in one place.
+ *
+ * Shared by the part and by the frame-length calculation that has to make
+ * room for it. Derived twice, they drift, and the symptom is a mount that
+ * the plate was grown for but which still lands on the stack bolts.
+ */
+function cameraDims(camera: CameraSpec) {
+  const w = camera.widthMm + 10;
+  const tabW = Math.max(6, w * 0.3);
+  // Half the distance from the outer edge of the forward tab slot to the
+  // outer edge of the rear one.
+  const tabReach = w / 4 + tabW / 2 + 0.15;
+  return { w, tabW, tabReach };
+}
+
+/** Fore-aft length of plate the mount's tab slots occupy, mm. */
+export function cameraFootprintL(camera: CameraSpec): number {
+  return camera.widthMm > 0 ? 2 * cameraDims(camera).tabReach : 0;
+}
+
+export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL: number): CameraMount | null {
+  if (camera.widthMm <= 0) return null;
+
+  /*
+    The side plate, drawn as one explicit closed loop: bottom edge with two
+    tabs hanging below it, then up the right side, round the two top corners,
+    and back down the left. Built point by point rather than by splicing tabs
+    into a rounded rectangle, because where a rounded outline puts its
+    straight bottom run depends on how it was generated, and a tab spliced
+    into the wrong edge is a part that silently comes out inside out.
+  */
+  const { w, tabW, tabReach } = cameraDims(camera);
+  const h = camera.widthMm + 16;
+  const base = -h / 2;
+  const top = h / 2;
+  const r = 3;
+  const tabH = plateThicknessMm + 1.5;
+  const tabX = [-w / 4, w / 4];
+  const pivot: Pt = [0, top - camera.widthMm / 2 - 4];
+
+  const outline: Pt[] = [[-w / 2, base]];
+  for (const cx of tabX) {
+    outline.push([cx - tabW / 2, base], [cx - tabW / 2, base - tabH], [cx + tabW / 2, base - tabH], [cx + tabW / 2, base]);
+  }
+  outline.push([w / 2, base], [w / 2, top - r]);
+  outline.push(...arcPoints([w / 2 - r, top - r], r, 0, 90, 4));
+  outline.push([-w / 2 + r, top]);
+  outline.push(...arcPoints([-w / 2 + r, top - r], r, 90, 90, 4));
+  outline.push([-w / 2, base]);
+
+  /*
+    A fixed pivot at the top and an arc of holes below it. Moving the lower
+    screw from one hole to the next tilts the camera — how a real mount is
+    adjusted, and far easier to cut accurately than a curved slot.
+  */
+  const R = tiltArcRadius(camera);
+  const holes: Hole[] = [
+    { c: pivot, r: camera.bolt / 2 },
+    ...CAMERA_TILTS.map((deg) => {
+      const a = deg2rad(deg);
+      return { c: [pivot[0] + R * Math.sin(a), pivot[1] - R * Math.cos(a)] as Pt, r: camera.bolt / 2 };
+    }),
+  ];
+
+  const plate: Profile = {
+    id: "camera-plate",
+    name: "Camera side plate",
+    qty: 2,
+    outline,
+    holes,
+    slots: [],
+    thicknessMm: plateThicknessMm,
+    areaMm2: polygonArea(outline) - holes.reduce((s, x) => s + Math.PI * x.r * x.r, 0),
+  };
+
+  /*
+    The slots the tabs drop into. Each side plate stands in the Y-Z plane, so
+    seen from above it is a thin strip: the plate's thickness across, and the
+    tab's width along the frame. Two plates, two tabs each, four slots.
+  */
+  const gap = camera.widthMm + 2 * CAMERA_SIDE_CLEARANCE_MM;
+  /*
+    As far forward as the tab slots will go, measured by the tabs rather than
+    by the plate's full length: the side plate reaches further fore and aft
+    than its tabs do, and it overhangs the plate edge quite happily — it is
+    the slots that must stay inside the material.
+  */
+  const frontY = bodyL / 2 - tabReach - 2;
+  const footSlots: Pt[][] = [];
+  for (const side of [-1, 1]) {
+    for (const cx of tabX) {
+      footSlots.push(
+        roundedRect(plateThicknessMm + 0.3, tabW + 0.3, 0.4).map(
+          ([x, y]) => [x + (side * (gap + plateThicknessMm)) / 2, y + frontY + cx] as Pt,
+        ),
+      );
+    }
+  }
+
+  const rearYMm = Math.min(...footSlots.flat().map((p) => p[1]));
+  return { plate, footSlots, rearYMm };
+}
+
+const deg2rad = (d: number) => (d * Math.PI) / 180;
+
 function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
@@ -1290,12 +1550,64 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   ];
   const fittedBottom = fitRoundedPlate(bodyW, bodyL, 6, bottomHoles);
   const bottomOutline = roundedRect(fittedBottom.w, fittedBottom.l, 6);
+  /*
+    Strap slots go in whichever plate the pack straps to. A pack on top is
+    strapped through the top plate; one underneath is strapped through the
+    bottom. Cutting them in the bottom plate regardless, as this used to,
+    described a top-mounted pack held on by a strap passing under the frame
+    and round the outside of everything.
+  */
   const slotW = 4;
   const slotL = Math.min(bodyW * 0.55, 26);
   const slotY = bodyL / 2 - 10;
+  /*
+    Front and rear placed separately, because only the front one is hemmed
+    in. A camera mount occupies the nose, and clamping both slots to clear it
+    pulled them together into the middle of the plate — two slots 24 mm apart
+    on a frame carrying a 105 mm pack, which is a strap round the plate
+    rather than round the battery. The rear slot has nothing in its way and
+    belongs at the back edge where it can do its job.
+  */
+  const strapSlotAt = (y: number): Pt[] => roundedRect(slotL, slotW, slotW / 2).map((p) => [p[0], p[1] + y] as Pt);
+
+  /**
+   * Walk a strap slot inboard from `startY` until it clears the plate's own
+   * bolts, or give up on it.
+   *
+   * Placed by search rather than by arithmetic because what it has to miss
+   * depends on the frame: on a camera-carrying 5" the front slot gets pushed
+   * back until it is level with the stack's bolts, and a fixed offset that
+   * cleared them on one size sat 1.4 mm from them on another.
+   */
+  const fitStrapSlot = (startY: number, holes: Hole[], outline: Pt[]): Pt[] | null => {
+    for (let y = startY; y > slotW; y -= 0.5) {
+      const poly = strapSlotAt(y);
+      if (clearsBy(poly, outline, holes, [], MIN_SLOT_CLEARANCE)) return poly;
+    }
+    return null;
+  };
+
+  const strapSlotPair = (frontY: number, rearY: number, holes: Hole[], outline: Pt[]): Pt[][] => {
+    const front = fitStrapSlot(frontY, holes, outline);
+    const rear = fitStrapSlot(rearY, holes, outline);
+    return [
+      ...(front ? [front] : []),
+      ...(rear ? [rear.map(([x, y]) => [x, -y] as Pt)] : []),
+    ];
+  };
+  const strapsOnTop = spec.batteryMount === "top";
+  /*
+    Camera first, straps after. The side plates have to stand at the very
+    front; the straps can move inboard, and the lightening runs last of all
+    so it sees both and keeps away from them.
+  */
+  const camera = cameraById(spec.cameraId);
+  const mount = cameraMount(camera, plates.bottomMm, bodyL);
+  // The front slot tucks in behind the camera; the rear one stays at the back.
+  const strapFrontY = mount ? Math.min(slotY, mount.rearYMm - slotW / 2 - 4) : slotY;
   const slots: Pt[][] = [
-    roundedRect(slotL, slotW, slotW / 2).map((p) => [p[0], p[1] + slotY] as Pt),
-    roundedRect(slotL, slotW, slotW / 2).map((p) => [p[0], p[1] - slotY] as Pt),
+    ...(mount ? mount.footSlots : []),
+    ...(strapsOnTop ? [] : strapSlotPair(strapFrontY, slotY, bottomHoles, bottomOutline)),
   ];
   const bottomBearings = g.motors.map((m) => Math.atan2(m[1], m[0]));
   const bottomSlots = spec.lightenPlates
@@ -1342,7 +1654,12 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   const topW = fittedTop.w;
   const topL = fittedTop.l;
   const topOutline = roundedRect(topW, topL, 6);
-  const topSlots = stackOpening(spec, topW, topL, topHoles);
+  const topSlots = [
+    ...stackOpening(spec, topW, topL, topHoles),
+    ...(strapsOnTop
+      ? strapSlotPair(topL / 2 - 8, topL / 2 - 8, topHoles, topOutline)
+      : []),
+  ];
   const top: Profile = {
     id: "top-plate",
     name: "Top plate",
@@ -1358,7 +1675,7 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
       - topSlots.reduce((s, p) => s + polygonArea(p), 0),
   };
 
-  if (spec.construction === "bolted") return [bottom, top, ...arms];
+  if (spec.construction === "bolted") return [bottom, top, ...arms, ...(mount ? [mount.plate] : [])];
 
   /*
     Unibody: the chassis is the plate and the arms as one piece.
@@ -1457,7 +1774,7 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
       - uniTopSlots.reduce((sum, p) => sum + polygonArea(p), 0),
   };
 
-  return [chassis, uniTop];
+  return [chassis, uniTop, ...(mount ? [mount.plate] : [])];
 }
 
 /**

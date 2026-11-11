@@ -7,7 +7,7 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   motorId: "2207", motorThrustG: 1350, stackPattern: 30.5, stackBolt: 3, stackHeightMm: 15,
   battery: { l: 105, w: 35, h: 30, massG: 180 }, electronicsMassG: 120,
   construction: "bolted", materialId: "cf-plate", fixedDimMm: 4,
-  plateThicknessMm: null, wallMm: 2.5, lightenPlates: true,
+  plateThicknessMm: null, wallMm: 2.5, lightenPlates: true, batteryMount: "bottom", cameraId: "micro",
   styleId: "freestyle", safetyFactor: 2, ...over,
 });
 
@@ -41,9 +41,11 @@ describe("lightening cut-outs", () => {
     const d = designFrame(spec({ lightenPlates: false }));
     expect(d.lightening.count).toBe(0);
     expect(d.lightening.savedG).toBe(0);
-    // Plates keep their strap slots and the stack opening, nothing more.
-    const bottom = d.profiles.find((p) => p.id === "bottom-plate")!;
-    expect(bottom.slots.length).toBe(2);
+    // Plates keep their functional openings -- strap slots, the stack hole,
+    // the camera's tab slots -- and nothing beyond them.
+    for (const p of d.profiles) {
+      expect(p.slots.length, p.id).toBe(p.lightenedFrom ?? 0);
+    }
   });
 
   it("never cuts into an arm", () => {
@@ -120,8 +122,9 @@ describe("lightening cut-outs", () => {
     for (const propIn of [3, 5, 7, 10]) {
       const d = designFrame(spec({ propIn, fixedDimMm: null }));
       for (const p of plates(d)) {
-        // Anything past the two strap slots is a lightening cut-out.
-        for (const slot of p.slots.slice(p.id === "top-plate" ? 0 : 2)) {
+        // Each profile records where its lightening begins; everything
+        // before it is a functional opening.
+        for (const slot of p.slots.slice(p.lightenedFrom ?? p.slots.length)) {
           expect(polygonArea(slot), `${propIn}" ${p.id}`).toBeGreaterThan(30);
         }
       }
