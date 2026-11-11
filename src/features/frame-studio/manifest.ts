@@ -127,6 +127,17 @@ export function buildManifest({ vehicleName, design: d, kind, files, bom, recipe
     out.push(row("Plates", `${round(d.stock.bottomPlateMm, 1)} mm bottom, ${round(d.stock.topPlateMm, 1)} mm top`));
   }
   out.push(row("Motors", `${d.motors.length} × ${d.motor.size} stator, ${round(d.spec.motorThrustG)} g peak thrust each`));
+  out.push(
+    row(
+      "Propellers",
+      `${d.spec.propIn}" — ${d.motor.size} motors are built for ${d.motor.props.map((p) => `${p}"`).join(" or ")}`,
+    ),
+  );
+  // The thrust figure above is only meaningful with a voltage behind it, and
+  // every number in this design follows from that one input.
+  if (Math.abs(d.spec.motorThrustG - d.motor.thrustG) < 1e-9) {
+    out.push(row("Thrust assumed at", `${d.motor.thrustCells}S, ${d.motor.kv[0]}–${d.motor.kv[1]} KV (studio default)`));
+  }
   out.push(row("Frame mass", `${round(d.mass.frameG)} g bare, ${round(d.mass.auwG)} g all-up`));
   out.push(row("Thrust / weight", `${round(d.thrustToWeight, 1)} : 1 — hovers near ${round(d.hoverThrottle * 100)}% throttle`));
   out.push(row("Sized by", `${d.section.governing} load case`));

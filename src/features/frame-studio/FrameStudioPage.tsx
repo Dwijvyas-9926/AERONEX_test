@@ -1,6 +1,6 @@
 import { AlertTriangle, Box, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Grid3x3, RotateCcw, Ruler, Shapes } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
-import { FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS, materialById, motorById } from "./catalog";
+import { FLYING_STYLES, MATERIALS, MOTORS, PROP_SIZES, STACK_PATTERNS, materialById, motorById, propFit, type MotorSpec } from "./catalog";
 import { ExportPanel } from "./components/ExportPanel";
 import { PlanView } from "./components/PlanView";
 import { SheetView } from "./components/SheetView";
@@ -91,6 +91,20 @@ function Stat({ label, value, unit, tone }: { label: string; value: string; unit
       </b>
     </div>
   );
+}
+
+/**
+ * Suffix shown beside a propeller size in the selector.
+ *
+ * Named by direction rather than by verdict: "wrong" covers a prop the motor
+ * cannot turn and a prop so small the motor is wasted, and telling someone a
+ * 2" prop is "too big" for their 3110 would be worse than saying nothing.
+ */
+function propNote(motor: MotorSpec, propIn: number): string {
+  const { fit } = propFit(motor, propIn);
+  if (fit === "ideal") return "";
+  if (fit === "workable") return " — flies, but not the usual pairing";
+  return propIn > motor.propRange[1] ? " — too big for this motor" : " — too small for this motor";
 }
 
 function FindingRow({ f }: { f: Finding }) {
@@ -201,10 +215,15 @@ export function FrameStudioPage() {
                     onChange={(e) => setSpec("propIn", Number(e.target.value))}
                   >
                     {PROP_SIZES.map((p) => (
-                      <option key={p} value={p}>{p}" propellers</option>
+                      <option key={p} value={p}>
+                        {p}" propellers{propNote(motor, p)}
+                      </option>
                     ))}
                   </select>
-                  <small>The single biggest decision — it sets how large the whole aircraft has to be.</small>
+                  <small>
+                    The single biggest decision — it sets how large the whole aircraft has to be.
+                    {" "}Your {motor.size} motors are built for {motor.props.map((p) => `${p}"`).join(" or ")}.
+                  </small>
                 </label>
 
                 <div className="field">
@@ -290,6 +309,7 @@ export function FrameStudioPage() {
                     {MOTORS.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.size} — {m.pattern} mm pattern, M{m.bolt}, for {m.props.join("/")}"
+                        {propFit(m, spec.propIn).fit === "ideal" ? "" : ` (not your ${spec.propIn}" prop)`}
                       </option>
                     ))}
                   </select>
@@ -304,7 +324,11 @@ export function FrameStudioPage() {
                   min={20}
                   max={8000}
                   step={10}
-                  hint="From your motor's own thrust table, at your cell count and prop. The default is typical for the size — replace it with yours."
+                  hint={
+                    Math.abs(spec.motorThrustG - motor.thrustG) < 1e-9
+                      ? `The default, ${motor.thrustG} g, is what a ${motor.size} makes on ${motor.thrustCells}S with a ${motor.kv[0]}–${motor.kv[1]} KV winding. Every number in this design follows from it, so replace it with your motor's own thrust table figure if you have one.`
+                      : `From your motor's own thrust table, at your cell count and prop. A stock ${motor.size} is around ${motor.thrustG} g on ${motor.thrustCells}S.`
+                  }
                 />
 
                 <label className="field">

@@ -161,29 +161,95 @@ export interface MotorSpec {
   bolt: number;
   /** Representative peak thrust per motor, grams — a default the user can override. */
   thrustG: number;
+  /**
+   * Cell count the `thrustG` figure is quoted at.
+   *
+   * Without this the thrust default is unanchored: the same motor makes very
+   * different thrust on 4S and 6S, so a number with no voltage behind it
+   * cannot be checked or reproduced.
+   */
+  thrustCells: number;
+  /** Usual KV window at `thrustCells`, for the user to check their motors against. */
+  kv: [number, number];
   /** Typical motor mass, grams (contributes to all-up weight). */
   massG: number;
-  /** Props this stator usually turns, inches. */
+  /** Props this stator is normally flown on, inches — the recommended pairing. */
   props: number[];
+  /**
+   * Widest envelope this stator will turn at all, inches.
+   *
+   * Distinct from `props` because the edges of the envelope are a real but
+   * compromised choice, while outside it the pairing does not work: the motor
+   * cannot supply the torque a much larger disc demands, and what follows is
+   * current draw and heat rather than merely poor efficiency.
+   */
+  propRange: [number, number];
 }
 
 /*
-  Peak thrust values are representative of the size class on its usual prop and
-  cell count. They are defaults only — every motor ships a thrust table, and the
-  studio asks the user to enter theirs for a real design.
+  Peak thrust values are representative of the size class on its usual prop at
+  the stated cell count. They are defaults only — every motor ships a thrust
+  table, and the studio asks the user to enter theirs for a real design.
+
+  Prop ranges and KV windows are cross-checked between two published matching
+  guides (MEPS and The Flying Emu) and agree on the size classes. Where the two
+  differ at the edges the narrower figure is used, because the cost of calling
+  a workable pairing unusual is a warning the user can dismiss, while the cost
+  of blessing a pairing that cooks a motor is a burnt motor.
 */
 export const MOTORS: MotorSpec[] = [
-  { id: "1103", size: "1103", pattern: 9, bolt: 2, thrustG: 130, massG: 6, props: [2, 2.5] },
-  { id: "1404", size: "1404", pattern: 12, bolt: 2, thrustG: 350, massG: 10, props: [3, 3.5, 4] },
-  { id: "1806", size: "1806", pattern: 12, bolt: 2, thrustG: 450, massG: 19, props: [4] },
-  { id: "2204", size: "2204", pattern: 16, bolt: 3, thrustG: 500, massG: 25, props: [4, 5] },
-  { id: "2206", size: "2206", pattern: 16, bolt: 3, thrustG: 850, massG: 30, props: [5] },
-  { id: "2207", size: "2207", pattern: 16, bolt: 3, thrustG: 1350, massG: 32, props: [5, 6] },
-  { id: "2306", size: "2306", pattern: 16, bolt: 3, thrustG: 1250, massG: 31, props: [5, 6] },
-  { id: "2407", size: "2407", pattern: 16, bolt: 3, thrustG: 1500, massG: 36, props: [6] },
-  { id: "2806", size: "2806", pattern: 19, bolt: 3, thrustG: 1800, massG: 50, props: [7, 8] },
-  { id: "3110", size: "3110", pattern: 19, bolt: 3, thrustG: 2600, massG: 85, props: [8, 9, 10] },
+  { id: "1103", size: "1103", pattern: 9, bolt: 2, thrustG: 130, thrustCells: 3, kv: [8000, 12000], massG: 6, props: [2, 2.5], propRange: [1.6, 2.5] },
+  { id: "1404", size: "1404", pattern: 12, bolt: 2, thrustG: 350, thrustCells: 4, kv: [3500, 5000], massG: 10, props: [3, 3.5], propRange: [2.5, 4] },
+  { id: "1806", size: "1806", pattern: 12, bolt: 2, thrustG: 450, thrustCells: 4, kv: [2300, 2700], massG: 19, props: [4], propRange: [3.5, 5] },
+  { id: "2204", size: "2204", pattern: 16, bolt: 3, thrustG: 500, thrustCells: 4, kv: [2300, 2700], massG: 25, props: [4, 5], propRange: [3.5, 5] },
+  { id: "2206", size: "2206", pattern: 16, bolt: 3, thrustG: 850, thrustCells: 4, kv: [2300, 2700], massG: 30, props: [5], propRange: [4, 6] },
+  { id: "2207", size: "2207", pattern: 16, bolt: 3, thrustG: 1350, thrustCells: 6, kv: [1700, 2000], massG: 32, props: [5, 6], propRange: [4, 6.5] },
+  { id: "2306", size: "2306", pattern: 16, bolt: 3, thrustG: 1250, thrustCells: 6, kv: [1700, 2100], massG: 31, props: [5, 6], propRange: [4, 6.5] },
+  { id: "2407", size: "2407", pattern: 16, bolt: 3, thrustG: 1500, thrustCells: 6, kv: [1500, 1900], massG: 36, props: [6], propRange: [5, 7] },
+  { id: "2806", size: "2806", pattern: 19, bolt: 3, thrustG: 1800, thrustCells: 6, kv: [1000, 1400], massG: 50, props: [7, 8], propRange: [6, 8.5] },
+  { id: "3110", size: "3110", pattern: 19, bolt: 3, thrustG: 2600, thrustCells: 6, kv: [700, 900], massG: 85, props: [8, 9, 10], propRange: [7, 10.5] },
 ];
+
+/** How well a stator and a propeller go together. */
+export type PropFit = "ideal" | "workable" | "wrong";
+
+export interface PropFitResult {
+  fit: PropFit;
+  /** The motor the user would need for this prop, when the pairing is off. */
+  betterMotor?: MotorSpec;
+  /** The prop this motor wants, when the pairing is off. */
+  betterProp?: number;
+}
+
+/**
+ * Judge a motor against a propeller.
+ *
+ * Three outcomes rather than a yes/no, because the truth is graded. A 2207 is
+ * sold as a 5" motor and flies 6" perfectly well; the same motor on a 10" prop
+ * is not inefficient, it is a motor that cannot turn that disc. A binary check
+ * would have to either reject the first case or permit the second.
+ *
+ * The torque a propeller demands climbs steeply with diameter while a stator's
+ * output is fixed, which is why the envelope is narrow and why being outside
+ * it shows up as current and heat rather than as a gentle loss.
+ */
+export function propFit(motor: MotorSpec, propIn: number): PropFitResult {
+  if (motor.props.includes(propIn)) return { fit: "ideal" };
+
+  const [lo, hi] = motor.propRange;
+  const inRange = propIn >= lo - 1e-9 && propIn <= hi + 1e-9;
+  if (inRange) return { fit: "workable" };
+
+  // Outside the envelope: name the motor that would carry this prop, and the
+  // prop this motor wants, so the user has both ways out.
+  const candidates = MOTORS.filter((m) => m.props.includes(propIn));
+  const betterMotor =
+    candidates.sort((a, b) => Math.abs(a.thrustG - motor.thrustG) - Math.abs(b.thrustG - motor.thrustG))[0] ??
+    MOTORS.filter((m) => propIn >= m.propRange[0] && propIn <= m.propRange[1])[0];
+  // Nearest recommended prop for the motor the user actually picked.
+  const betterProp = [...motor.props].sort((a, b) => Math.abs(a - propIn) - Math.abs(b - propIn))[0];
+  return { fit: "wrong", betterMotor, betterProp };
+}
 
 export const motorById = (id: string) => MOTORS.find((m) => m.id === id) ?? MOTORS[5];
 

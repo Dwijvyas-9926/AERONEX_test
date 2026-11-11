@@ -11,7 +11,7 @@
   margin they have rather than just being told "ok".
 */
 
-import { MATERIALS } from "./catalog";
+import { MATERIALS, propFit } from "./catalog";
 import {
   distanceToBoundary,
   pointInPolygon,
@@ -287,6 +287,43 @@ export function validateDesign(d: FrameDesign): Finding[] {
       detail:
         "A tall narrow section resists vertical bending well but twists easily, and it is a tall thin wall to print. Widen the arm and the studio can take depth out of it.",
       measured: `${d.section.heightMm} × ${d.section.widthMm} mm`,
+    });
+  }
+
+  /* --- powertrain ----------------------------------------------------- */
+  /*
+    Nothing used to connect the motor and the propeller, so a 1103 could be
+    asked to turn a 10" prop and the studio would size a frame around it
+    without comment. The two selectors are independent by design — the user may
+    own an odd combination — so this reports rather than forbids.
+  */
+  const fit = propFit(d.motor, d.spec.propIn);
+  if (fit.fit === "wrong") {
+    const [lo, hi] = d.motor.propRange;
+    const ways: string[] = [];
+    if (fit.betterMotor) ways.push(`a ${fit.betterMotor.size} is the usual motor for a ${d.spec.propIn}" prop`);
+    if (fit.betterProp !== undefined) ways.push(`a ${fit.betterProp}" prop is what a ${d.motor.size} is built for`);
+    const tooBig = d.spec.propIn > hi;
+    out.push({
+      id: "motor-prop-mismatch",
+      severity: "error",
+      scope: "Powertrain",
+      title: `A ${d.motor.size} cannot turn a ${d.spec.propIn}" propeller`,
+      detail: tooBig
+        ? `The torque a propeller demands rises steeply with its diameter, and a ${d.motor.size} stator cannot supply what a ${d.spec.propIn}" disc asks for. It would draw heavy current, overheat the motor and the ESC, and still not produce the thrust this design assumes. ${ways.join(", or ")}.`
+        : `A ${d.spec.propIn}" propeller is far too small for a ${d.motor.size}. The motor would spin up against almost no load, which wastes its mass and gives the aircraft no thrust to speak of. ${ways.join(", or ")}.`,
+      measured: `${d.spec.propIn}" on a ${d.motor.size}`,
+      limit: `${lo}–${hi}" for this stator`,
+    });
+  } else if (fit.fit === "workable") {
+    out.push({
+      id: "motor-prop-unusual",
+      severity: "warn",
+      scope: "Powertrain",
+      title: `A ${d.motor.size} is not usually flown on a ${d.spec.propIn}" propeller`,
+      detail: `It is inside what the stator will turn, so this will fly, but it sits at the edge of the envelope: ${d.motor.size} motors are normally paired with ${d.motor.props.map((p) => `${p}"`).join(" or ")} props. Watch motor temperature on the first few packs, and treat the thrust figure below as a guess until you have measured yours.`,
+      measured: `${d.spec.propIn}"`,
+      limit: `${d.motor.props.map((p) => `${p}"`).join(" or ")} usual`,
     });
   }
 
