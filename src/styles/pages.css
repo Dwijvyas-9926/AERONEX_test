@@ -2509,6 +2509,30 @@ input[type="range"]::-moz-range-thumb {
 .fs-xcard.primary { border-color: var(--accent-line); background: var(--accent-soft); }
 .fs-xcard-go { position: absolute; right: var(--s4); top: 50%; translate: 0 -50%; color: var(--muted); }
 
+/* The one-archive note under the download buttons. */
+.fs-xzip {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: var(--s2);
+  align-items: start;
+  margin-top: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-ctl);
+  background: var(--midnight-deep);
+  border: 1px solid var(--line-soft);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.fs-xzip svg { margin-top: 3px; color: var(--accent); }
+.fs-xzip strong { color: var(--ink); font-weight: 600; }
+.fs-xzip code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.95em;
+  color: var(--accent);
+  word-break: break-all;
+}
+
 .fs-xopts { display: grid; gap: var(--s3); margin-top: var(--s4); }
 .fs-xnest { font-size: var(--t-xs); color: var(--muted); }
 .fs-xnest b { color: var(--ink); }

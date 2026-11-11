@@ -1,12 +1,15 @@
-import { Box, Download, FileCode2, Hammer, Package, Scissors } from "lucide-react";
-import { useMemo } from "react";
+import { Box, Download, FileArchive, FileCode2, Hammer, Package, Scissors } from "lucide-react";
+import { useMemo, useState } from "react";
 import { notify } from "../../../state/notifyStore";
+import { useActiveProfile } from "../../../state/profileStore";
 import { buildBOM, buildRecipe } from "../bom";
 import { planSheets, toDXF, toSVG } from "../exporters";
 import { type FrameDesign } from "../geometry";
+import { buildManifest, exportSlug, type ManifestFile } from "../manifest";
 import { toSTLParts } from "../solid";
 import { useStudio } from "../store";
 import { worstSeverity, type Finding } from "../validate";
+import { zip, type ZipEntry } from "../zip";
 
 /*
   Export.
@@ -14,10 +17,15 @@ import { worstSeverity, type Finding } from "../validate";
   Downloads are built in the browser from the same geometry the preview draws.
   Nothing is uploaded and nothing is fetched, so the studio works offline and
   the user's design never leaves their machine.
+
+  Everything leaves as one archive. A frame is never a single file — a cut
+  design is one drawing per stock thickness, a printed one is a solid per part
+  — and firing off four separate downloads scatters them through the Downloads
+  folder with nothing to say they belong together. The archive keeps the set
+  intact and carries the build notes with it.
 */
 
-function download(name: string, data: string | ArrayBuffer, mime: string) {
-  const blob = new Blob([data as BlobPart], { type: mime });
+function download(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -28,14 +36,12 @@ function download(name: string, data: string | ArrayBuffer, mime: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const slug = (d: FrameDesign) =>
-  `aeronex-${d.spec.propIn}in-${d.spec.layout}-${Math.round(d.wheelbaseMm)}mm`.replace(/[^a-z0-9-]/gi, "");
-
 export function ExportPanel({ design: d, findings }: { design: FrameDesign; findings: Finding[] }) {
   const sheetWidthMm = useStudio((s) => s.sheetWidthMm);
   const setSheetWidth = useStudio((s) => s.setSheetWidth);
   const labelParts = useStudio((s) => s.labelParts);
   const setLabelParts = useStudio((s) => s.setLabelParts);
+  const profile = useActiveProfile();
 
   const isCut = d.material.method === "cut";
   // One sheet per thickness: arms and plates are not cut from the same stock.
@@ -44,23 +50,92 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
   const recipe = useMemo(() => buildRecipe(d), [d]);
 
   const blocked = worstSeverity(findings) === "error";
+  const vehicleName = profile?.name?.trim() || "Untitled airframe";
+  const stem = exportSlug(profile?.name, d);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const saveDxf = () => {
-    for (const s of sheets) download(`${slug(d)}-${s.thicknessMm}mm.dxf`, toDXF(s.nest, { labels: labelParts }), "application/dxf");
-    notify(
-      "success",
-      sheets.length > 1 ? `${sheets.length} DXF files saved` : "DXF saved",
-      `One file per thickness — ${sheets.map((s) => `${s.thicknessMm} mm`).join(" and ")} — each 1:1 in millimetres.`,
+  /** Bundle the given files with a manifest and hand the archive to the browser. */
+  const save = async (
+    kind: string,
+    holds: "drawings" | "solids",
+    name: string,
+    files: (ZipEntry & ManifestFile)[],
+    blurb: string,
+  ) => {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      const readme = buildManifest({
+        vehicleName,
+        design: d,
+        kind: holds,
+        files: files.map(({ name: n, detail }) => ({ name: n, detail })),
+        bom,
+        recipe,
+      });
+      const archive = await zip([
+        ...files.map(({ path, data }) => ({ path, data })),
+        { path: "README.txt", data: readme },
+      ]);
+      download(name, archive);
+      notify("success", `${name} saved`, blurb);
+    } catch (err) {
+      notify(
+        "error",
+        "Export failed",
+        err instanceof Error ? err.message : "The archive could not be built. Try again, or reload the page.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const sheetFiles = (ext: string, render: (s: (typeof sheets)[number]) => string) =>
+    sheets.map((s) => {
+      const path = `${stem}-${s.thicknessMm}mm.${ext}`;
+      return {
+        path,
+        name: path,
+        data: render(s),
+        detail: `${s.partNames.join(", ")} — cut from ${s.thicknessMm} mm stock. Needs ${Math.ceil(s.nest.widthMm)} × ${Math.ceil(s.nest.heightMm)} mm of sheet.`,
+      };
+    });
+
+  const saveDxf = () =>
+    save(
+      "dxf",
+      "drawings",
+      `${stem}-dxf.zip`,
+      sheetFiles("dxf", (s) => toDXF(s.nest, { labels: labelParts })),
+      `${sheets.length} drawing${sheets.length > 1 ? "s" : ""} — one per stock thickness — plus the build notes.`,
     );
-  };
-  const saveSvg = () => {
-    for (const s of sheets) download(`${slug(d)}-${s.thicknessMm}mm.svg`, toSVG(s.nest, { labels: labelParts }), "image/svg+xml");
-    notify("success", "SVG saved", "Same drawings as the DXFs, for checking in a browser.");
-  };
+
+  const saveSvg = () =>
+    save(
+      "svg",
+      "drawings",
+      `${stem}-svg.zip`,
+      sheetFiles("svg", (s) => toSVG(s.nest, { labels: labelParts })),
+      "The same drawings as the DXFs, openable in a browser.",
+    );
+
   const saveStl = () => {
     const parts = toSTLParts(d.profiles);
-    for (const p of parts) download(`${slug(d)}-${p.filename}`, p.data, "model/stl");
-    notify("success", `${parts.length} STL files saved`, "One file per part. Print the arms on edge — see the build notes.");
+    return save(
+      "stl",
+      "solids",
+      `${stem}-stl.zip`,
+      parts.map((p) => {
+        const path = `${stem}-${p.filename}`;
+        return {
+          path,
+          name: path,
+          data: new Uint8Array(p.data),
+          detail: `${p.name} — print ${p.qty}, ${p.thicknessMm} mm thick. Already oriented flat on the bed.`,
+        };
+      }),
+      `${parts.length} solid${parts.length > 1 ? "s" : ""}, one per part, plus the printer settings.`,
+    );
   };
 
   return (
@@ -98,36 +173,52 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
         <div className="fs-xgrid">
           {isCut ? (
             <>
-              <button className="fs-xcard primary" onClick={saveDxf}>
+              <button className="fs-xcard primary" onClick={saveDxf} disabled={busy !== null}>
                 <Scissors />
                 <b>DXF R12 × {sheets.length}</b>
-                <small>Universal CAM format, 1:1 mm. One file per thickness.</small>
+                <small>Universal CAM format, 1:1 mm. One drawing per thickness.</small>
                 <Download className="fs-xcard-go" />
               </button>
-              <button className="fs-xcard" onClick={saveSvg}>
+              <button className="fs-xcard" onClick={saveSvg} disabled={busy !== null}>
                 <FileCode2 />
-                <b>SVG</b>
+                <b>SVG × {sheets.length}</b>
                 <small>Browser-checkable, hobby-laser friendly.</small>
                 <Download className="fs-xcard-go" />
               </button>
             </>
           ) : (
             <>
-              <button className="fs-xcard primary" onClick={saveStl}>
+              <button className="fs-xcard primary" onClick={saveStl} disabled={busy !== null}>
                 <Box />
                 <b>STL × {d.profiles.length}</b>
                 <small>One solid per part, at the thickness the solver chose.</small>
                 <Download className="fs-xcard-go" />
               </button>
-              <button className="fs-xcard" onClick={saveDxf}>
+              <button className="fs-xcard" onClick={saveDxf} disabled={busy !== null}>
                 <Scissors />
-                <b>DXF R12</b>
+                <b>DXF R12 × {sheets.length}</b>
                 <small>If you would rather cut the plates than print them.</small>
                 <Download className="fs-xcard-go" />
               </button>
             </>
           )}
         </div>
+
+        <p className="fs-xzip">
+          <FileArchive size={14} />
+          <span>
+            Downloads as one archive — <code>{stem}-{isCut ? "dxf" : "stl"}.zip</code> — named after{" "}
+            {profile ? (
+              <>
+                your active vehicle, <strong>{vehicleName}</strong>
+              </>
+            ) : (
+              "the design, since no vehicle profile is active"
+            )}
+            . Every part is inside, with a <code>README.txt</code> holding the material, the bolts to order and the
+            build notes.
+          </span>
+        </p>
 
         <div className="fs-xopts">
           <label className="field">
