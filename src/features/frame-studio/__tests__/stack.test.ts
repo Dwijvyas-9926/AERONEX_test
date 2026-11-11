@@ -31,7 +31,9 @@ describe("where the stack actually sits", () => {
   });
 
   it("opens the top plate up so the stack can pass through", () => {
-    const top = topOf(spec());
+    // No camera, so the stack's opening is the only thing cut in this plate;
+    // with one fitted the plate is also notched for its side plates.
+    const top = topOf(spec({ cameraId: "none" }));
     expect(top.slots.length).toBe(1);
     const xs = top.slots[0].map((p) => p[0]);
     const width = Math.max(...xs) - Math.min(...xs);
@@ -40,7 +42,7 @@ describe("where the stack actually sits", () => {
       so that cut parts do not come out undersized, which on a clearance
       opening means it errs towards clearing more.
     */
-    const nominal = stackOpeningSize(spec());
+    const nominal = stackOpeningSize(spec({ cameraId: "none" }));
     expect(width).toBeGreaterThanOrEqual(nominal);
     expect(width).toBeLessThan(nominal + 0.5);
   });
@@ -142,7 +144,7 @@ describe("the design stays clean with the opening in it", () => {
 
   it("catches two cut-outs that overlap", () => {
     // The slot-vs-slot check did not exist before; prove it fires.
-    const d = designFrame(spec());
+    const d = designFrame(spec({ cameraId: "none" }));
     const top = d.profiles.find((p) => p.id === "top-plate")!;
     const doubled = { ...top, slots: [...top.slots, ...top.slots] };
     const findings = validateDesign({ ...d, profiles: [doubled] });

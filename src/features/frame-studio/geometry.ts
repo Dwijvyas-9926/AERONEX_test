@@ -240,6 +240,8 @@ export interface FrameDesign {
     /** Fore/aft offset from the thrust centroid, mm. Positive is forward. */
     offsetYMm: number;
   };
+  /** Where the camera side plates stand, when a camera is fitted. */
+  cameraMount: CameraMount["placement"] | null;
   /** What the plate cut-outs removed, if any were cut. */
   lightening: {
     count: number;
@@ -822,7 +824,10 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     room rather than the mount being quietly cut through the stack bolts.
   */
   const cameraHalfL = camera.widthMm > 0
-    ? spec.stackPattern / 2 + spec.stackBolt / 2 + 2 + cameraFootprintL(camera) + 2
+    ? stackOpeningSize(spec) / 2
+      + MIN_SLOT_CLEARANCE
+      + cameraFootprintL(camera) + 2 * CAMERA_CLEARANCE_MM
+      + 2
     : 0;
   const bodyLmm = round(2 * Math.max(rootHalfL + edgeMargin, stackSpan / 2 + 12, spec.battery.l * 0.325, wheelbaseMm * 0.17, cameraHalfL, 28));
 
@@ -917,13 +922,20 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
   let suggested = autoArm ? solved : solveSection(auwG, true);
   const plateGeom: PlateGeom = { motors, rootRadius, armOverlapMm, rootBolt: ROOT_BOLT, armGroups };
   const plates: PlateStock = { bottomMm: bottomPlateMm, topMm: topPlateMm, wallMm };
-  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates);
+  /*
+    The camera mount is settled once, before the mass loop. Nothing it
+    depends on — the spec, the plate thickness, the frame's length, the
+    plate's bolt pattern — changes while the arm section converges, and its
+    placement search is the most expensive thing in the build.
+  */
+  const mount = cameraMount(camera, plates.bottomMm, bodyLmm, bottomPlateHoles(spec, plateGeom));
+  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount);
   let frameG = frameMass(profiles, material, solved.section);
   for (let i = 0; i < 5; i++) {
     auwG = fixedMass + frameG;
     solved = solveSection(auwG);
     suggested = autoArm ? solved : solveSection(auwG, true);
-    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates);
+    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount);
     const next = frameMass(profiles, material, solved.section);
     if (Math.abs(next - frameG) < 0.5) { frameG = next; break; }
     frameG = next;
@@ -956,6 +968,7 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     wheelbaseCrowded,
     propMinWheelbaseMm,
     strapSlotMm: round(Math.min(bodyWmm * 0.55, 26)),
+    cameraMount: mount?.placement ?? null,
     cg: (() => {
       /*
         Heights from the top face of the bottom plate, positive up.
@@ -1086,6 +1099,11 @@ interface PlateGeom {
  * Global positions of every arm root bolt. The arm's inboard tip sits at
  * `rootRadius - overlap` along its bearing, and its bolts step out from there.
  */
+/** Every hole the bottom plate carries: the stack's four, and the arm bolts. */
+export function bottomPlateHoles(spec: FrameSpec, g: PlateGeom): Hole[] {
+  return [...patternHoles([0, 0], spec.stackPattern, spec.stackBolt), ...armRootHoles(g)];
+}
+
 export function armRootHoles(g: PlateGeom): Hole[] {
   const offsets = rootBoltOffsets(g.rootBolt);
   const holes: Hole[] = [];
@@ -1202,6 +1220,26 @@ function stackOpening(spec: FrameSpec, plateW: number, plateL: number, holes: Ho
 /** Clear material any slot must leave to a bolt or an edge, mm. */
 const MIN_SLOT_CLEARANCE = 1.6;
 
+/**
+ * Clearance each side where the camera plates pass through the clamp plate.
+ *
+ * A fixed amount rather than a scale factor: the frame's length has to be
+ * budgeted for this notch, and a budget cannot be written against a
+ * proportion of something that is itself still being sized.
+ */
+const CAMERA_CLEARANCE_MM = 0.8;
+
+/** Grow a closed slot outward by `by` millimetres about its own centre. */
+function growSlot(poly: Pt[], by: number): Pt[] {
+  const cx = poly.reduce((a, p) => a + p[0], 0) / poly.length;
+  const cy = poly.reduce((a, p) => a + p[1], 0) / poly.length;
+  const halfX = Math.max(...poly.map((p) => Math.abs(p[0] - cx)));
+  const halfY = Math.max(...poly.map((p) => Math.abs(p[1] - cy)));
+  const sx = halfX > 0 ? (halfX + by) / halfX : 1;
+  const sy = halfY > 0 ? (halfY + by) / halfY : 1;
+  return poly.map(([x, y]) => [cx + (x - cx) * sx, cy + (y - cy) * sy] as Pt);
+}
+
 /* ------------------------------------------------------- lightening holes */
 
 /*
@@ -1262,7 +1300,31 @@ function clearsBy(poly: Pt[], outline: Pt[], holes: Hole[], slots: Pt[][], need:
     if (!pointInPolygon(p, outline)) return false;
     if (distanceToBoundary(p, outline) < need) return false;
   }
+
+  /*
+    Reject by bounding box first.
+
+    Most obstacles are nowhere near most candidates, and the exact test walks
+    every point of one against every edge of the other. The search below runs
+    this thousands of times per design, and without the cheap rejection a
+    single keystroke in the spec panel took the best part of a tenth of a
+    second to re-solve.
+  */
+  let loX = Infinity;
+  let loY = Infinity;
+  let hiX = -Infinity;
+  let hiY = -Infinity;
+  for (const [x, y] of poly) {
+    loX = Math.min(loX, x);
+    loY = Math.min(loY, y);
+    hiX = Math.max(hiX, x);
+    hiY = Math.max(hiY, y);
+  }
+  const far = (bx0: number, by0: number, bx1: number, by1: number) =>
+    bx0 - hiX > need || loX - bx1 > need || by0 - hiY > need || loY - by1 > need;
+
   for (const h of holes) {
+    if (far(h.c[0] - h.r, h.c[1] - h.r, h.c[0] + h.r, h.c[1] + h.r)) continue;
     // A hole swallowed by the cut-out is not a clearance, it is a collision.
     if (pointInPolygon(h.c, poly)) return false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1270,13 +1332,35 @@ function clearsBy(poly: Pt[], outline: Pt[], holes: Hole[], slots: Pt[][], need:
     }
   }
   for (const s of slots) {
+    let sx0 = Infinity;
+    let sy0 = Infinity;
+    let sx1 = -Infinity;
+    let sy1 = -Infinity;
+    for (const [x, y] of s) {
+      sx0 = Math.min(sx0, x);
+      sy0 = Math.min(sy0, y);
+      sx1 = Math.max(sx1, x);
+      sy1 = Math.max(sy1, y);
+    }
+    if (far(sx0, sy0, sx1, sy1)) continue;
+    /*
+      Both directions. Measuring only the candidate's corners against the
+      obstacle's edges misses the case where the obstacle has a corner near
+      the middle of one of the candidate's edges — which is exactly what the
+      validator then reported, at 1.4 mm where this had decided it had 3.
+    */
     for (const p of poly) {
       if (pointInPolygon(p, s)) return false;
       for (let i = 0, j = s.length - 1; i < s.length; j = i++) {
         if (distanceToSegment(p, s[j], s[i]) < need) return false;
       }
     }
-    for (const p of s) if (pointInPolygon(p, poly)) return false;
+    for (const p of s) {
+      if (pointInPolygon(p, poly)) return false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        if (distanceToSegment(p, poly[j], poly[i]) < need) return false;
+      }
+    }
   }
   return true;
 }
@@ -1399,6 +1483,22 @@ function tiltArcRadius(camera: CameraSpec): number {
 export interface CameraMount {
   /** The side plate, cut twice. */
   plate: Profile;
+  /**
+   * Where the two side plates stand, so the 3D view can place them from the
+   * same numbers the plate below is cut with rather than deriving its own.
+   */
+  placement: {
+    /** Distance between the two plates' mid-planes, mm. */
+    spacingMm: number;
+    /** Fore-aft centre of the plates, mm from the frame centre. */
+    centreYMm: number;
+    /**
+     * Full height of the side plate's body, mm — the tabs hang below it.
+     * Placing the body's midpoint at half this above the plate puts the tab
+     * bottoms exactly at the plate's top face, which is where the slots are.
+     */
+    heightMm: number;
+  };
   /** Slots to cut in the plate the side plates stand on. */
   footSlots: Pt[][];
   /**
@@ -1419,21 +1519,41 @@ export interface CameraMount {
  * room for it. Derived twice, they drift, and the symptom is a mount that
  * the plate was grown for but which still lands on the stack bolts.
  */
-function cameraDims(camera: CameraSpec) {
+function cameraDims(camera: CameraSpec, spread = TAB_SPREAD[0]) {
   const w = camera.widthMm + 10;
-  const tabW = Math.max(6, w * 0.3);
+  /*
+    Shorten the feet as they are drawn closer together, so the plate's own
+    two slots keep a wall between them. Narrowing the spread alone brought
+    them to 1.4 mm apart on a 3" — the generator was happy and the validator
+    was not, which is the validator being right.
+  */
+  const room = 2 * w * spread - MIN_SLOT_CLEARANCE - 0.3;
+  const tabW = Math.min(Math.max(6, w * 0.3), room);
   // Half the distance from the outer edge of the forward tab slot to the
   // outer edge of the rear one.
-  const tabReach = w / 4 + tabW / 2 + 0.15;
-  return { w, tabW, tabReach };
+  const tabReach = w * spread + tabW / 2 + 0.15;
+  return { w, tabW, tabReach, tabX: [-w * spread, w * spread], usable: tabW >= 5 };
 }
+
+/*
+  How far apart the two feet sit, as a fraction of the plate's length.
+
+  A quarter of the length is the stable choice and the one to prefer. The
+  narrower options exist for small frames: on a 3" the arm root bolts sit on
+  the diagonal right where the rear foot wants to go, and no fore-aft shift
+  helps because moving aft walks further onto them while forward runs off the
+  plate. Drawing the feet closer together is what fits, at some cost in how
+  firmly the mount is held.
+*/
+const TAB_SPREAD = [0.25, 0.18, 0.12];
 
 /** Fore-aft length of plate the mount's tab slots occupy, mm. */
 export function cameraFootprintL(camera: CameraSpec): number {
+  // The widest spread, so the frame's length budget is the conservative one.
   return camera.widthMm > 0 ? 2 * cameraDims(camera).tabReach : 0;
 }
 
-export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL: number): CameraMount | null {
+export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL: number, plateHoles: Hole[] = []): CameraMount | null {
   if (camera.widthMm <= 0) return null;
 
   /*
@@ -1444,14 +1564,81 @@ export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL:
     straight bottom run depends on how it was generated, and a tab spliced
     into the wrong edge is a part that silently comes out inside out.
   */
-  const { w, tabW, tabReach } = cameraDims(camera);
   const h = camera.widthMm + 16;
   const base = -h / 2;
   const top = h / 2;
   const r = 3;
   const tabH = plateThicknessMm + 1.5;
-  const tabX = [-w / 4, w / 4];
   const pivot: Pt = [0, top - camera.widthMm / 2 - 4];
+  const gap = camera.widthMm + 2 * CAMERA_SIDE_CLEARANCE_MM;
+
+  /*
+    Choose where the feet go before drawing anything.
+
+    Two things vary: how far apart the feet sit, and how far forward the
+    whole mount does. A fixed choice of both fitted a 5" and ran the rear
+    foot straight through the arm root bolts of a 3". The widest spread at
+    the most forward position is tried first — that is the stable one — and
+    the search only narrows or moves aft when it has to.
+  */
+  const slotsFor = (dims: ReturnType<typeof cameraDims>, y: number): Pt[][] => {
+    const out: Pt[][] = [];
+    for (const side of [-1, 1]) {
+      for (const cx of dims.tabX) {
+        out.push(
+          roundedRect(plateThicknessMm + 0.3, dims.tabW + 0.3, 0.4).map(
+            ([x, yy]) => [x + (side * (gap + plateThicknessMm)) / 2, yy + y + cx] as Pt,
+          ),
+        );
+      }
+    }
+    return out;
+  };
+
+  // Bounding-box rejection first, as everywhere else that searches: the walk
+  // below tries dozens of positions and almost every bolt is far from almost
+  // every foot.
+  const clears = (slots: Pt[][]) =>
+    slots.every((slot) => {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const [x, y] of slot) {
+        x0 = Math.min(x0, x);
+        y0 = Math.min(y0, y);
+        x1 = Math.max(x1, x);
+        y1 = Math.max(y1, y);
+      }
+      return plateHoles.every((hole) => {
+        const r = hole.r + MIN_SLOT_CLEARANCE;
+        if (hole.c[0] + r < x0 || hole.c[0] - r > x1 || hole.c[1] + r < y0 || hole.c[1] - r > y1) return true;
+        if (pointInPolygon(hole.c, slot)) return false;
+        for (let i = 0, j = slot.length - 1; i < slot.length; j = i++) {
+          if (distanceToSegment(hole.c, slot[j], slot[i]) - hole.r < MIN_SLOT_CLEARANCE) return false;
+        }
+        return true;
+      });
+    });
+
+  let dims = cameraDims(camera);
+  let frontY = bodyL / 2 - dims.tabReach - 2;
+  if (plateHoles.length > 0) {
+    search: for (const spread of TAB_SPREAD) {
+      const d = cameraDims(camera, spread);
+      if (!d.usable) continue;
+      const front = bodyL / 2 - d.tabReach - 2;
+      const floor = d.tabReach + CAMERA_CLEARANCE_MM + MIN_SLOT_CLEARANCE;
+      for (let y = front; y >= floor; y -= 1) {
+        if (clears(slotsFor(d, y))) {
+          dims = d;
+          frontY = y;
+          break search;
+        }
+      }
+    }
+  }
+  const { w, tabW, tabX } = dims;
 
   const outline: Pt[] = [[-w / 2, base]];
   for (const cx of tabX) {
@@ -1493,32 +1680,20 @@ export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL:
     seen from above it is a thin strip: the plate's thickness across, and the
     tab's width along the frame. Two plates, two tabs each, four slots.
   */
-  const gap = camera.widthMm + 2 * CAMERA_SIDE_CLEARANCE_MM;
-  /*
-    As far forward as the tab slots will go, measured by the tabs rather than
-    by the plate's full length: the side plate reaches further fore and aft
-    than its tabs do, and it overhangs the plate edge quite happily — it is
-    the slots that must stay inside the material.
-  */
-  const frontY = bodyL / 2 - tabReach - 2;
-  const footSlots: Pt[][] = [];
-  for (const side of [-1, 1]) {
-    for (const cx of tabX) {
-      footSlots.push(
-        roundedRect(plateThicknessMm + 0.3, tabW + 0.3, 0.4).map(
-          ([x, y]) => [x + (side * (gap + plateThicknessMm)) / 2, y + frontY + cx] as Pt,
-        ),
-      );
-    }
-  }
+  const footSlots = slotsFor(dims, frontY);
 
   const rearYMm = Math.min(...footSlots.flat().map((p) => p[1]));
-  return { plate, footSlots, rearYMm };
+  return {
+    plate,
+    footSlots,
+    rearYMm,
+    placement: { spacingMm: gap + plateThicknessMm, centreYMm: frontY, heightMm: h },
+  };
 }
 
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 
-function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
+function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock, mount: CameraMount | null): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
   const bottomT = plates.bottomMm;
@@ -1544,10 +1719,7 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   );
 
   // Bottom plate: stack holes, arm root bolts, battery strap slots.
-  const bottomHoles: Hole[] = [
-    ...patternHoles([0, 0], spec.stackPattern, spec.stackBolt),
-    ...armRootHoles(g),
-  ];
+  const bottomHoles: Hole[] = bottomPlateHoles(spec, g);
   const fittedBottom = fitRoundedPlate(bodyW, bodyL, 6, bottomHoles);
   const bottomOutline = roundedRect(fittedBottom.w, fittedBottom.l, 6);
   /*
@@ -1579,17 +1751,22 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
    * back until it is level with the stack's bolts, and a fixed offset that
    * cleared them on one size sat 1.4 mm from them on another.
    */
-  const fitStrapSlot = (startY: number, holes: Hole[], outline: Pt[]): Pt[] | null => {
-    for (let y = startY; y > slotW; y -= 0.5) {
+  const fitStrapSlot = (startY: number, holes: Hole[], outline: Pt[], busy: Pt[][]): Pt[] | null => {
+    for (let y = startY; y > slotW; y -= 1) {
       const poly = strapSlotAt(y);
-      if (clearsBy(poly, outline, holes, [], MIN_SLOT_CLEARANCE)) return poly;
+      if (clearsBy(poly, outline, holes, busy, MIN_SLOT_CLEARANCE)) return poly;
     }
     return null;
   };
 
-  const strapSlotPair = (frontY: number, rearY: number, holes: Hole[], outline: Pt[]): Pt[][] => {
-    const front = fitStrapSlot(frontY, holes, outline);
-    const rear = fitStrapSlot(rearY, holes, outline);
+  /*
+    `busy` is what is already cut in this plate. Leaving it out meant the
+    strap slots were fitted against the bolts alone and walked straight into
+    the camera's foot slots on a small frame.
+  */
+  const strapSlotPair = (frontY: number, rearY: number, holes: Hole[], outline: Pt[], busy: Pt[][] = []): Pt[][] => {
+    const front = fitStrapSlot(frontY, holes, outline, busy);
+    const rear = fitStrapSlot(rearY, holes, outline, [...busy, ...(front ? [front] : [])]);
     return [
       ...(front ? [front] : []),
       ...(rear ? [rear.map(([x, y]) => [x, -y] as Pt)] : []),
@@ -1601,13 +1778,11 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     front; the straps can move inboard, and the lightening runs last of all
     so it sees both and keeps away from them.
   */
-  const camera = cameraById(spec.cameraId);
-  const mount = cameraMount(camera, plates.bottomMm, bodyL);
   // The front slot tucks in behind the camera; the rear one stays at the back.
   const strapFrontY = mount ? Math.min(slotY, mount.rearYMm - slotW / 2 - 4) : slotY;
   const slots: Pt[][] = [
     ...(mount ? mount.footSlots : []),
-    ...(strapsOnTop ? [] : strapSlotPair(strapFrontY, slotY, bottomHoles, bottomOutline)),
+    ...(strapsOnTop ? [] : strapSlotPair(strapFrontY, slotY, bottomHoles, bottomOutline, mount ? mount.footSlots : [])),
   ];
   const bottomBearings = g.motors.map((m) => Math.atan2(m[1], m[0]));
   const bottomSlots = spec.lightenPlates
@@ -1654,10 +1829,27 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   const topW = fittedTop.w;
   const topL = fittedTop.l;
   const topOutline = roundedRect(topW, topL, 6);
+  /*
+    Clearance where the camera's side plates pass through.
+
+    The side plates stand on the bottom plate and reach well above the arm
+    clamp, and the clamp plate — sized from the arm root bolts — reaches far
+    enough forward to be in their way. In the solid view they went straight
+    through it. Real frames notch the deck where something passes through it,
+    so the clamp plate is notched here, using the same rectangles the bottom
+    plate is slotted with, opened up for a sliding fit rather than a tight one.
+  */
+  const cameraClearance = mount
+    ? mount.footSlots
+        .map((s) => growSlot(s, CAMERA_CLEARANCE_MM))
+        .filter((s) => s.every((p) => pointInPolygon(p, topOutline)))
+    : [];
+
   const topSlots = [
     ...stackOpening(spec, topW, topL, topHoles),
+    ...cameraClearance,
     ...(strapsOnTop
-      ? strapSlotPair(topL / 2 - 8, topL / 2 - 8, topHoles, topOutline)
+      ? strapSlotPair(topL / 2 - 8, topL / 2 - 8, topHoles, topOutline, [...stackOpening(spec, topW, topL, topHoles), ...cameraClearance])
       : []),
   ];
   const top: Profile = {

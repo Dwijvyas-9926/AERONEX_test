@@ -5,6 +5,7 @@ import { ExportPanel } from "./components/ExportPanel";
 import { PlanView } from "./components/PlanView";
 import { SheetView } from "./components/SheetView";
 import { BATTERY_MOUNTS, CONSTRUCTIONS, LAYOUTS, designFrame, type Layout } from "./geometry";
+import { lookForPart } from "./parts";
 import { LAYOUT_HINT, STEPS, defaultFixedDim, stackHeightFor, useStudio } from "./store";
 import { validateDesign, worstSeverity, type Finding } from "./validate";
 
@@ -170,6 +171,22 @@ export function FrameStudioPage() {
   // the exports, so none of them can disagree with the others.
   const design = useMemo(() => designFrame(spec), [spec]);
   const findings = useMemo(() => validateDesign(design), [design]);
+
+  /*
+    One legend row per colour, not per part. A dead cat has "arm-long" and
+    "arm-short", which share the arm colour and would otherwise print "Arms"
+    twice with two different counts beside it.
+  */
+  const legend = useMemo(() => {
+    const rows = new Map<string, { color: string; label: string; qty: number }>();
+    for (const p of design.profiles) {
+      const look = lookForPart(p.id);
+      const row = rows.get(look.label);
+      if (row) row.qty += p.qty;
+      else rows.set(look.label, { ...look, qty: p.qty });
+    }
+    return [...rows.values()];
+  }, [design.profiles]);
   const severity = worstSeverity(findings);
   const material = materialById(spec.materialId);
   const motor = motorById(spec.motorId);
@@ -737,6 +754,17 @@ export function FrameStudioPage() {
             {view === "solid" && (
               <Suspense fallback={<div className="fs-loading"><Shapes /> Building the solid model…</div>}>
                 <Frame3D design={design} exploded={exploded} />
+                {/* Colour identifies the part; the material shows in the
+                    finish. Without a key the palette is just decoration. */}
+                <ul className="fs-legend">
+                  {legend.map((e) => (
+                    <li key={e.label}>
+                      <i style={{ background: e.color }} aria-hidden="true" />
+                      {e.label}
+                      {e.qty > 1 && <b>×{e.qty}</b>}
+                    </li>
+                  ))}
+                </ul>
               </Suspense>
             )}
             {view === "sheet" && <SheetView design={design} />}

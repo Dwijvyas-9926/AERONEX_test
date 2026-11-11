@@ -2369,6 +2369,34 @@ input[type="range"]::-moz-range-thumb {
 /* The plan drawing. Strokes are set in absolute user units (= mm), with
    vector-effect keeping them crisp at any zoom. */
 .fs-plan { width: 100%; height: 100%; display: block; }
+
+/* Key to the solid view's colours. Sits over the light ground, so it takes a
+   light chip of its own rather than the panel's dark surface. */
+.fs-legend {
+  position: absolute;
+  left: var(--s4);
+  bottom: var(--s4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s3);
+  max-width: calc(100% - var(--s6));
+  padding: 6px var(--s3);
+  border-radius: var(--r-ctl);
+  background: rgba(255, 252, 245, 0.82);
+  border: 1px solid rgba(60, 44, 30, 0.14);
+  backdrop-filter: blur(3px);
+  font-size: var(--t-xs);
+  color: #3c2c1e;
+  pointer-events: none;
+}
+.fs-legend li { display: flex; align-items: center; gap: 6px; }
+.fs-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.fs-legend b { color: #6b5540; font-weight: 600; }
 .fs-plan * { vector-effect: non-scaling-stroke; }
 .fs-props circle { fill: rgba(216, 166, 72, 0.05); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 5 4; opacity: 0.5; }
 .fs-axes line { stroke: var(--line); stroke-width: 1; }

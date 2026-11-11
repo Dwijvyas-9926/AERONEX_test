@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { ACESFilmicToneMapping, DoubleSide, type BufferGeometry } from "three";
 import { GRAPHICS, useSettings } from "../../../state/settingsStore";
 import { type FrameDesign } from "../geometry";
+import { lookForPart } from "../parts";
 import { geometryFor } from "../solid";
 
 /*
@@ -24,27 +25,37 @@ interface Props {
 }
 
 /*
-  Parts are coloured by what they are actually made of, so the preview reads as
-  the material the user picked rather than as generic plastic. The top plate is
-  lifted a shade so the three parts stay tellable apart at a glance.
+  Colour says which part it is; finish says what it is made of.
+
+  These were both carried by colour once — every part took the material's own
+  shade — and it failed at both jobs. Carbon is a near-black #3a352f, and on
+  the dark background this view used to have, a carbon frame was a silhouette
+  with no readable detail at all. Worse, the one thing a reader most needs
+  from an exploded assembly is which piece is which, and four parts in one
+  colour cannot say that.
+
+  So the palette below identifies the part, and the material comes through in
+  metalness and roughness, which is where it actually shows: aluminium stays
+  bright and specular, plywood and nylon stay flat, acrylic stays glassy.
 */
-const MATERIAL_LOOK: Record<string, { color: string; metalness: number; roughness: number }> = {
-  "cf-plate": { color: "#3a352f", metalness: 0.08, roughness: 0.4 },
-  g10: { color: "#2d7d5a", metalness: 0.02, roughness: 0.6 },
-  "alu-6061": { color: "#b7bcc2", metalness: 0.9, roughness: 0.32 },
-  "ply-birch": { color: "#b98f5c", metalness: 0, roughness: 0.85 },
-  acrylic: { color: "#6ba2b6", metalness: 0.02, roughness: 0.18 },
-  "pa-cf": { color: "#423c35", metalness: 0.02, roughness: 0.85 },
-  "pa12-cf": { color: "#4a443c", metalness: 0.02, roughness: 0.85 },
-  petg: { color: "#53798d", metalness: 0.02, roughness: 0.55 },
-  pla: { color: "#86765f", metalness: 0, roughness: 0.75 },
+/** Surface finish by material. Colour is the part's; this is the material's. */
+const MATERIAL_FINISH: Record<string, { metalness: number; roughness: number }> = {
+  "cf-plate": { metalness: 0.25, roughness: 0.38 },
+  g10: { metalness: 0.05, roughness: 0.6 },
+  "alu-6061": { metalness: 0.85, roughness: 0.3 },
+  "ply-birch": { metalness: 0, roughness: 0.9 },
+  acrylic: { metalness: 0.05, roughness: 0.12 },
+  "pa-cf": { metalness: 0.04, roughness: 0.85 },
+  "pa12-cf": { metalness: 0.04, roughness: 0.85 },
+  petg: { metalness: 0.04, roughness: 0.5 },
+  pla: { metalness: 0, roughness: 0.75 },
 };
-const FALLBACK_LOOK = { color: "#42342a", metalness: 0.03, roughness: 0.65 };
-/** Nudge a hex colour toward light, to separate the top plate from the rest. */
-function lighten(hex: string, amount: number): string {
-  const v = parseInt(hex.slice(1), 16);
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  return `#${[(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => mix(c).toString(16).padStart(2, "0")).join("")}`;
+const FALLBACK_FINISH = { metalness: 0.05, roughness: 0.65 };
+
+interface Finish {
+  color: string;
+  metalness: number;
+  roughness: number;
 }
 
 function Part({
@@ -55,7 +66,7 @@ function Part({
   shift = 0,
 }: {
   geometry: BufferGeometry;
-  look: { color: string; metalness: number; roughness: number };
+  look: Finish;
   z: number;
   rotation?: number;
   shift?: number;
@@ -66,6 +77,49 @@ function Part({
     <group rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
       <group rotation={[0, 0, rotation]}>
         <mesh geometry={geometry} position={[shift, 0, z]} castShadow receiveShadow>
+          <meshStandardMaterial
+            color={look.color}
+            metalness={look.metalness}
+            roughness={look.roughness}
+            side={DoubleSide}
+          />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/**
+ * A camera side plate, stood on edge.
+ *
+ * Every other part lies flat, so its profile plane is the plan and no extra
+ * rotation is needed. These two stand vertically facing each other across the
+ * camera, which asks for a cyclic permutation of the profile's own axes: its
+ * length becomes the frame's fore-aft, its height becomes up, and its
+ * thickness becomes the across-frame direction.
+ *
+ * In three's default XYZ Euler order that permutation is [90°, 90°, 0], not
+ * the [90°, 0, 90°] it first looked like — the latter sends the plate's
+ * length straight up, which stood the plates on their noses in the middle of
+ * the frame instead of on their feet at the front of it.
+ */
+function CameraPart({
+  geometry,
+  look,
+  x,
+  y,
+  z,
+}: {
+  geometry: BufferGeometry;
+  look: Finish;
+  x: number;
+  y: number;
+  z: number;
+}) {
+  return (
+    <group rotation={[-Math.PI / 2, 0, 0]}>
+      <group position={[x, y, z]} rotation={[Math.PI / 2, Math.PI / 2, 0]}>
+        <mesh geometry={geometry} castShadow receiveShadow>
           <meshStandardMaterial
             color={look.color}
             metalness={look.metalness}
@@ -113,13 +167,19 @@ export function Frame3D({ design: d, exploded }: Props) {
     const base = d.profiles.find((p) => p.id === "chassis" || p.id === "bottom-plate")!;
     const top = d.profiles.find((p) => p.id === "top-plate")!;
     const armParts = d.profiles.filter((p) => p.cantileverMm !== undefined);
+    // The camera side plates were built, exported and billed for, and then
+    // left out of the one view that shows how the frame goes together.
+    const cam = d.profiles.find((p) => p.id === "camera-plate");
     return {
       base: geometryFor(base),
+      baseId: base.id,
       top: geometryFor(top),
       baseT: base.thicknessMm,
       topT: top.thicknessMm,
       armT: armParts[0]?.thicknessMm ?? base.thicknessMm,
+      camera: cam ? geometryFor(cam) : null,
       arms: armParts.map((part) => ({
+        id: part.id,
         geometry: geometryFor(part),
         bearings: d.armGroups.find((g) => g.id === part.id)?.bearings ?? [],
       })),
@@ -136,6 +196,7 @@ export function Frame3D({ design: d, exploded }: Props) {
     return () => {
       scene.base.dispose();
       scene.top.dispose();
+      scene.camera?.dispose();
       for (const a of scene.arms) a.geometry.dispose();
     };
   }, [scene]);
@@ -147,8 +208,8 @@ export function Frame3D({ design: d, exploded }: Props) {
     ? zArm + scene.armT + Math.max(5, scene.armT + 2) + gap
     : scene.baseT + Math.max(5, scene.baseT + 2) + gap;
 
-  const look = MATERIAL_LOOK[d.material.id] ?? FALLBACK_LOOK;
-  const topLook = { ...look, color: lighten(look.color, 0.22) };
+  const finish = MATERIAL_FINISH[d.material.id] ?? FALLBACK_FINISH;
+  const lookFor = (id: string): Finish => ({ ...finish, color: lookForPart(id).color });
   const reach = Math.max(...d.motors.map((m) => Math.hypot(m[0], m[1]))) + d.section.padWidthMm;
   const shift = d.rootRadiusMm - d.armOverlapMm;
 
@@ -164,30 +225,47 @@ export function Frame3D({ design: d, exploded }: Props) {
       */
       camera={{ position: [reach * 1.4, reach * 1.25, reach * 1.6], fov: 38, near: 1, far: reach * 20 }}
     >
-      <color attach="background" args={["#120c08"]} />
-      {/* Key from the front-right, a cool rim from behind-left to separate the
-          parts from the background, and a little ambient so nothing is black. */}
-      <ambientLight intensity={0.5} color="#ffeedd" />
-      <directionalLight position={[reach, reach * 1.5, reach * 0.8]} intensity={1.5} color="#fff2dd" castShadow={preset.shadows} />
-      <directionalLight position={[-reach * 0.8, reach * 0.5, -reach]} intensity={0.55} color="#a8c0d4" />
+      {/*
+        A light studio ground rather than the near-black this used to be. On a
+        dark field a carbon or nylon frame — both of which are nearly black —
+        showed as a silhouette with no readable edges or holes. Against a warm
+        off-white every part reads, and it is what a drawing of a part looks
+        like on paper anyway.
+      */}
+      <color attach="background" args={["#ece4d6"]} />
+      {/* Key from the front-right, a cool fill from behind-left to keep the
+          shaded sides from going flat, and ambient lifted for the light room. */}
+      <ambientLight intensity={0.85} color="#fff6e8" />
+      <directionalLight position={[reach, reach * 1.5, reach * 0.8]} intensity={1.35} color="#fffaf0" castShadow={preset.shadows} />
+      <directionalLight position={[-reach * 0.8, reach * 0.5, -reach]} intensity={0.5} color="#cfd8e4" />
       <ToneMap />
-      <ContactShadows position={[0, -1, 0]} scale={reach * 3} blur={2.4} opacity={0.5} far={reach} />
+      <ContactShadows position={[0, -1, 0]} scale={reach * 3} blur={2.6} opacity={0.3} far={reach} />
 
       <group>
-        <Part geometry={scene.base} look={look} z={0} />
+        <Part geometry={scene.base} look={lookFor(scene.baseId)} z={0} />
         {scene.arms.map((group, gi) =>
           group.bearings.map((bearing, bi) => (
             <Part
               key={`${gi}-${bi}`}
               geometry={group.geometry}
-              look={look}
+              look={lookFor(group.id)}
               z={zArm}
               rotation={bearing}
               shift={shift}
             />
           )),
         )}
-        <Part geometry={scene.top} look={topLook} z={zTop} />
+        <Part geometry={scene.top} look={lookFor("top-plate")} z={zTop} />
+        {scene.camera && d.cameraMount && [-1, 1].map((side) => (
+          <CameraPart
+            key={side}
+            geometry={scene.camera!}
+            look={lookFor("camera-plate")}
+            x={(side * d.cameraMount!.spacingMm) / 2}
+            y={d.cameraMount!.centreYMm}
+            z={scene.baseT + d.cameraMount!.heightMm / 2 + gap}
+          />
+        ))}
       </group>
 
       <OrbitControls
