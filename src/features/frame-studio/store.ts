@@ -23,6 +23,8 @@ interface StudioState {
   exploded: boolean;
   sheetWidthMm: number;
   labelParts: boolean;
+  /** Paper size for the 1:1 check sheet. */
+  pageSizeId: string;
   setSpec: <K extends keyof FrameSpec>(k: K, v: FrameSpec[K]) => void;
   patchSpec: (p: Partial<FrameSpec>) => void;
   setStep: (s: StepId) => void;
@@ -30,6 +32,7 @@ interface StudioState {
   setExploded: (v: boolean) => void;
   setSheetWidth: (v: number) => void;
   setLabelParts: (v: boolean) => void;
+  setPageSize: (v: string) => void;
   reset: () => void;
 }
 
@@ -72,6 +75,7 @@ export const useStudio = create<StudioState>()(
       exploded: false,
       sheetWidthMm: 300,
       labelParts: true,
+      pageSizeId: "a4",
       setSpec: (k, v) => set((s) => ({ spec: { ...s.spec, [k]: v } })),
       patchSpec: (p) => set((s) => ({ spec: { ...s.spec, ...p } })),
       setStep: (step) => set({ step }),
@@ -79,6 +83,7 @@ export const useStudio = create<StudioState>()(
       setExploded: (exploded) => set({ exploded }),
       setSheetWidth: (sheetWidthMm) => set({ sheetWidthMm }),
       setLabelParts: (labelParts) => set({ labelParts }),
+      setPageSize: (pageSizeId) => set({ pageSizeId }),
       reset: () => set({ spec: DEFAULT_SPEC, step: "aircraft" }),
     }),
     {

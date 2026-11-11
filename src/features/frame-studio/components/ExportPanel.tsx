@@ -1,4 +1,4 @@
-import { Box, Download, FileArchive, FileCode2, Hammer, Package, Scissors } from "lucide-react";
+import { Box, Download, FileArchive, FileCode2, Hammer, Package, Printer, Scissors } from "lucide-react";
 import { useMemo, useState } from "react";
 import { notify } from "../../../state/notifyStore";
 import { useActiveProfile } from "../../../state/profileStore";
@@ -9,6 +9,7 @@ import { buildManifest, exportSlug, type ManifestFile } from "../manifest";
 import { toSTLParts } from "../solid";
 import { useStudio } from "../store";
 import { worstSeverity, type Finding } from "../validate";
+import { PAGE_SIZES, pageSizeById, planPrint, toPrintSVG } from "../printsheet";
 import { zip, type ZipEntry } from "../zip";
 
 /*
@@ -41,6 +42,8 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
   const setSheetWidth = useStudio((s) => s.setSheetWidth);
   const labelParts = useStudio((s) => s.labelParts);
   const setLabelParts = useStudio((s) => s.setLabelParts);
+  const pageSizeId = useStudio((s) => s.pageSizeId);
+  const setPageSize = useStudio((s) => s.setPageSize);
   const profile = useActiveProfile();
 
   const isCut = d.material.method === "cut";
@@ -48,6 +51,7 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
   const sheets = useMemo(() => planSheets(d.profiles, { sheetWidthMm, labels: labelParts }), [d.profiles, sheetWidthMm, labelParts]);
   const bom = useMemo(() => buildBOM(d), [d]);
   const recipe = useMemo(() => buildRecipe(d), [d]);
+  const printPlan = useMemo(() => planPrint(d, pageSizeById(pageSizeId)), [d, pageSizeId]);
 
   const blocked = worstSeverity(findings) === "error";
   const vehicleName = profile?.name?.trim() || "Untitled airframe";
@@ -118,6 +122,29 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
       sheetFiles("svg", (s) => toSVG(s.nest, { labels: labelParts })),
       "The same drawings as the DXFs, openable in a browser.",
     );
+
+  const savePrint = () => {
+    const page = pageSizeById(pageSizeId);
+    const plan = planPrint(d, page);
+    return save(
+      "print",
+      "drawings",
+      `${stem}-check-sheet.zip`,
+      plan.tiles.map((t, i) => {
+        const path = `${stem}-check-${String(i + 1).padStart(2, "0")}.svg`;
+        return {
+          path,
+          name: path,
+          data: toPrintSVG(d, plan, t, vehicleName),
+          detail:
+            plan.tiles.length > 1
+              ? `Page ${i + 1} of ${plan.tiles.length} — column ${t.col + 1}, row ${t.row + 1}. Trim to the crop marks and tape to its neighbours.`
+              : `The whole frame on one ${page.name} sheet.`,
+        };
+      }),
+      `${plan.tiles.length} ${page.name} page${plan.tiles.length > 1 ? "s" : ""}. Print at 100%, check the ruler, then lay your parts on it.`,
+    );
+  };
 
   const saveStl = () => {
     const parts = toSTLParts(d.profiles);
@@ -202,6 +229,27 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
               </button>
             </>
           )}
+        </div>
+
+        <div className="fs-xcheck">
+          <button className="fs-xcard wide" onClick={savePrint} disabled={busy !== null}>
+            <Printer />
+            <b>Print &amp; check sheet</b>
+            <small>
+              The frame at 1:1 on paper. Lay your real motors, stack and battery on it and find the mistakes before you
+              pay for a cut — the cheapest check there is.
+            </small>
+            <Download className="fs-xcard-go" />
+          </button>
+          <label className="field">
+            <span>Paper</span>
+            <select className="select" value={pageSizeId} onChange={(e) => setPageSize(e.target.value)}>
+              {PAGE_SIZES.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} — {p.widthMm} × {p.heightMm} mm</option>
+              ))}
+            </select>
+            <small>{printPlan.tiles.length} page{printPlan.tiles.length === 1 ? "" : "s"} at 1:1.</small>
+          </label>
         </div>
 
         <p className="fs-xzip">

@@ -2509,6 +2509,19 @@ input[type="range"]::-moz-range-thumb {
 .fs-xcard.primary { border-color: var(--accent-line); background: var(--accent-soft); }
 .fs-xcard-go { position: absolute; right: var(--s4); top: 50%; translate: 0 -50%; color: var(--muted); }
 
+/* The print-and-check row: one wide card plus its paper selector. */
+.fs-xcheck {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: var(--s3);
+  align-items: start;
+  margin-top: var(--s3);
+}
+.fs-xcheck .fs-xcard.wide { height: 100%; }
+@media (max-width: 720px) {
+  .fs-xcheck { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* The one-archive note under the download buttons. */
 .fs-xzip {
   display: grid;
