@@ -9,7 +9,7 @@ import { buildManifest, exportSlug, type ManifestFile } from "../manifest";
 import { toSTLParts } from "../solid";
 import { useStudio } from "../store";
 import { worstSeverity, type Finding } from "../validate";
-import { PAGE_SIZES, pageSizeById, planPrint, toPrintSVG } from "../printsheet";
+import { PAGE_SIZES, pageSizeById, planPrint, toPrintPDF } from "../printsheet";
 import { zip, type ZipEntry } from "../zip";
 
 /*
@@ -123,27 +123,31 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
       "The same drawings as the DXFs, openable in a browser.",
     );
 
-  const savePrint = () => {
-    const page = pageSizeById(pageSizeId);
-    const plan = planPrint(d, page);
-    return save(
-      "print",
-      "drawings",
-      `${stem}-check-sheet.zip`,
-      plan.tiles.map((t, i) => {
-        const path = `${stem}-check-${String(i + 1).padStart(2, "0")}.svg`;
-        return {
-          path,
-          name: path,
-          data: toPrintSVG(d, plan, t, vehicleName),
-          detail:
-            plan.tiles.length > 1
-              ? `Page ${i + 1} of ${plan.tiles.length} — column ${t.col + 1}, row ${t.row + 1}. Trim to the crop marks and tape to its neighbours.`
-              : `The whole frame on one ${page.name} sheet.`,
-        };
-      }),
-      `${plan.tiles.length} ${page.name} page${plan.tiles.length > 1 ? "s" : ""}. Print at 100%, check the ruler, then lay your parts on it.`,
-    );
+  /*
+    A PDF, not an archive. The sheet's whole job is to print at 1:1, and a
+    print dialog honours a PDF's own page size — "Actual size" means what it
+    says. A zip of SVGs meant unzipping, opening each one in a browser, and a
+    print dialog that scales to fit by default, which is precisely the failure
+    the sheet exists to catch.
+  */
+  const savePrint = async () => {
+    if (busy) return;
+    setBusy("print");
+    try {
+      const page = pageSizeById(pageSizeId);
+      const plan = planPrint(d, page);
+      const bytes = toPrintPDF(d, plan, vehicleName);
+      download(`${stem}-check-sheet.pdf`, new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      notify(
+        "success",
+        `${stem}-check-sheet.pdf saved`,
+        `${plan.tiles.length} ${page.name} page${plan.tiles.length > 1 ? "s" : ""} at 1:1. Print at 100%, check the ruler, then lay your parts on it.`,
+      );
+    } catch (err) {
+      notify("error", "Export failed", err instanceof Error ? err.message : "The check sheet could not be built.");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const saveStl = () => {
@@ -234,10 +238,10 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
         <div className="fs-xcheck">
           <button className="fs-xcard wide" onClick={savePrint} disabled={busy !== null}>
             <Printer />
-            <b>Print &amp; check sheet</b>
+            <b>Print &amp; check sheet — PDF</b>
             <small>
               The frame at 1:1 on paper. Lay your real motors, stack and battery on it and find the mistakes before you
-              pay for a cut — the cheapest check there is.
+              pay for a cut — the cheapest check there is. Print at 100%, not "fit to page".
             </small>
             <Download className="fs-xcard-go" />
           </button>
@@ -248,7 +252,7 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
                 <option key={p.id} value={p.id}>{p.name} — {p.widthMm} × {p.heightMm} mm</option>
               ))}
             </select>
-            <small>{printPlan.tiles.length} page{printPlan.tiles.length === 1 ? "" : "s"} at 1:1.</small>
+            <small>{printPlan.tiles.length} page{printPlan.tiles.length === 1 ? "" : "s"} at 1:1 in one PDF.</small>
           </label>
         </div>
 
