@@ -16,7 +16,7 @@ const baseSpec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   materialId: "cf-plate",
   fixedDimMm: 4,
   plateThicknessMm: null,
-  wallMm: 2.5,
+  wallMm: 2.5, lightenPlates: true,
   styleId: "freestyle",
   safetyFactor: 2,
   ...over,

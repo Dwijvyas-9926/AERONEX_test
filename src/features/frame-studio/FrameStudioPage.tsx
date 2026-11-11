@@ -517,7 +517,25 @@ export function FrameStudioPage() {
                     </select>
                     <small>Cut separately from the arms. Two sheets, two files.</small>
                   </label>
-                ) : (
+                ) : null}
+
+                <label className="fs-check">
+                  <input
+                    type="checkbox"
+                    checked={spec.lightenPlates}
+                    onChange={(e) => setSpec("lightenPlates", e.target.checked)}
+                  />
+                  <span>
+                    Lighten the plates
+                    <small>
+                      {design.lightening.count > 0
+                        ? `Cuts ${design.lightening.count} opening${design.lightening.count === 1 ? "" : "s"} from the sectors between the arms, where no load path runs — ${n1(design.lightening.savedG)} g saved. Nothing is cut from an arm, which is the load path the solver sized.`
+                        : "No cut-out would fit on these plates with safe material left around the bolts and slots, so none are drawn."}
+                    </small>
+                  </span>
+                </label>
+
+                {!isCut && (
                   <Num
                     label="Wall thickness"
                     value={spec.wallMm}

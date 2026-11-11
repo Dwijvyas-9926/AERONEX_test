@@ -61,6 +61,15 @@ export interface Profile {
   holes: Hole[];
   /** Extra closed cut-outs (battery strap slots etc.). */
   slots: Pt[][];
+  /**
+   * Index into `slots` where lightening cut-outs begin; everything before it
+   * is a functional opening — a strap slot, or the stack's clearance hole.
+   *
+   * Recorded rather than inferred from position. Counting "every slot after
+   * the second" credited the top plate's stack opening as weight saved by
+   * lightening, which over-reported the saving by more than it saved.
+   */
+  lightenedFrom?: number;
   /** Material thickness this part is made at, mm. */
   thicknessMm: number;
   /**
@@ -123,6 +132,16 @@ export interface FrameSpec {
   plateThicknessMm: number | null;
   /** Printed frames: wall thickness of the hollow arm, mm. */
   wallMm: number;
+  /**
+   * Cut material out of the plates where it does no work.
+   *
+   * Every production frame does this, for weight and for looks. Optional
+   * because it is a rule rather than an analysis: the studio places the
+   * cut-outs conservatively, in the sectors between the arms where no load
+   * path runs, but it does not run FEA and a user who wants solid plates
+   * should be able to have them.
+   */
+  lightenPlates: boolean;
   styleId: string;
   safetyFactor: number;
 }
@@ -177,6 +196,12 @@ export interface FrameDesign {
    * The studio follows that: the stack bolts to the bottom plate and the top
    * plate carries an opening for it to pass through.
    */
+  /** What the plate cut-outs removed, if any were cut. */
+  lightening: {
+    count: number;
+    areaMm2: number;
+    savedG: number;
+  };
   stackClearance: {
     /** Clear height between the plates, mm — an arm's thickness. */
     gapMm: number;
@@ -872,6 +897,26 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     wheelbaseCrowded,
     propMinWheelbaseMm,
     strapSlotMm: round(Math.min(bodyWmm * 0.55, 26)),
+    lightening: (() => {
+      /*
+        Count only what the lightening added, not the strap slots or the
+        stack opening, which would be there regardless. Each profile records
+        where its lightening begins.
+      */
+      let count = 0;
+      let areaMm2 = 0;
+      let savedG = 0;
+      if (spec.lightenPlates) {
+        for (const p of profiles) {
+          const extra = p.slots.slice(p.lightenedFrom ?? p.slots.length);
+          const a = extra.reduce((s, poly) => s + polygonArea(poly), 0);
+          count += extra.length * p.qty;
+          areaMm2 += a * p.qty;
+          savedG += massOf(a * p.thicknessMm, material.density) * p.qty;
+        }
+      }
+      return { count, areaMm2: round(areaMm2), savedG: round(savedG, 1) };
+    })(),
     stackClearance: (() => {
       // The clear gap between the plates is whatever the arm is thick, since
       // the standoffs that hold the top plate up are sized to match the arm.
@@ -1057,6 +1102,162 @@ function stackOpening(spec: FrameSpec, plateW: number, plateL: number, holes: Ho
   return [poly];
 }
 
+/* ------------------------------------------------------- lightening holes */
+
+/*
+  Removing plate material where it does no work.
+
+  There is no published numeric rule for this and it would be dishonest to
+  invent one — machining guidance is explicit that diameter-based rules are
+  not universal acceptance criteria. What is agreed is the principle, and it
+  is all this follows:
+
+    - take material from low-stress areas, never from a direct load path
+      between mounts;
+    - stay well clear of fasteners;
+    - use generous radii, since a sharp internal corner is where a laminate
+      begins to crack;
+    - avoid narrow ligament patterns that make load weave between holes
+      instead of flowing through continuous material.
+
+  So cut-outs are placed only in the sectors between adjacent arms, which is
+  where no arm's load crosses on its way to the stack or to another arm, and
+  each one is shrunk until it clears every hole, slot and edge by a real
+  margin. Nothing is cut from an arm: the arm is the load path, its section
+  was solved by beam theory, and a hole in it invalidates that solve.
+
+  This is a rule, not an optimisation. The studio does not run FEA, and the
+  result should be read as a conservative tidy-up rather than a minimum-mass
+  plate.
+*/
+
+/**
+ * Clear material a cut-out must leave to anything else, mm.
+ *
+ * Two terms, and deliberately neither of them is plate thickness. An earlier
+ * version demanded twice the thickness, which has it backwards: a ligament
+ * gets stronger as the plate gets thicker, not weaker, and the rule quietly
+ * refused every cut-out on printed plates — a 5.5 mm plate was asked for an
+ * 11 mm ligament and never got one, so printed frames were silently never
+ * lightened at all.
+ *
+ * What actually sets the floor is bolt bearing — 1.5 diameters of material
+ * so a loaded hole cannot tear out towards the opening — and the least
+ * material worth leaving in a laminate at all.
+ */
+function lighteningLigament(boltMm: number): number {
+  return Math.max(3, 1.5 * boltMm);
+}
+
+/**
+ * Does `poly` clear everything around it by at least `need` millimetres?
+ *
+ * A predicate rather than a measurement, and it bails the moment anything
+ * comes too close. The search below rejects most of what it tries, so the
+ * common path is an early exit — measuring the true minimum first and
+ * comparing afterwards made the whole sweep time out.
+ */
+function clearsBy(poly: Pt[], outline: Pt[], holes: Hole[], slots: Pt[][], need: number): boolean {
+  for (const p of poly) {
+    if (!pointInPolygon(p, outline)) return false;
+    if (distanceToBoundary(p, outline) < need) return false;
+  }
+  for (const h of holes) {
+    // A hole swallowed by the cut-out is not a clearance, it is a collision.
+    if (pointInPolygon(h.c, poly)) return false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      if (distanceToSegment(h.c, poly[j], poly[i]) - h.r < need) return false;
+    }
+  }
+  for (const s of slots) {
+    for (const p of poly) {
+      if (pointInPolygon(p, s)) return false;
+      for (let i = 0, j = s.length - 1; i < s.length; j = i++) {
+        if (distanceToSegment(p, s[j], s[i]) < need) return false;
+      }
+    }
+    for (const p of s) if (pointInPolygon(p, poly)) return false;
+  }
+  return true;
+}
+
+/**
+ * Lightening cut-outs for one plate.
+ *
+ * One candidate per gap between adjacent arms, centred on the bisector where
+ * no arm's load path runs, then scaled down until it clears everything. A
+ * candidate that will not grow past a useful size is dropped rather than cut,
+ * because a token hole costs a stress raiser and saves nothing.
+ */
+export function lighteningCutouts(opts: {
+  outline: Pt[];
+  holes: Hole[];
+  slots: Pt[][];
+  /** Bearings of the arms, radians — cut-outs go between them. */
+  bearings: number[];
+  boltMm: number;
+}): Pt[][] {
+  const { outline, holes, slots, bearings, boltMm } = opts;
+  const ligament = lighteningLigament(boltMm);
+  const sorted = [...bearings].sort((a, b) => a - b);
+  const reach = Math.max(...outline.map((p) => Math.hypot(p[0], p[1])));
+  /*
+    Below this a cut-out is not worth the stress raiser it introduces. Judged
+    by size alone rather than by plate thickness, for the same reason the
+    ligament is: a thick plate has no more reason to carry a big hole than a
+    thin one does.
+  */
+  const minSide = 8;
+
+  const cut: Pt[][] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const next = i === sorted.length - 1 ? sorted[0] + TAU : sorted[i + 1];
+    const mid = (sorted[i] + next) / 2;
+    const cos = Math.cos(mid);
+    const sin = Math.sin(mid);
+
+    /*
+      Where along the bisector, and how big.
+
+      The widest clear space is rarely at the plate centre — it is out
+      towards the rim, past the stack and inboard of the arm bolts — so a few
+      positions are tried. Size is found by bisection rather than by stepping
+      down, which is valid because the candidate is scaled about a fixed
+      centre: growing it can only reduce its clearance, never increase it.
+    */
+    const candidate = (r: number, side: number): Pt[] =>
+      roundedRect(side, side * 0.75, Math.min(side, side * 0.75) * 0.3, 6).map(([x, y]) => {
+        // Laid along the bisector rather than axis-aligned, so the cut-out
+        // follows the shape of the space it is filling.
+        const X = x + r;
+        return [X * cos - y * sin, X * sin + y * cos] as Pt;
+      });
+
+    let best: Pt[] | null = null;
+    let bestArea = 0;
+    const obstacles = [...slots, ...cut];
+    for (const f of [0.6, 0.45]) {
+      const r = reach * f;
+      if (!clearsBy(candidate(r, minSide), outline, holes, obstacles, ligament)) continue;
+      let lo = minSide;
+      let hi = reach;
+      for (let k = 0; k < 8; k++) {
+        const mid = (lo + hi) / 2;
+        if (clearsBy(candidate(r, mid), outline, holes, obstacles, ligament)) lo = mid;
+        else hi = mid;
+      }
+      const poly = candidate(r, lo);
+      const a = polygonArea(poly);
+      if (a > bestArea) {
+        bestArea = a;
+        best = poly;
+      }
+    }
+    if (best) cut.push(best);
+  }
+  return cut;
+}
+
 function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
@@ -1096,15 +1297,29 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     roundedRect(slotL, slotW, slotW / 2).map((p) => [p[0], p[1] + slotY] as Pt),
     roundedRect(slotL, slotW, slotW / 2).map((p) => [p[0], p[1] - slotY] as Pt),
   ];
+  const bottomBearings = g.motors.map((m) => Math.atan2(m[1], m[0]));
+  const bottomSlots = spec.lightenPlates
+    ? [
+        ...slots,
+        ...lighteningCutouts({
+          outline: bottomOutline,
+          holes: bottomHoles,
+          slots,
+          bearings: bottomBearings,
+          boltMm: g.rootBolt,
+        }),
+      ]
+    : slots;
   const bottom: Profile = {
     id: "bottom-plate",
     name: "Bottom plate",
     qty: 1,
     outline: bottomOutline,
     holes: bottomHoles,
-    slots,
+    slots: bottomSlots,
+    lightenedFrom: slots.length,
     thicknessMm: bottomT,
-    areaMm2: polygonArea(bottomOutline) - bottomHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0) - slots.reduce((s, p) => s + polygonArea(p), 0),
+    areaMm2: polygonArea(bottomOutline) - bottomHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0) - bottomSlots.reduce((s, p) => s + polygonArea(p), 0),
   };
 
   /*
@@ -1135,6 +1350,7 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     outline: topOutline,
     holes: topHoles,
     slots: topSlots,
+    lightenedFrom: topSlots.length,
     thicknessMm: topT,
     areaMm2:
       polygonArea(topOutline)
@@ -1178,18 +1394,36 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     ...standoffs,
     ...motorHoles,
   ];
+  /*
+    A unibody chassis carries the arms, so its sectors are the only safe
+    place to take material from — and the ligament is measured against the
+    arm roots, which on this part are structure rather than bolt holes.
+  */
+  const chassisSlots = spec.lightenPlates
+    ? [
+        ...slots,
+        ...lighteningCutouts({
+          outline: bottomOutline,
+          holes: chassisHoles,
+          slots,
+          bearings: g.motors.map((m) => Math.atan2(m[1], m[0])),
+          boltMm: g.rootBolt,
+        }),
+      ]
+    : slots;
   const chassis: Profile = {
     id: "chassis",
     name: "Chassis",
     qty: 1,
     outline: chassisOutline,
     holes: chassisHoles,
-    slots,
+    slots: chassisSlots,
+    lightenedFrom: slots.length,
     thicknessMm: section.heightMm,
     areaMm2:
       polygonArea(chassisOutline)
       - chassisHoles.reduce((sum, h) => sum + Math.PI * h.r * h.r, 0)
-      - slots.reduce((sum, pts) => sum + polygonArea(pts), 0),
+      - chassisSlots.reduce((sum, pts) => sum + polygonArea(pts), 0),
   };
 
   /*
@@ -1215,6 +1449,7 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     outline: uniTopOutline,
     holes: uniTopHoles,
     slots: uniTopSlots,
+    lightenedFrom: uniTopSlots.length,
     thicknessMm: topT,
     areaMm2:
       polygonArea(uniTopOutline)

@@ -10,7 +10,7 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   stackBolt: 3, stackHeightMm: 15,
   battery: { l: 105, w: 35, h: 30, massG: 180 }, electronicsMassG: 120,
   construction: "bolted", materialId: "cf-plate", fixedDimMm: 4,
-  plateThicknessMm: null, wallMm: 2.5, styleId: "freestyle", safetyFactor: 2, ...over,
+  plateThicknessMm: null, wallMm: 2.5, lightenPlates: true, styleId: "freestyle", safetyFactor: 2, ...over,
 });
 
 const topOf = (s: FrameSpec) => designFrame(s).profiles.find((p) => p.id === "top-plate")!;

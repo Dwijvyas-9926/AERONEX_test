@@ -56,6 +56,7 @@ export const DEFAULT_SPEC: FrameSpec = {
   fixedDimMm: null,
   plateThicknessMm: null,
   wallMm: DEFAULT_WALL_MM,
+  lightenPlates: true,
   styleId: "freestyle",
   safetyFactor: 2,
 };

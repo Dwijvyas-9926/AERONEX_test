@@ -30,7 +30,7 @@ const base: FrameSpec = {
   materialId: "cf-plate",
   fixedDimMm: null,
   plateThicknessMm: null,
-  wallMm: 2.5,
+  wallMm: 2.5, lightenPlates: true,
   styleId: "freestyle",
   safetyFactor: 2,
 };

@@ -8,7 +8,7 @@ const spec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   motorId: "2207", motorThrustG: 1350, stackPattern: 30.5, stackBolt: 3, stackHeightMm: 15,
   battery: { l: 105, w: 35, h: 30, massG: 180 }, electronicsMassG: 120,
   construction: "bolted", materialId: "cf-plate", fixedDimMm: 4,
-  plateThicknessMm: null, wallMm: 2.5, styleId: "freestyle", safetyFactor: 2, ...over,
+  plateThicknessMm: null, wallMm: 2.5, lightenPlates: true, styleId: "freestyle", safetyFactor: 2, ...over,
 });
 
 const find = (s: FrameSpec, id: string) => validateDesign(designFrame(s)).find((f) => f.id === id);
