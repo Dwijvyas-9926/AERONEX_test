@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { DEFAULT_WALL_MM, motorById } from "./catalog";
+import { DEFAULT_WALL_MM, motorById, stackHeightFor } from "./catalog";
 import { type FrameSpec, type Layout } from "./geometry";
 
 export type StepId = "aircraft" | "components" | "material" | "review" | "export";
@@ -47,6 +47,7 @@ export const DEFAULT_SPEC: FrameSpec = {
   motorThrustG: 1350,
   stackPattern: 30.5,
   stackBolt: 3,
+  stackHeightMm: 15,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
   construction: "bolted",
@@ -139,6 +140,9 @@ export function defaultFixedDim(): number | null {
 export function propsForMotor(motorId: string): number[] {
   return motorById(motorId).props;
 }
+
+/** Typical assembled height for a stack on this mounting pattern, mm. */
+export { stackHeightFor };
 
 export const LAYOUT_HINT: Record<Layout, string> = {
   "true-x": "Equal arms, neutral handling. The default for a reason.",

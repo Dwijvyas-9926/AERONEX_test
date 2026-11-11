@@ -11,6 +11,7 @@
   motor windings.
 */
 
+import { STACK_CLEARANCE_MM } from "./catalog";
 import { planSheets } from "./exporters";
 import { type FrameDesign } from "./geometry";
 import { round } from "./structure";
@@ -23,16 +24,29 @@ export interface BomLine {
   note?: string;
 }
 
+/** Standard metric standoff lengths, mm. */
+const STANDOFF_STOCK = [5, 6, 8, 10, 12, 15, 16, 20, 25, 30, 35, 40, 45, 50];
+
 /**
  * Standoff height for a unibody, mm.
  *
  * Here the standoff's job is to clear the flight-controller stack, which is a
  * completely different requirement from the bolted case's "match the arm".
- * A 30.5 mm stack is two or three boards plus soft mounts; 20 mm is the usual
- * answer and 25-30 mm is common on taller stacks.
+ *
+ * This used to be guessed from the mounting pattern — 30 mm for a 30.5 mm
+ * stack, 20 mm for a 20 mm one. A mounting pattern is a width, and a width
+ * cannot tell you a height: it happened to land near enough for a full-size
+ * stack and was 8 mm too tall for a short one. Now the user states the height
+ * and the standoff is the next stocked size above it plus clearance.
  */
 function stackStandoffMm(d: FrameDesign): number {
-  return d.spec.stackPattern >= 30 ? 30 : d.spec.stackPattern >= 25 ? 25 : 20;
+  const needed = d.spec.stackHeightMm + STACK_CLEARANCE_MM;
+  return STANDOFF_STOCK.find((s) => s >= needed) ?? Math.ceil(needed / 5) * 5;
+}
+
+/** Widest strap the plate's slots will actually pass, rounded to a size sold. */
+function strapWidthMm(d: FrameDesign): number {
+  return d.strapSlotMm >= 20 ? 20 : Math.max(10, Math.floor(d.strapSlotMm / 5) * 5);
 }
 
 /** Nearest standard metric bolt length at or above `mm`. */
@@ -117,15 +131,30 @@ export function buildBOM(d: FrameDesign): BomLine[] {
           },
         ]),
     {
+      /*
+        The stack bolt runs up from under the bottom plate, through the
+        grommet, the ESC, the inter-board standoff and the flight controller,
+        and still has to take a nut. That is the plate plus the stated stack
+        height plus thread engagement — not the flat 20 mm this used to quote,
+        which was right only for a full-size stack and far too long for a
+        whoop.
+      */
       qty: 4,
-      item: `M${d.spec.stackBolt} × 20 mm cap head + soft mounts`,
+      item: `M${d.spec.stackBolt} × ${standardBoltLength(bottom.thicknessMm + d.spec.stackHeightMm + d.spec.stackBolt)} mm cap head + soft mounts`,
       purpose: `Flight controller stack, ${d.spec.stackPattern} × ${d.spec.stackPattern} mm pattern`,
-      note: "Rubber grommets isolate the gyro from frame vibration. Do not bolt the stack down rigidly.",
+      note: `Sized for a ${d.spec.stackHeightMm} mm stack on a ${bottom.thicknessMm} mm plate. Rubber grommets isolate the gyro from frame vibration — do not bolt the stack down rigidly, and re-measure if your stack is taller than stated.`,
     },
     {
+      /*
+        Strap length finally uses the battery height, which the studio has
+        always asked for and never read. A strap has to go over the pack and
+        back under the plate, so it is twice the height plus the width plus
+        the plate, with a little for the buckle.
+      */
       qty: 2,
-      item: `Battery strap, ${d.strapSlotMm >= 20 ? 20 : Math.max(10, Math.floor(d.strapSlotMm / 5) * 5)} mm wide`,
+      item: `Battery strap, ${strapWidthMm(d)} mm wide × ${Math.ceil((2 * d.spec.battery.h + d.spec.battery.w + bottom.thicknessMm + 30) / 10) * 10} mm long`,
       purpose: "Through the slots in the bottom plate",
+      note: `Long enough to go over a ${d.spec.battery.h} mm tall pack and back through. Buy a little longer rather than shorter — the tail tucks away.`,
     },
   ];
 

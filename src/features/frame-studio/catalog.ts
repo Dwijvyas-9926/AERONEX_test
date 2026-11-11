@@ -253,13 +253,36 @@ export function propFit(motor: MotorSpec, propIn: number): PropFitResult {
 
 export const motorById = (id: string) => MOTORS.find((m) => m.id === id) ?? MOTORS[5];
 
-/** Flight-controller / stack mounting patterns (square side, mm). */
+/**
+ * Flight-controller / stack mounting patterns (square side, mm).
+ *
+ * `heightMm` is how tall the assembled stack stands above the plate it is
+ * bolted to, which is a different question from the pattern and cannot be
+ * derived from it — a pattern is a width. Built up from published figures for
+ * a 30.5 mm stack: a 4-in-1 ESC board is 3–4 mm, a flight controller 4–5 mm,
+ * the standoff between them 6–8 mm, and at least 2 mm is left clear above the
+ * tallest component. That lands at about 15 mm, which is the figure quoted as
+ * leaving 3–5 mm for soft-mount material and the top nut.
+ */
 export const STACK_PATTERNS = [
-  { id: "16", pattern: 16, bolt: 2, label: "16 × 16 mm (M2) — whoop / micro" },
-  { id: "20", pattern: 20, bolt: 2, label: "20 × 20 mm (M2) — most modern stacks" },
-  { id: "25.5", pattern: 25.5, bolt: 3, label: "25.5 × 25.5 mm (M3)" },
-  { id: "30.5", pattern: 30.5, bolt: 3, label: "30.5 × 30.5 mm (M3) — full size / Pixhawk-class" },
+  { id: "16", pattern: 16, bolt: 2, heightMm: 10, label: "16 × 16 mm (M2) — whoop / micro" },
+  { id: "20", pattern: 20, bolt: 2, heightMm: 12, label: "20 × 20 mm (M2) — most modern stacks" },
+  { id: "25.5", pattern: 25.5, bolt: 3, heightMm: 14, label: "25.5 × 25.5 mm (M3)" },
+  { id: "30.5", pattern: 30.5, bolt: 3, heightMm: 15, label: "30.5 × 30.5 mm (M3) — full size / Pixhawk-class" },
 ];
+
+/** The stack height usually seen on a given mounting pattern, mm. */
+export function stackHeightFor(pattern: number): number {
+  return STACK_PATTERNS.reduce((best, p) =>
+    Math.abs(p.pattern - pattern) < Math.abs(best.pattern - pattern) ? p : best,
+  ).heightMm;
+}
+
+/**
+ * Clear space to leave above the tallest component on the stack, mm.
+ * Published guidance is "at least 2 mm"; wiring is what actually uses it.
+ */
+export const STACK_CLEARANCE_MM = 2;
 
 /**
  * Published frame-size reference: prop diameter → typical wheelbase window.

@@ -14,6 +14,7 @@
 import { MATERIALS, propFit } from "./catalog";
 import {
   distanceToBoundary,
+  distanceToSegment,
   pointInPolygon,
   requiredEdgeClearance,
   type FrameDesign,
@@ -98,6 +99,35 @@ function checkPart(part: Profile): Finding[] {
           scope: part.name,
           title: gap <= 0 ? "A slot runs into a bolt hole" : "Slot nearly touches a bolt hole",
           detail: "Material between a strap slot and a bolt is what stops the plate tearing between them.",
+          measured: `${round(gap)} mm`,
+          limit: `${MIN_WALL_BETWEEN_HOLES} mm`,
+        });
+      }
+    }
+  }
+
+  /*
+    Slot against slot.
+
+    Previously unchecked, which was survivable while every part had exactly
+    two parallel strap slots that could not reach each other. The moment a
+    part carries a stack opening and lightening cut-outs as well, two cut-outs
+    merging into one is a real way to produce a plate with a hole through the
+    middle of a load path and no warning about it.
+  */
+  for (let i = 0; i < part.slots.length; i++) {
+    for (let j = i + 1; j < part.slots.length; j++) {
+      const gap = polygonGap(part.slots[i], part.slots[j]);
+      if (gap < MIN_WALL_BETWEEN_HOLES - 0.05) {
+        out.push({
+          id: `${part.id}-slots-${i}-${j}`,
+          severity: gap <= 0 ? "error" : "warn",
+          scope: part.name,
+          title: gap <= 0 ? "Two cut-outs run into each other" : "Cut-outs nearly touch",
+          detail:
+            gap <= 0
+              ? `Two openings in the ${part.name.toLowerCase()} overlap, which makes them one larger opening the studio never sized.`
+              : `Only a sliver of material is left between two openings in the ${part.name.toLowerCase()}.`,
           measured: `${round(gap)} mm`,
           limit: `${MIN_WALL_BETWEEN_HOLES} mm`,
         });
@@ -446,6 +476,27 @@ function stiffnessAdvice(d: FrameDesign): string {
   if (better) parts.push(`${better.name} is about ${Math.round(better.modulus / d.material.modulus)} times stiffer`);
   parts.push(`a smaller propeller shortens the arms, which helps most of all because stiffness falls with the cube of length`);
   return `Try ${parts.join(", or ")}.`;
+}
+
+/**
+ * Smallest gap between two closed polygons, mm. Negative when they overlap.
+ *
+ * Point-to-edge rather than point-to-point: two rectangles can have every
+ * vertex far from every other vertex while their edges cross, so comparing
+ * corners alone would miss exactly the overlap this is looking for.
+ */
+function polygonGap(a: Pt[], b: Pt[]): number {
+  let best = Infinity;
+  for (const [poly, other] of [[a, b], [b, a]] as const) {
+    for (const p of poly) {
+      for (let i = 0, j = other.length - 1; i < other.length; j = i++) {
+        best = Math.min(best, distanceToSegment(p, other[j], other[i]));
+      }
+    }
+  }
+  // Any vertex of one inside the other means they overlap, not merely touch.
+  if (a.some((p) => pointInPolygon(p, b)) || b.some((p) => pointInPolygon(p, a))) return -best;
+  return best;
 }
 
 function holeFullyInside(h: Hole, poly: Pt[]): boolean {

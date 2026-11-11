@@ -9,7 +9,7 @@ const baseSpec = (over: Partial<FrameSpec> = {}): FrameSpec => ({
   motorId: "2207",
   motorThrustG: 1350,
   stackPattern: 30.5,
-  stackBolt: 3,
+  stackBolt: 3, stackHeightMm: 15,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
   construction: "bolted",

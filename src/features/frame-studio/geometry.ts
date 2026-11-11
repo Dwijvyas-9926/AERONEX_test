@@ -9,10 +9,12 @@
 */
 
 import {
+  BOLT_HEAD_DIA,
   EDGE_DISTANCE_FACTOR,
   materialById,
   motorById,
   snapToStock,
+  STACK_CLEARANCE_MM,
   styleById,
   thicknessReferenceFor,
   WHEELBASE_REFERENCE,
@@ -87,6 +89,16 @@ export interface FrameSpec {
   motorThrustG: number;
   stackPattern: number;
   stackBolt: number;
+  /**
+   * How tall the assembled flight-controller stack stands above the plate it
+   * bolts to, mm.
+   *
+   * Collected because it decides two things nothing else can: how long the
+   * stack bolts have to be, and whether the stack fits under the top plate at
+   * all. It almost never does — the plates are only an arm's thickness apart
+   * — so the top plate is opened up to clear it. See `stackClearance`.
+   */
+  stackHeightMm: number;
   battery: { l: number; w: number; h: number; massG: number };
   /** FC, ESC, VTX, camera, RX, wiring — everything that isn't frame or battery. */
   electronicsMassG: number;
@@ -151,6 +163,28 @@ export interface FrameDesign {
   propMinWheelbaseMm: number;
   /** Length of each battery strap slot, mm — the widest strap that fits. */
   strapSlotMm: number;
+  /**
+   * How the flight-controller stack and the top plate get out of each other's
+   * way.
+   *
+   * The two plates are only as far apart as the arm is thick — 2.5 mm on a 2"
+   * frame, 7.5 mm on a 10" — while an assembled stack is 10 to 15 mm tall.
+   * The stack therefore does not fit between them on any frame the studio can
+   * draw, which is why real frames do not put one there: a Mark4's middle
+   * plate is a ring that clamps the arm roots and leaves the centre open, and
+   * the deck that covers the stack is a separate plate on tall standoffs.
+   *
+   * The studio follows that: the stack bolts to the bottom plate and the top
+   * plate carries an opening for it to pass through.
+   */
+  stackClearance: {
+    /** Clear height between the plates, mm — an arm's thickness. */
+    gapMm: number;
+    /** How far the stack stands proud of the top plate, mm. */
+    protrudesMm: number;
+    /** Side of the square opening cut in the top plate, mm. Zero if it fits. */
+    openingMm: number;
+  };
   section: SectionResult;
   profiles: Profile[];
   /** What the studio decided each part is made from, and why. */
@@ -360,7 +394,7 @@ export function rootBoltOffsets(rootBolt: number): [number, number] {
 
 /* --------------------------------------------- polygon measurement helpers */
 
-function distanceToSegment(p: Pt, a: Pt, b: Pt): number {
+export function distanceToSegment(p: Pt, a: Pt, b: Pt): number {
   const vx = b[0] - a[0];
   const vy = b[1] - a[1];
   const wx = p[0] - a[0];
@@ -838,6 +872,17 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     wheelbaseCrowded,
     propMinWheelbaseMm,
     strapSlotMm: round(Math.min(bodyWmm * 0.55, 26)),
+    stackClearance: (() => {
+      // The clear gap between the plates is whatever the arm is thick, since
+      // the standoffs that hold the top plate up are sized to match the arm.
+      const gapMm = round(spec.construction === "unibody" ? spec.stackHeightMm + STACK_CLEARANCE_MM : section.heightMm, 2);
+      const top = profiles.find((p) => p.id === "top-plate");
+      return {
+        gapMm,
+        protrudesMm: round(Math.max(0, spec.stackHeightMm - gapMm), 2),
+        openingMm: top && top.slots.length > 0 && spec.stackHeightMm > gapMm ? round(stackOpeningSize(spec), 2) : 0,
+      };
+    })(),
     section,
     profiles,
     stock: {
@@ -937,6 +982,81 @@ export function standoffHoles(motors: Pt[], bodyW: number, bodyL: number, bolt: 
   });
 }
 
+/**
+ * Side of the opening the stack needs in the top plate, mm.
+ *
+ * Sized from the bolt pattern rather than a board outline, because the pattern
+ * is what the studio knows and a board always overhangs its own bolts by a few
+ * millimetres. One bolt head of margin on each side covers that overhang and
+ * the wiring that leaves the stack's corners.
+ */
+export function stackOpeningSize(spec: FrameSpec): number {
+  const head = BOLT_HEAD_DIA[spec.stackBolt] ?? spec.stackBolt * 1.8;
+  return spec.stackPattern + 2 * head;
+}
+
+/** Roughly where the stack's own boards end — its bolts plus their overhang. */
+const stackFootprint = (spec: FrameSpec) => spec.stackPattern + 6;
+
+/**
+ * Corner radius of the stack opening, as a fraction of its side.
+ *
+ * Not cosmetic. The arm root bolts sit on the frame's diagonals, which is
+ * exactly where a square opening points its corners, so a sharp opening runs
+ * its worst feature straight at the bolts it most needs to stay away from.
+ * Rounding pulls the corners back along the diagonal and buys the ligament,
+ * while a generous radius is what the cut wants anyway — a sharp internal
+ * corner is where a laminate starts cracking.
+ */
+const OPENING_CORNER_FRACTION = 0.15;
+
+/**
+ * The clearance opening in the top plate, as a slot.
+ *
+ * Returns nothing when the stack genuinely fits in the gap between the plates
+ * — which no frame the studio draws manages, but the arithmetic is done
+ * honestly rather than assumed — or when the plate is too small to give the
+ * opening a sane ligament, in which case validation reports it rather than a
+ * drawing being quietly spoiled.
+ */
+function stackOpening(spec: FrameSpec, plateW: number, plateL: number, holes: Hole[]): Pt[][] {
+  const size = stackOpeningSize(spec);
+  const r = clamp(size * OPENING_CORNER_FRACTION, 2, 8);
+  const poly = roundedRect(size, size, r);
+
+  /*
+    Measure against the polygon that will actually be cut, not against the
+    square it was derived from. Measuring the idealised square treated the
+    corner as reaching a full half-side out along the diagonal, which is
+    where the rounding has just taken material away — it under-reported the
+    ligament by several millimetres and refused openings that fit perfectly
+    well.
+  */
+  const minLigament = Math.max(2.5, spec.stackBolt * 1.5);
+  for (const h of holes) {
+    let d = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      d = Math.min(d, distanceToSegment(h.c, poly[j], poly[i]));
+    }
+    if (d - h.r < minLigament) return [];
+  }
+
+  // And it must leave a rim of plate around itself.
+  const reach = Math.max(...poly.map((p) => Math.abs(p[0])));
+  if (reach + minLigament > plateW / 2 || reach + minLigament > plateL / 2) return [];
+
+  /*
+    Last check: having rounded the corners, the opening must still pass the
+    stack. A radius that clears the arm bolts but clips the ESC board is a
+    plate that cannot be assembled.
+  */
+  const corner = (stackFootprint(spec) / 2) * Math.SQRT2;
+  const openingAtCorner = ((size / 2 - r) * Math.SQRT2) + r;
+  if (openingAtCorner < corner) return [];
+
+  return [poly];
+}
+
 function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
@@ -992,24 +1112,34 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     root bolt with edge distance to spare — it cannot just be a smaller
     rectangle. Size it from the bolts it must cover, then trim to the bottom
     plate so it never overhangs.
+
+    It does not carry the stack. The stack bolts to the bottom plate, and
+    since it stands far taller than the gap between the plates, the top plate
+    is opened up to let it through — the same thing a Mark4's middle plate
+    does. Putting the stack's bolt pattern in both plates, as this once did,
+    described a stack squashed into a 5 mm gap.
   */
   const rootHoles = armRootHoles(g);
-  const topHoles: Hole[] = [...patternHoles([0, 0], spec.stackPattern, spec.stackBolt), ...rootHoles];
+  const topHoles: Hole[] = [...rootHoles];
   const seedW = 2 * (Math.max(...rootHoles.map((h) => Math.abs(h.c[0]))) + EDGE_DISTANCE_FACTOR * g.rootBolt);
   const seedL = 2 * (Math.max(...rootHoles.map((h) => Math.abs(h.c[1]))) + EDGE_DISTANCE_FACTOR * g.rootBolt);
   const fittedTop = fitRoundedPlate(seedW, seedL, 6, topHoles);
   const topW = fittedTop.w;
   const topL = fittedTop.l;
   const topOutline = roundedRect(topW, topL, 6);
+  const topSlots = stackOpening(spec, topW, topL, topHoles);
   const top: Profile = {
     id: "top-plate",
     name: "Top plate",
     qty: 1,
     outline: topOutline,
     holes: topHoles,
-    slots: [],
+    slots: topSlots,
     thicknessMm: topT,
-    areaMm2: polygonArea(topOutline) - topHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0),
+    areaMm2:
+      polygonArea(topOutline)
+      - topHoles.reduce((s, h) => s + Math.PI * h.r * h.r, 0)
+      - topSlots.reduce((s, p) => s + polygonArea(p), 0),
   };
 
   if (spec.construction === "bolted") return [bottom, top, ...arms];
@@ -1062,8 +1192,14 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
       - slots.reduce((sum, pts) => sum + polygonArea(pts), 0),
   };
 
-  // The top plate now only carries the stack and the standoffs.
-  const uniTopHoles: Hole[] = [...patternHoles([0, 0], spec.stackPattern, spec.stackBolt), ...standoffs];
+  /*
+    The unibody's top plate is the one case where the stack can genuinely sit
+    underneath: its standoffs are sized to clear the stack (see the BOM), not
+    to match an arm, so the plate stands well clear of it. It keeps its own
+    opening anyway — wiring has to leave the stack somewhere, and a closed
+    deck over a stack is a deck you have to remove to reach anything.
+  */
+  const uniTopHoles: Hole[] = [...standoffs];
   const uniFit = fitRoundedPlate(
     2 * (Math.max(...standoffs.map((h) => Math.abs(h.c[0]))) + EDGE_DISTANCE_FACTOR * g.rootBolt),
     2 * (Math.max(...standoffs.map((h) => Math.abs(h.c[1]))) + EDGE_DISTANCE_FACTOR * g.rootBolt),
@@ -1071,15 +1207,19 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     uniTopHoles,
   );
   const uniTopOutline = roundedRect(uniFit.w, uniFit.l, 6);
+  const uniTopSlots = stackOpening(spec, uniFit.w, uniFit.l, uniTopHoles);
   const uniTop: Profile = {
     id: "top-plate",
     name: "Top plate",
     qty: 1,
     outline: uniTopOutline,
     holes: uniTopHoles,
-    slots: [],
+    slots: uniTopSlots,
     thicknessMm: topT,
-    areaMm2: polygonArea(uniTopOutline) - uniTopHoles.reduce((sum, h) => sum + Math.PI * h.r * h.r, 0),
+    areaMm2:
+      polygonArea(uniTopOutline)
+      - uniTopHoles.reduce((sum, h) => sum + Math.PI * h.r * h.r, 0)
+      - uniTopSlots.reduce((sum, p) => sum + polygonArea(p), 0),
   };
 
   return [chassis, uniTop];

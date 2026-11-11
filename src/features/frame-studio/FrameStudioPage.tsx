@@ -5,7 +5,7 @@ import { ExportPanel } from "./components/ExportPanel";
 import { PlanView } from "./components/PlanView";
 import { SheetView } from "./components/SheetView";
 import { CONSTRUCTIONS, LAYOUTS, designFrame, type Layout } from "./geometry";
-import { LAYOUT_HINT, STEPS, defaultFixedDim, useStudio } from "./store";
+import { LAYOUT_HINT, STEPS, defaultFixedDim, stackHeightFor, useStudio } from "./store";
 import { validateDesign, worstSeverity, type Finding } from "./validate";
 
 /* The solid view pulls in three.js, which is far too heavy to load for a user
@@ -338,7 +338,10 @@ export function FrameStudioPage() {
                     value={spec.stackPattern}
                     onChange={(e) => {
                       const p = STACK_PATTERNS.find((x) => x.pattern === Number(e.target.value))!;
-                      patchSpec({ stackPattern: p.pattern, stackBolt: p.bolt });
+                      // Carry the height with the pattern: a 16 mm whoop stack
+                      // and a 30.5 mm full-size stack are not the same height,
+                      // and leaving the old number behind sizes the bolts wrong.
+                      patchSpec({ stackPattern: p.pattern, stackBolt: p.bolt, stackHeightMm: p.heightMm });
                     }}
                   >
                     {STACK_PATTERNS.map((p) => (
@@ -346,6 +349,17 @@ export function FrameStudioPage() {
                     ))}
                   </select>
                 </label>
+
+                <Num
+                  label="Stack height"
+                  value={spec.stackHeightMm}
+                  onChange={(v) => setSpec("stackHeightMm", v)}
+                  suffix="mm"
+                  min={4}
+                  max={60}
+                  step={1}
+                  hint={`Measured assembled, from the plate it bolts to up over the tallest component. A 4-in-1 ESC is 3–4 mm, a flight controller 4–5 mm, and the standoff between them 6–8 mm, so ${spec.stackPattern} mm stacks land near ${stackHeightFor(spec.stackPattern)} mm. This sets the stack bolt length and the opening the stack passes through in the top plate.`}
+                />
 
                 <div className="fs-row3">
                   <Num label="Battery length" value={spec.battery.l} onChange={(v) => setSpec("battery", { ...spec.battery, l: v })} suffix="mm" min={20} />

@@ -23,7 +23,7 @@ const base: FrameSpec = {
   motorId: "2207",
   motorThrustG: 1350,
   stackPattern: 30.5,
-  stackBolt: 3,
+  stackBolt: 3, stackHeightMm: 15,
   battery: { l: 105, w: 35, h: 30, massG: 180 },
   electronicsMassG: 120,
   construction: "bolted",
@@ -53,7 +53,7 @@ function* specs(): Generator<[string, FrameSpec]> {
       for (const stack of STACK_PATTERNS) {
         yield [
           `${layout.id} ${style.id} stack${stack.pattern}`,
-          { ...base, layout: layout.id, styleId: style.id, stackPattern: stack.pattern, stackBolt: stack.bolt },
+          { ...base, layout: layout.id, styleId: style.id, stackPattern: stack.pattern, stackBolt: stack.bolt, stackHeightMm: stack.heightMm },
         ];
       }
     }
