@@ -2193,7 +2193,7 @@ input[type="range"]::-moz-range-thumb {
 
 .fs-layout {
   display: grid;
-  grid-template-columns: 380px minmax(0, 1fr) 320px;
+  grid-template-columns: 420px minmax(0, 1fr) 310px;
   gap: var(--s5);
   align-items: start;
 }
@@ -2201,8 +2201,61 @@ input[type="range"]::-moz-range-thumb {
 /* The drawing is what should stay in view while the inputs scroll — the
    export step in particular is far taller than the viewport, and pinning
    that column instead would strand its lower half. */
-.fs-preview { position: sticky; top: var(--s4); }
+/* min-width:0 so this column can actually shrink. Without it the toggles
+   row sets a floor on the column's width, the grid grows past the viewport,
+   and the right-hand side of the drawing — the title block — is clipped by
+   the stage's own overflow:hidden with nothing to scroll to reach it. */
+.fs-preview { position: sticky; top: var(--s4); min-width: 0; }
+.fs-preview > .panel { min-width: 0; }
 .fs-fields { display: grid; gap: var(--s5); }
+
+/* Section headings inside a step, so a long form reads as a few short lists
+   rather than one flat run of fields. */
+.fs-group {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s2);
+  font-family: var(--font-display);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fs-group::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+.fs-fields > .fs-group:first-child { margin-top: 0; }
+
+/* The folded-away long explanation under a field. */
+.fs-why { margin-top: 2px; }
+.fs-why > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  font-size: var(--t-xs);
+  color: var(--accent);
+  cursor: pointer;
+  list-style: none;
+  opacity: 0.85;
+}
+.fs-why > summary::-webkit-details-marker { display: none; }
+.fs-why > summary::before { content: "›"; display: inline-block; transition: rotate var(--dur-fast); }
+.fs-why[open] > summary::before { rotate: 90deg; }
+.fs-why > summary:hover { opacity: 1; text-decoration: underline; }
+.fs-why > p {
+  margin-top: 6px;
+  padding-left: var(--s3);
+  border-left: 1px solid var(--line-soft);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+  color: var(--muted);
+}
 .fs-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
 .fs-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s3); }
 
@@ -2297,7 +2350,7 @@ input[type="range"]::-moz-range-thumb {
     var(--midnight-deep);
   overflow: hidden;
 }
-.fs-toggles { display: flex; gap: var(--s4); align-items: center; }
+.fs-toggles { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: center; min-width: 0; }
 .fs-loading {
   position: absolute;
   inset: 0;
@@ -2489,7 +2542,10 @@ input[type="range"]::-moz-range-thumb {
 .fs-xcard {
   position: relative;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  /* The go arrow gets a column of its own. Absolutely positioning it over the
+     text worked until a card had two lines of description, which it then sat
+     on top of. */
+  grid-template-columns: 22px minmax(0, 1fr) 18px;
   grid-template-rows: auto auto;
   align-items: center;
   gap: 2px var(--s3);
@@ -2507,20 +2563,14 @@ input[type="range"]::-moz-range-thumb {
 .fs-xcard b { font-size: var(--t-sm); color: var(--ink); }
 .fs-xcard small { font-size: var(--t-xs); color: var(--muted); }
 .fs-xcard.primary { border-color: var(--accent-line); background: var(--accent-soft); }
-.fs-xcard-go { position: absolute; right: var(--s4); top: 50%; translate: 0 -50%; color: var(--muted); }
+.fs-xcard-go { grid-column: 3; grid-row: 1 / 3; align-self: center; color: var(--muted); }
 
-/* The print-and-check row: one wide card plus its paper selector. */
-.fs-xcheck {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 190px;
-  gap: var(--s3);
-  align-items: start;
-  margin-top: var(--s3);
-}
-.fs-xcheck .fs-xcard.wide { height: 100%; }
-@media (max-width: 720px) {
-  .fs-xcheck { grid-template-columns: minmax(0, 1fr); }
-}
+/* The print-and-check block: the card, then its paper selector beneath.
+   Stacked rather than side by side — this panel is 420 px wide, and a
+   two-column split left the card about 190 px, which wrapped its text to
+   roughly one word per line. */
+.fs-xcheck { display: grid; gap: var(--s3); margin-top: var(--s3); }
+.fs-xcheck .field { max-width: 260px; }
 
 /* The one-archive note under the download buttons. */
 .fs-xzip {
@@ -2543,7 +2593,9 @@ input[type="range"]::-moz-range-thumb {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.95em;
   color: var(--accent);
-  word-break: break-all;
+  /* Break only where a word genuinely will not fit. break-all broke every
+     word greedily, splitting "README.txt" across two lines. */
+  overflow-wrap: anywhere;
 }
 
 .fs-xopts { display: grid; gap: var(--s3); margin-top: var(--s4); }
@@ -2584,7 +2636,12 @@ input[type="range"]::-moz-range-thumb {
 .fs-recipe p { margin-top: 3px; font-size: var(--t-xs); color: var(--ink-2); line-height: 1.6; }
 
 @media (max-width: 1400px) {
-  .fs-layout { grid-template-columns: 340px minmax(0, 1fr); }
+  .fs-layout { grid-template-columns: 360px minmax(0, 1fr); }
+  /* Below three columns the step blurbs wrap to five or six lines each and
+     cost 230 px of height before the form even starts. The number and the
+     name are enough to navigate by; the blurb is first-visit reading. */
+  .fs-step small { display: none; }
+  .fs-step { align-items: center; }
   .fs-results { grid-column: 1 / -1; }
   .fs-results .panel-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 var(--s6); align-content: start; }
 }

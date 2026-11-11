@@ -24,6 +24,7 @@ function Num({
   max,
   step = 1,
   hint,
+  more,
 }: {
   label: string;
   value: number;
@@ -33,6 +34,8 @@ function Num({
   max?: number;
   step?: number;
   hint?: string;
+  /** The long explanation, kept behind a disclosure. */
+  more?: string;
 }) {
   /*
     Keep what the user is typing separate from the committed number.
@@ -77,7 +80,26 @@ function Num({
         {suffix && <i>{suffix}</i>}
       </div>
       {hint && <small>{hint}</small>}
+      {more && <Why>{more}</Why>}
     </label>
+  );
+}
+
+/**
+ * The long version of an explanation, folded away until asked for.
+ *
+ * The studio has a lot to say about why a number matters, and saying all of
+ * it next to every field turned the form into prose with occasional inputs —
+ * on the components step you had to scroll past six lines about stack
+ * heights to reach the battery. A native <details> keeps it one click away
+ * and keeps the keyboard and screen-reader behaviour for free.
+ */
+function Why({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="fs-why" onClick={(e) => e.stopPropagation()}>
+      <summary>Why this matters</summary>
+      <p>{children}</p>
+    </details>
   );
 }
 
@@ -227,11 +249,14 @@ export function FrameStudioPage() {
                 </label>
 
                 <div className="field">
-                  <span>Layout</span>
-                  <div className="fs-choices">
+                  <span id="fs-layout-label">Layout</span>
+                  <div className="fs-choices" role="radiogroup" aria-labelledby="fs-layout-label">
                     {LAYOUTS.map((l) => (
                       <button
                         key={l.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={spec.layout === l.id}
                         className={`fs-choice${spec.layout === l.id ? " is-on" : ""}`}
                         onClick={() => setSpec("layout", l.id as Layout)}
                       >
@@ -243,11 +268,14 @@ export function FrameStudioPage() {
                 </div>
 
                 <div className="field">
-                  <span>How will you fly it?</span>
-                  <div className="fs-choices">
+                  <span id="fs-style-label">How will you fly it?</span>
+                  <div className="fs-choices" role="radiogroup" aria-labelledby="fs-style-label">
                     {FLYING_STYLES.map((f) => (
                       <button
                         key={f.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={spec.styleId === f.id}
                         className={`fs-choice${spec.styleId === f.id ? " is-on" : ""}`}
                         onClick={() => setSpec("styleId", f.id)}
                       >
@@ -263,11 +291,14 @@ export function FrameStudioPage() {
                 </div>
 
                 <div className="field">
-                  <span>How it goes together</span>
-                  <div className="fs-choices">
+                  <span id="fs-cons-label">How it goes together</span>
+                  <div className="fs-choices" role="radiogroup" aria-labelledby="fs-cons-label">
                     {CONSTRUCTIONS.map((c) => (
                       <button
                         key={c.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={spec.construction === c.id}
                         className={`fs-choice${spec.construction === c.id ? " is-on" : ""}`}
                         onClick={() => setSpec("construction", c.id)}
                       >
@@ -290,12 +321,14 @@ export function FrameStudioPage() {
                   min={0}
                   max={60}
                   hint="Gap between neighbouring propeller discs. 10 mm is a sensible minimum."
+                  more="Too little and a bent propeller or a flexing arm lets two discs touch, which takes out both motors. Too much and the frame is larger, heavier and more flexible than the propellers need."
                 />
               </div>
             )}
 
             {step === "components" && (
               <div className="fs-fields">
+                <h4 className="fs-group">Motors</h4>
                 <label className="field">
                   <span>Motor</span>
                   <select
@@ -324,13 +357,15 @@ export function FrameStudioPage() {
                   min={20}
                   max={8000}
                   step={10}
-                  hint={
+                  hint={`From your motor's own thrust table. The default is a ${motor.size} on ${motor.thrustCells}S.`}
+                  more={
                     Math.abs(spec.motorThrustG - motor.thrustG) < 1e-9
-                      ? `The default, ${motor.thrustG} g, is what a ${motor.size} makes on ${motor.thrustCells}S with a ${motor.kv[0]}–${motor.kv[1]} KV winding. Every number in this design follows from it, so replace it with your motor's own thrust table figure if you have one.`
-                      : `From your motor's own thrust table, at your cell count and prop. A stock ${motor.size} is around ${motor.thrustG} g on ${motor.thrustCells}S.`
+                      ? `${motor.thrustG} g is representative of a ${motor.size} on ${motor.thrustCells}S with a ${motor.kv[0]}–${motor.kv[1]} KV winding. Every number in this design follows from it — the arm section, the all-up weight, the hover throttle — so if you have your motor's thrust table, the real figure is the single input that most changes the result.`
+                      : `You have overridden the default. A stock ${motor.size} is around ${motor.thrustG} g on ${motor.thrustCells}S with a ${motor.kv[0]}–${motor.kv[1]} KV winding; if yours differs a lot from that, check you are reading peak thrust per motor rather than the whole aircraft.`
                   }
                 />
 
+                <h4 className="fs-group">Flight controller</h4>
                 <label className="field">
                   <span>Flight controller stack</span>
                   <select
@@ -358,9 +393,11 @@ export function FrameStudioPage() {
                   min={4}
                   max={60}
                   step={1}
-                  hint={`Measured assembled, from the plate it bolts to up over the tallest component. A 4-in-1 ESC is 3–4 mm, a flight controller 4–5 mm, and the standoff between them 6–8 mm, so ${spec.stackPattern} mm stacks land near ${stackHeightFor(spec.stackPattern)} mm. This sets the stack bolt length and the opening the stack passes through in the top plate.`}
+                  hint={`Measured assembled, over the tallest component. ${spec.stackPattern} mm stacks land near ${stackHeightFor(spec.stackPattern)} mm.`}
+                  more={`A 4-in-1 ESC board is 3–4 mm, a flight controller 4–5 mm, and the standoff between them 6–8 mm, with at least 2 mm left clear above the tallest part. This is the one measurement a mounting pattern cannot give you — a pattern is a width — and it sets both the stack bolt length and the size of the opening the stack passes through in the top plate.`}
                 />
 
+                <h4 className="fs-group">Battery</h4>
                 <div className="fs-row3">
                   <Num label="Battery length" value={spec.battery.l} onChange={(v) => setSpec("battery", { ...spec.battery, l: v })} suffix="mm" min={20} />
                   <Num label="Width" value={spec.battery.w} onChange={(v) => setSpec("battery", { ...spec.battery, w: v })} suffix="mm" min={10} />
@@ -368,16 +405,18 @@ export function FrameStudioPage() {
                 </div>
 
                 <div className="field">
-                  <span>Where the battery straps</span>
-                  <div className="fs-choices">
+                  <span id="fs-batt-label">Where the battery straps</span>
+                  <div className="fs-choices" role="radiogroup" aria-labelledby="fs-batt-label">
                     {BATTERY_MOUNTS.map((b) => (
                       <button
                         key={b.id}
                         type="button"
-                        className={`fs-choice ${spec.batteryMount === b.id ? "on" : ""}`}
+                        role="radio"
+                        aria-checked={spec.batteryMount === b.id}
+                        className={`fs-choice${spec.batteryMount === b.id ? " is-on" : ""}`}
                         onClick={() => setSpec("batteryMount", b.id)}
                       >
-                        <strong>{b.name}</strong>
+                        <b>{b.name}</b>
                         <small>{b.blurb}</small>
                       </button>
                     ))}
@@ -388,6 +427,7 @@ export function FrameStudioPage() {
                   </small>
                 </div>
 
+                <h4 className="fs-group">Camera</h4>
                 <label className="field">
                   <span>FPV camera</span>
                   <select className="select" value={spec.cameraId} onChange={(e) => setSpec("cameraId", e.target.value)}>
@@ -580,7 +620,8 @@ export function FrameStudioPage() {
                     min={1.2}
                     max={6}
                     step={0.5}
-                    hint="Wall of the hollow arm. 2–3 mm is the usual range — thinner and the walls stop being whole perimeters."
+                    hint="Wall of the hollow arm. 2–3 mm is the usual range."
+                    more="In a hollow section the walls are the structure — they are what the stiffness was calculated from. Thinner than about 2 mm and a slicer stops being able to make them from whole perimeters, filling them with thin-wall gap fill instead, which is far weaker than the number here assumes."
                   />
                 )}
 
@@ -591,7 +632,8 @@ export function FrameStudioPage() {
                   min={1}
                   max={6}
                   step={0.5}
-                  hint="How much margin over the material's published strength. 2 is normal; go to 3 for a first build or an unfamiliar material."
+                  hint="Margin over the material's published strength. 2 is normal."
+                  more="Published strengths are measured on clean laboratory samples. A real part has cut edges, bolt holes, and a crash history, so the allowable stress is the published figure divided by this number. Go to 3 for a first build, an unfamiliar material, or anything you cannot easily replace."
                 />
               </div>
             )}
