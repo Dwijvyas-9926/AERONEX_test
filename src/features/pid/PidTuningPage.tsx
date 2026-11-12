@@ -189,7 +189,7 @@ export function PidTuningPage() {
         {connected ? (
           <span className={`pill ${canSend ? "ok" : "warn"} plain`}>{vehicle!.firmwareLabel} · {vehicle!.armed ? "ARMED" : "Disarmed"}</span>
         ) : (
-          <Link className="btn btn-primary" to="/connection"><Cable /> Connect a vehicle</Link>
+          <Link className="btn btn-primary" to="/connection"><Cable /> Connect aircraft</Link>
         )}
       </header>
 

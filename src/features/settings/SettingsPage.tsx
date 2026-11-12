@@ -108,7 +108,7 @@ export function SettingsPage() {
           <div className="setting">
             <div>
               <strong>Reset app data</strong>
-              <p>Removes vehicle profiles and settings from this browser. Nothing on any flight controller is changed.</p>
+              <p>Removes aircraft profiles and settings from this browser. Nothing on any flight controller is changed.</p>
             </div>
             <button
               className="btn btn-danger"

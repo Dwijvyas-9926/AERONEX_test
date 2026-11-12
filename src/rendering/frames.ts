@@ -12,7 +12,7 @@ import { Euler } from "three";
     roll right-wing-down positive, pitch nose-up positive, yaw clockwise from north.
 
   Conversions below are the single source of truth. Imported CAD models get their
-  own "model -> body" correction in Digital Twin Studio (Phase 3); that is a visual
+  own "model -> body" correction in Digital Twin (Phase 3); that is a visual
   correction only and never changes autopilot orientation parameters.
 */
 

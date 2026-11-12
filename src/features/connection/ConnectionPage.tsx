@@ -23,7 +23,7 @@ function Unsupported() {
             ? "Connecting a flight controller from the browser uses the Web Serial API, which is available in Chrome, Edge and Opera on desktop. Firefox and Safari don't support it."
             : "Web Serial only works on https:// pages or http://localhost. Open the app from localhost (npm run dev) or a secure URL."}
         </p>
-        <p>The simulator, vehicle profiles and settings work in any modern browser.</p>
+        <p>The simulator, aircraft profiles and settings work in any modern browser.</p>
       </div>
     </section>
   );
@@ -481,7 +481,7 @@ export function ConnectionPage() {
     <div className="page-pad">
       <header className="page-head">
         <div>
-          <h1>Vehicle Connection</h1>
+          <h1>Connection</h1>
           <p>Connect a Pixhawk 2.4.8, Pixhawk 6C Mini or another MAVLink flight controller over USB or a telemetry radio.</p>
         </div>
         {(status === "error" || status === "lost") && (
@@ -498,7 +498,7 @@ export function ConnectionPage() {
       ) : (
         <div className="split">
           <div className="stack">
-            <section className="panel">
+            <section className="panel conn-panel">
               <div className="conn-hero">
                 <div className="conn-form">
                   <MethodPicker disabled={locked} />

@@ -502,8 +502,24 @@
   padding: var(--s6);
 }
 
-@media (max-width: 980px) {
+/*
+  By the room the panel has, not the width of the window: the same panel is
+  half the page beside the notes at one size and the whole page at another,
+  and a window breakpoint let the form be squeezed to nothing between the two.
+*/
+.conn-panel {
+  container-type: inline-size;
+}
+
+@container (max-width: 640px) {
   .conn-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 400px) {
+  .method-cards,
+  .conn-form .row {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -998,7 +1014,7 @@ textarea.input {
 }
 
 /* =========================================================
-   Digital Twin Studio
+   Digital Twin
    ========================================================= */
 .twin-layout {
   display: grid;
@@ -1524,7 +1540,7 @@ input[type="range"]::-moz-range-thumb {
   width: 100%;
 }
 
-/* ======================= Calibration Center ======================= */
+/* ======================= Calibration ======================= */
 .cal-tabs { margin: var(--s4) 0 var(--s5); flex-wrap: wrap; }
 .cal-pane { display: block; }
 .cal-section { display: grid; gap: var(--s4); }
@@ -1824,7 +1840,7 @@ input[type="range"]::-moz-range-thumb {
 .pid-mod { font-size: var(--t-xs); color: var(--accent); background: var(--accent-soft); padding: 1px 7px; border-radius: 999px; }
 .pid-row.modified input[type="range"] { accent-color: var(--accent); }
 
-/* ======================= Full Parameters ======================= */
+/* ======================= Parameters ======================= */
 .fp-search { display: flex; align-items: center; gap: var(--s2); flex: 1; min-width: 220px; }
 .fp-search svg { color: var(--muted); flex: none; }
 .fp-search .input { flex: 1; }
@@ -1854,7 +1870,7 @@ input[type="range"]::-moz-range-thumb {
 /* ======================= About ======================= */
 .about { max-width: 920px; }
 .about-hero { text-align: center; padding: var(--s8) 0 var(--s6); display: grid; justify-items: center; gap: var(--s3); }
-.about-mark { width: 64px; height: 64px; }
+.about-mark { width: 76px; height: 76px; border-radius: 17px; box-shadow: 0 0 0 1px var(--line), 0 18px 40px rgba(0, 0, 0, 0.4); }
 .about-wordmark { font-family: var(--font-display); font-size: clamp(2.4rem, 6vw, 3.6rem); letter-spacing: 0.06em; margin: 0; background: linear-gradient(180deg, #f3e4c4, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .about-tagline { color: var(--ink-2); font-size: var(--t-md); margin: 0; max-width: 46ch; }
 .about-lede { font-size: var(--t-md); line-height: 1.7; color: var(--ink-2); max-width: 72ch; margin: 0 auto var(--s6); text-align: center; }
@@ -2796,4 +2812,191 @@ input[type="range"]::-moz-range-thumb {
   .method-cards { grid-template-columns: minmax(0, 1fr); }
   .conn-form .row { grid-template-columns: minmax(0, 1fr); display: grid; }
   .conn-hero { padding: var(--s4); }
+}
+
+/* =========================================================
+   Overview: the four stages
+   ========================================================= */
+.stage-map {
+  margin-bottom: var(--s8);
+}
+
+.stage-map-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s5);
+  flex-wrap: wrap;
+  margin-bottom: var(--s5);
+}
+
+.stage-map-head h2 {
+  font-size: var(--t-xl);
+}
+
+.stage-map-head p {
+  margin-top: var(--s2);
+  max-width: 68ch;
+  color: var(--ink-2);
+}
+
+/* A plain tag, not a colour: lilac means simulated here and nothing else. */
+.needs-link {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s4);
+}
+
+@media (max-width: 1320px) {
+  .stages {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .stages {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-panel);
+  background: var(--graphite);
+  overflow: hidden;
+}
+
+.stage-head {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s4) var(--s4) var(--s3);
+  border-bottom: 1px solid var(--line-soft);
+  min-height: 92px;
+}
+
+.stage-n {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.stage-head h3 {
+  font-size: var(--t-lg);
+  line-height: 1.3;
+}
+
+.stage-head p {
+  margin-top: 2px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.stage ul {
+  list-style: none;
+  margin: 0;
+  padding: var(--s2);
+  display: grid;
+  gap: 2px;
+}
+
+.stage-link {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  gap: var(--s3);
+  align-items: start;
+  padding: 10px var(--s2);
+  border-radius: var(--r-ctl);
+  color: var(--ink);
+}
+
+.stage-link:hover {
+  background: var(--slate);
+  text-decoration: none;
+}
+
+.stage-link > svg:first-child {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--muted);
+}
+
+.stage-link:hover > svg:first-child {
+  color: var(--accent);
+}
+
+.stage-link strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px var(--s2);
+  font-size: var(--t-base);
+  font-weight: 600;
+}
+
+.stage-link em {
+  font-style: normal;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--faint);
+}
+
+
+.stage-link em.needs-link {
+  color: var(--muted);
+}
+
+.stage-link small {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--t-sm);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.stage-link.planned strong {
+  color: var(--ink-2);
+}
+
+.stage-go {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--accent);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--dur-fast),
+    transform var(--dur-fast);
+}
+
+.stage-link:hover .stage-go,
+.stage-link:focus-visible .stage-go {
+  opacity: 1;
+  transform: none;
 }

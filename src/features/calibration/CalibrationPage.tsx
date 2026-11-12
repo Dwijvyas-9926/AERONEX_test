@@ -32,7 +32,7 @@ export function CalibrationPage() {
     <div className="page-pad">
       <header className="page-head">
         <div>
-          <h1>Calibration Center</h1>
+          <h1>Calibration</h1>
           <p>Level, accelerometer, compass, radio, flight modes and ESCs — the Mission Planner setup sequence, run against your connected autopilot.</p>
         </div>
         <div className="actions">
@@ -43,7 +43,7 @@ export function CalibrationPage() {
             </span>
           ) : (
             <Link className="btn btn-primary" to="/connection">
-              <Cable /> Connect a vehicle
+              <Cable /> Connect aircraft
             </Link>
           )}
         </div>

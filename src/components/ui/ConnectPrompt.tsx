@@ -46,7 +46,7 @@ export function ConnectPrompt({
         <p className="connect-prompt-body">{children}</p>
         <div className="connect-prompt-actions">
           <Link className="btn btn-primary" to="/connection">
-            <Cable /> Connect a vehicle
+            <Cable /> Connect aircraft
           </Link>
           {simulator && (
             <Link className="btn btn-ghost" to="/simulator">

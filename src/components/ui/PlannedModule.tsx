@@ -7,10 +7,10 @@ export interface PlannedItem {
 }
 
 /** Honest placeholder: says what the module will do, in which phase, and what works today. */
-export function PhaseBanner({ phase, title, children }: { phase: number; title: string; children: ReactNode }) {
+export function PhaseBanner({ title, children }: { phase?: number; title: string; children: ReactNode }) {
   return (
     <div className="phase-banner">
-      <span className="pill idle plain">Phase {phase}</span>
+      <span className="pill idle plain">Planned</span>
       <div>
         <strong>{title}</strong>
         <p>{children}</p>

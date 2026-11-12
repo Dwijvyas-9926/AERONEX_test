@@ -31,7 +31,7 @@ const slugify = (s: string) =>
     .replace(/-+$/g, "");
 
 /**
- * File-name stem for an export, taken from the active vehicle profile.
+ * File-name stem for an export, taken from the active aircraft profile.
  *
  * A frame is built for a particular aircraft, so the files are named after it:
  * rename the profile and the next export follows. The design's own

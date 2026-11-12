@@ -132,7 +132,7 @@ function Editor({ profile, onDirty }: { profile: VehicleProfile; onDirty: (d: bo
         <div className="callout span2">
           <Info />
           <span>
-            3D model: the default quadcopter. Import your own assembly in Digital Twin Studio. Profiles live in this
+            3D model: the default quadcopter. Import your own assembly in Digital Twin. Profiles live in this
             browser&rsquo;s storage; clearing site data removes them.
           </span>
         </div>

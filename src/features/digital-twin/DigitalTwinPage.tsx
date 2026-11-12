@@ -205,7 +205,7 @@ export function DigitalTwinPage() {
       <div className="page-pad">
         <div className="empty">
           <Box />
-          <h3>No vehicle profile</h3>
+          <h3>No aircraft profile</h3>
           <p>Create a profile first — the model is saved with it.</p>
         </div>
       </div>
@@ -221,7 +221,7 @@ export function DigitalTwinPage() {
     <div className="page-pad">
       <header className="page-head">
         <div>
-          <h1>Digital Twin Studio</h1>
+          <h1>Digital Twin</h1>
           <p>Import the real assembly of {profile.name}, set which way is forward and up, then fly it — scripted or by hand — to check it loads and reads correctly.</p>
         </div>
         <div className="actions">
@@ -271,7 +271,7 @@ export function DigitalTwinPage() {
                         key={m.id}
                         aria-pressed={mode === m.id}
                         disabled={locked}
-                        title={locked ? "Connect a vehicle to mirror its live attitude" : undefined}
+                        title={locked ? "Connect aircraft to mirror its live attitude" : undefined}
                         onClick={() => setMode(m.id)}
                       >
                         <m.icon /> {m.label}

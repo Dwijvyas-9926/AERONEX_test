@@ -1,4 +1,4 @@
-import { Box, Cable, Check, ChevronDown, CircleDashed, Crosshair, Drone, Gamepad2, Hand, MonitorCheck, Rotate3d } from "lucide-react";
+import { ArrowRight, Box, Cable, Check, ChevronDown, CircleDashed, Crosshair, Drone, Gamepad2, Hand, MonitorCheck, Rotate3d } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router-dom";
@@ -11,6 +11,8 @@ import { useActiveProfile } from "../../state/profileStore";
 import { prefersReducedMotion, useSettings } from "../../state/settingsStore";
 import { BOARD_LABELS, FIRMWARE_LABELS, FRAME_LABELS } from "../../vehicle/types";
 import { HeroInstruments } from "./HeroInstruments";
+import { ROUTES, STAGES } from "../../app/routes";
+import { useUi } from "../../state/uiStore";
 
 const HeroScene = lazy(() => import("./HeroScene"));
 
@@ -96,8 +98,8 @@ function Hero() {
         </p>
       )}
 
-      <a className="hero-scroll" href="#main-start" aria-label="Scroll to setup">
-        <span>Set up your aircraft</span>
+      <a className="hero-scroll" href="#main-start" aria-label="Scroll to how AERONEX works">
+        <span>See how it works</span>
         <ChevronDown size={18} />
       </a>
     </section>
@@ -118,7 +120,7 @@ function Checklist() {
   const steps: { title: string; detail: string; state: StepState; to: string; icon: typeof Box }[] = [
     {
       title: "Describe your aircraft",
-      detail: profile ? `${profile.name}: ${FRAME_LABELS[profile.frame]}, ${BOARD_LABELS[profile.board]}.` : "Create a vehicle profile.",
+      detail: profile ? `${profile.name}: ${FRAME_LABELS[profile.frame]}, ${BOARD_LABELS[profile.board]}.` : "Create an aircraft profile.",
       state: profile ? "done" : "now",
       to: "/vehicle",
       icon: Drone,
@@ -190,7 +192,7 @@ function ModePanels() {
               : `${browserName()} can't open serial ports. Use Chrome or Edge on desktop to connect hardware.`}
         </p>
         <Link className="btn" to="/connection">
-          Open Vehicle Connection
+          Open Connection
         </Link>
       </section>
       <section className="panel mode-card">
@@ -284,11 +286,82 @@ function ProfileSummary() {
   );
 }
 
+/**
+ * The whole app on one strip: four stages, in the order the work happens,
+ * each with the pages that belong to it.
+ *
+ * This is the answer to "what is all this, and where do I start?" — the same
+ * four stages the sidebar is grouped by, with a line on what each page does.
+ */
+function StageMap() {
+  const status = useLink((s) => s.status);
+  const linked = status === "connected" || status === "stale";
+  const openHelp = useUi((s) => s.open);
+  return (
+    <section className="stage-map" aria-labelledby="stage-map-title">
+      <header className="stage-map-head">
+        <div>
+          <h2 id="stage-map-title">How AERONEX works</h2>
+          <p>
+            Four stages, in the order you would do them. Start anywhere: every page works without the ones before it, and only the pages marked{" "}
+            <span className="needs-link">needs a link</span> wait for a flight controller.
+          </p>
+        </div>
+        <button className="btn" onClick={() => openHelp("help")}>
+          Open the guide <kbd>?</kbd>
+        </button>
+      </header>
+      <ol className="stages">
+        {STAGES.map((stage, i) => (
+          <li className="stage" key={stage.group}>
+            <div className="stage-head">
+              <span className="stage-n" aria-hidden>
+                {i + 1}
+              </span>
+              <div>
+                <h3>{stage.group}</h3>
+                <p>{stage.summary}</p>
+              </div>
+            </div>
+            <ul>
+              {ROUTES.filter((r) => r.group === stage.group).map((r) => {
+                const Icon = r.icon;
+                const planned = r.status.kind === "planned";
+                const live = !planned && NEEDS_LINK.has(r.path);
+                return (
+                  <li key={r.path}>
+                    <Link to={r.path} className={`stage-link${planned ? " planned" : ""}`}>
+                      <Icon aria-hidden />
+                      <span>
+                        <strong>
+                          {r.label}
+                          {planned && <em>Soon</em>}
+                          {live && !linked && <em className="needs-link">Needs a link</em>}
+                        </strong>
+                        <small>{r.blurb}</small>
+                      </span>
+                      <ArrowRight className="stage-go" aria-hidden />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Pages that have nothing to show until a flight controller is linked. */
+const NEEDS_LINK = new Set(["/calibration", "/pid", "/params", "/preflight", "/flight-data", "/keyboard-flight", "/doctor", "/telemetry"]);
+
 export function OverviewPage() {
   return (
     <>
       <Hero />
       <div className="page-pad overview-body" id="main-start">
+        <StageMap />
         <div className="split">
           <div className="stack">
             <ModePanels />

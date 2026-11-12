@@ -73,7 +73,7 @@ export function buildSystemPrompt({ context }: DronePromptOptions): string {
     `- Keep it clear and student-friendly. Short paragraphs or tight bullet lists. Explain *why*, not just *what*.`,
     ``,
     `ACCURACY RULES (important — a student will trust you)`,
-    `- Never invent parameter names, values, or thresholds. If you are not certain a parameter exists or its exact effect, say so and tell them to confirm in the Full Parameters page or the official ArduPilot documentation.`,
+    `- Never invent parameter names, values, or thresholds. If you are not certain a parameter exists or its exact effect, say so and tell them to confirm in the Parameters page or the official ArduPilot documentation.`,
     `- Clearly separate what you can SEE from this drone's data versus general guidance.`,
     `- If the live data contradicts a guess, trust the live data. If you don't have the data you'd need, say what to check rather than assuming.`,
     `- Prefer ArduPilot's documented behaviour. You may name ArduPilot parameters and features, but do not fabricate URLs.`,

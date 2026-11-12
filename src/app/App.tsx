@@ -1,8 +1,10 @@
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect } from "react";
-import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
+import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AboutPage } from "../features/about/AboutPage";
-import { BrandMark } from "../components/shell/BrandMark";
+import { BrandLockup } from "../components/shell/BrandMark";
+import { HelpPanel } from "../components/shell/HelpPanel";
+import { SearchPalette } from "../components/shell/SearchPalette";
 import { ConfirmDialog, Toasts } from "../components/shell/Overlays";
 import { Sidebar } from "../components/shell/Sidebar";
 import { StatusBar } from "../components/shell/StatusBar";
@@ -27,6 +29,8 @@ import { prefersReducedMotion, useSettings } from "../state/settingsStore";
 import { useLinkNotifications } from "./useLinkNotifications";
 import { useLink } from "../state/linkStore";
 import { commandLink } from "../services/link/commandLink";
+import { routeFor } from "./routes";
+import { useUi } from "../state/uiStore";
 
 /* Stream a 1 Hz GCS heartbeat whenever a vehicle is connected, so ArduPilot's
    GCS failsafe is armed. It stops when the tab closes or the link drops, which
@@ -79,23 +83,60 @@ function AnimatedRoutes() {
   );
 }
 
+/* The tab says which page it is on, so several open tabs can be told apart. */
+function usePageTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const r = routeFor(pathname);
+    document.title = r.path === "/" ? "AERONEX Ground Station" : `${r.label} – AERONEX`;
+  }, [pathname]);
+}
+
+/*
+  App-wide keys: Ctrl or ⌘ K to search, ? for the guide. The ? is ignored
+  while typing in a field, where it is just a question mark.
+*/
+function useGlobalKeys() {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        useUi.getState().toggle("search");
+      } else if (e.key === "?" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        useUi.getState().toggle("help");
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
+}
+
 function Frame() {
   const collapsed = useSettings((s) => s.sidebarCollapsed);
+  const help = useUi((s) => s.overlay === "help");
+  const nav = useNavigate();
   useLinkNotifications();
   useGcsHeartbeat();
+  usePageTitle();
+  useGlobalKeys();
   return (
-    <div className="app" data-collapsed={collapsed}>
-      <div className="brand">
-        <BrandMark />
-        <span className="brand-name">
-          AERONEX <span>Ground Station</span>
-        </span>
-      </div>
+    <div className="app" data-collapsed={collapsed} data-help={help}>
+      <a className="skip-link" href="#main">
+        Skip to the page
+      </a>
+      <button className="brand" onClick={() => nav("/")} title="AERONEX Ground Station — Overview">
+        <BrandLockup />
+      </button>
       <StatusBar />
       <Sidebar />
       <main className="main" id="main">
         <AnimatedRoutes />
       </main>
+      <HelpPanel />
+      <SearchPalette />
       <Toasts />
       <ConfirmDialog />
     </div>

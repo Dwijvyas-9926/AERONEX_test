@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 /*
   Exact material scheme from the Avion digital-twin simulator, so an imported
-  model renders identically in Digital Twin Studio and in the simulator. Parts
+  model renders identically in Digital Twin and in the simulator. Parts
   are matched by the prefix of their name (e.g. "motor_12" -> "motor"); anything
   unrecognised falls back to "plate". This mirrors the twin's onModel() exactly.
 */

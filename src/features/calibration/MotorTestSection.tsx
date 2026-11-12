@@ -176,7 +176,7 @@ export function MotorTestSection({ canSend }: { canSend: boolean }) {
         <span><strong>Remove all propellers first.</strong> Motors spin at the commanded throttle immediately. Confirm the aircraft is secured and clear of people.</span>
       </div>
       {armed && <div className="callout warn"><X /><span>Disarm the vehicle to run a motor test.</span></div>}
-      {!canSend && <div className="callout warn"><X /><span>Connect a vehicle to test motors.</span></div>}
+      {!canSend && <div className="callout warn"><X /><span>Connect aircraft to test motors.</span></div>}
 
       <section className="panel">
         <div className="panel-head">

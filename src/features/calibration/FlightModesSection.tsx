@@ -26,7 +26,7 @@ export function FlightModesSection({ canSend }: { canSend: boolean }) {
         <SlidersHorizontal className="cal-sec-icon" />
       </div>
 
-      {!canSend && <div className="callout warn"><X /><span>Connect a vehicle to read and change mode assignments.</span></div>}
+      {!canSend && <div className="callout warn"><X /><span>Connect aircraft to read and change mode assignments.</span></div>}
 
       <section className="panel">
         <div className="panel-head"><h3>Mode switch</h3></div>

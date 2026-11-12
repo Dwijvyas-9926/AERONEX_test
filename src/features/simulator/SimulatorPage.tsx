@@ -6,7 +6,7 @@ import { useActiveProfile } from "../../state/profileStore";
   The Flight Simulator hosts the Avion digital twin exactly as authored (its own
   3D world, relief-mission logic, telemetry, inspector and cameras), loaded in an
   isolated frame. The app supplies the model to fly: when a model is imported in
-  Digital Twin Studio it is exported to GLB and handed to the twin as a blob URL
+  Digital Twin it is exported to GLB and handed to the twin as a blob URL
   in the frame's query string; otherwise the twin falls back to its built-in
   Avion. The only edits to the original file were vendoring its three.js and
   reading that model parameter — no sim logic or visuals were changed.

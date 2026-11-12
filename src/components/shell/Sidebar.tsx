@@ -1,23 +1,24 @@
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { NavLink } from "react-router-dom";
-import { ROUTES, type RouteDef } from "../../app/routes";
+import { ROUTES, STAGES, type RouteDef } from "../../app/routes";
 import { useSettings } from "../../state/settingsStore";
+import { useUi } from "../../state/uiStore";
 
-const GROUPS: RouteDef["group"][] = ["Workspace", "Setup", "Tune & Configure", "Flight", "Analysis"];
-
-function tag(r: RouteDef) {
-  if (r.status.kind === "planned") return `Phase ${r.status.phase}`;
-  return null;
-}
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 function Item({ r }: { r: RouteDef }) {
   const Icon = r.icon;
-  const t = tag(r);
+  const planned = r.status.kind === "planned";
   return (
-    <NavLink to={r.path} end={r.path === "/"} className={({ isActive }) => `nav-item${isActive ? " active" : ""}`} title={r.label}>
+    <NavLink
+      to={r.path}
+      end={r.path === "/"}
+      className={({ isActive }) => `nav-item${isActive ? " active" : ""}${planned ? " planned" : ""}`}
+      title={`${r.label} — ${r.blurb}`}
+    >
       <Icon aria-hidden />
       <span className="nav-label">{r.label}</span>
-      {t && <span className="nav-tag">{t}</span>}
+      {planned && <span className="nav-tag">Soon</span>}
     </NavLink>
   );
 }
@@ -25,24 +26,44 @@ function Item({ r }: { r: RouteDef }) {
 export function Sidebar() {
   const collapsed = useSettings((s) => s.sidebarCollapsed);
   const set = useSettings((s) => s.set);
+  const openSearch = useUi((s) => s.open);
+  const home = ROUTES.filter((r) => r.group === "Home");
   const system = ROUTES.filter((r) => r.group === "System");
   return (
-    <nav className="sidebar" aria-label="Modules">
-      {GROUPS.map((g) => (
-        <div className="nav-group" key={g}>
-          <div className="nav-group-label">{g}</div>
-          {ROUTES.filter((r) => r.group === g).map((r) => (
+    <nav className="sidebar" aria-label="Pages">
+      <button className="nav-search" onClick={() => openSearch("search")} title="Search pages and actions">
+        <Search aria-hidden />
+        <span className="nav-label">Search</span>
+        <kbd>{isMac ? "⌘" : "Ctrl"} K</kbd>
+      </button>
+
+      <div className="nav-group">
+        {home.map((r) => (
+          <Item key={r.path} r={r} />
+        ))}
+      </div>
+
+      {/* The four stages of working on an aircraft, in the order they happen. */}
+      {STAGES.map((stage, i) => (
+        <div className="nav-group" key={stage.group}>
+          <div className="nav-group-label" title={stage.summary}>
+            <span className="nav-step" aria-hidden>
+              {i + 1}
+            </span>
+            {stage.group}
+          </div>
+          {ROUTES.filter((r) => r.group === stage.group).map((r) => (
             <Item key={r.path} r={r} />
           ))}
         </div>
       ))}
+
       <div className="sidebar-foot">
         {system.map((r) => (
           <Item key={r.path} r={r} />
         ))}
         <button
-          className="nav-item"
-          style={{ width: "100%", border: 0, background: "transparent", cursor: "pointer", font: "inherit", textAlign: "left" }}
+          className="nav-item nav-collapse"
           onClick={() => set("sidebarCollapsed", !collapsed)}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}

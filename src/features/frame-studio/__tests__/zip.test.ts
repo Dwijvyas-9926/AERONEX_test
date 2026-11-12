@@ -204,7 +204,7 @@ describe("zip", () => {
 describe("exportSlug", () => {
   const d = designFrame(spec());
 
-  it("uses the vehicle profile name", () => {
+  it("uses the aircraft profile name", () => {
     expect(exportSlug("Avion", d)).toBe("avion");
     expect(exportSlug("Dwij's Rig Mk II", d)).toBe("dwij-s-rig-mk-ii");
     expect(exportSlug("  Spaced  Out  ", d)).toBe("spaced-out");

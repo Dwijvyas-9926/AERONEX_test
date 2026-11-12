@@ -10,7 +10,7 @@ import type { ModelDescriptor } from "../vehicle/types";
 /*
   Runtime store for the currently loaded 3D model. The live THREE object is not
   serialisable, so it lives here (session only); the small descriptor is stored
-  on the vehicle profile and the raw bytes in IndexedDB, so the model reloads.
+  on the aircraft profile and the raw bytes in IndexedDB, so the model reloads.
 */
 
 export type ModelStatus = "idle" | "importing" | "ready" | "error";

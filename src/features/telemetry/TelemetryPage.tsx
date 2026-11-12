@@ -1,5 +1,5 @@
-import { Activity, Cable } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Activity, HeartPulse, MessageSquareText } from "lucide-react";
+import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
 import { useNow } from "../../hooks/useNow";
 import { isPortOpen, useLink } from "../../state/linkStore";
 import { ago, clockTime } from "../../utils/format";
@@ -21,7 +21,7 @@ export function TelemetryPage() {
     <div className="page-pad">
       <header className="page-head">
         <div>
-          <h1>Telemetry &amp; Diagnostics</h1>
+          <h1>Telemetry</h1>
           <p>What is actually arriving on the link: message rates, vehicle events and the raw frame stream.</p>
         </div>
         <div className="actions">
@@ -31,16 +31,18 @@ export function TelemetryPage() {
       </header>
 
       {!hasData ? (
-        <section className="panel">
-          <div className="empty">
-            <Activity />
-            <h3>No link data yet</h3>
-            <p>Connect a flight controller to see message rates, heartbeat health and vehicle messages here. Simulator telemetry will appear here too, labelled as virtual.</p>
-            <Link className="btn btn-primary" to="/connection">
-              <Cable /> Open Vehicle Connection
-            </Link>
-          </div>
-        </section>
+        <ConnectPrompt
+          title="Connect an aircraft to watch the link"
+          simulator={false}
+          items={[
+            { icon: Activity, title: "Messages", detail: "Each kind of data the aircraft sends, and how many times a second it arrives." },
+            { icon: HeartPulse, title: "Link health", detail: "Time since the last heartbeat, and how many messages arrived damaged." },
+            { icon: MessageSquareText, title: "Events and vehicle messages", detail: "The aircraft's own status reports and warnings, in the order they came." },
+          ]}
+        >
+          This page shows what is arriving over the cable or radio, before the rest of the app interprets it. It is the place to look when
+          something will not connect or a reading seems wrong.
+        </ConnectPrompt>
       ) : (
         <div className="split">
           <div className="stack">

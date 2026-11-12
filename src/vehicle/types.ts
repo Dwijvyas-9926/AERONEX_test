@@ -1,5 +1,5 @@
 /*
-  Local vehicle profiles. These are the user's own description of an aircraft,
+  Local aircraft profiles. These are the user's own description of an aircraft,
   stored in this browser. They are deliberately separate from anything read
   from a flight controller: a profile saying "PX4" never overrides what a
   connected vehicle actually reports.

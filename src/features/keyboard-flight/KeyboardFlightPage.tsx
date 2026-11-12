@@ -248,7 +248,7 @@ export function KeyboardFlightPage() {
             <p>Fly your drone for a test hop with no RC transmitter — arm, take off, move and land from the keyboard, all gentle and autopilot-stabilised.</p>
           </div>
         </header>
-        <div className="callout warn" style={{ marginBottom: "var(--s4)" }}><TriangleAlert /><span>This commands a <strong>real drone to fly</strong>. Connect a vehicle outdoors with a clear GPS view, props on, in an open area clear of people, and read the safety briefing before use.</span></div>
+        <div className="callout warn" style={{ marginBottom: "var(--s4)" }}><TriangleAlert /><span>This commands a <strong>real drone to fly</strong>. Connect aircraft outdoors with a clear GPS view, props on, in an open area clear of people, and read the safety briefing before use.</span></div>
         <ConnectPrompt
           title="Connect an aircraft to fly it from the keyboard"
           items={[

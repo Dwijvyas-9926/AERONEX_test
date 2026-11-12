@@ -77,7 +77,7 @@ export function FullParamsPage() {
       <div className="page-pad">
         <header className="page-head">
           <div>
-            <h1>Full Parameters</h1>
+            <h1>Parameters</h1>
             <p>Every ArduPilot parameter on the vehicle, searchable and editable — change advanced settings directly.</p>
           </div>
         </header>
@@ -103,7 +103,7 @@ export function FullParamsPage() {
     <div className="page-pad">
       <header className="page-head">
         <div>
-          <h1>Full Parameters</h1>
+          <h1>Parameters</h1>
           <p>{received.toLocaleString()}{count ? ` of ${count.toLocaleString()}` : ""} parameters from {vehicle!.firmwareLabel}. Edit a value, then upload.</p>
         </div>
       </header>

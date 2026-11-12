@@ -2,13 +2,12 @@ import { Cable, Compass, Gauge, Plane, ShieldCheck, SlidersVertical } from "luci
 import { Link } from "react-router-dom";
 import { BrandMark } from "../../components/shell/BrandMark";
 
+/* The same four stages as the sidebar and the Overview, in the same words. */
 const STEPS: { n: number; title: string; body: string }[] = [
-  { n: 1, title: "Connect", body: "Open Vehicle Connection and link your Pixhawk over USB or a telemetry radio. AERONEX discovers the aircraft and begins streaming live telemetry automatically." },
-  { n: 2, title: "Check readiness", body: "Preflight turns the vehicle's own sensors, state estimate, GPS, vibration and battery into a single go / no-go verdict before you arm." },
-  { n: 3, title: "Calibrate", body: "Work through accelerometer and level, compass, radio, flight modes, ESC and motor tests in the Calibration Center — the sequence a professional setup follows." },
-  { n: 4, title: "Tune & configure", body: "Stage PID changes with the built-in advisor, or edit any setting in Full Parameters, and upload when you're ready. Nothing is written to the aircraft until you choose to." },
-  { n: 5, title: "Fly & observe", body: "Watch a full primary flight display update live, and see the aircraft's real movement mirrored in the Digital Twin." },
-  { n: 6, title: "Model & rehearse", body: "Import your own CAD assembly into the Digital Twin and rehearse missions in the 3D flight simulator." },
+  { n: 1, title: "Design", body: "Frame Studio draws a frame around the motors, electronics and battery you own, checks it is strong enough, and gives you files to cut or print. Digital Twin shows your own 3D model and confirms the app agrees which way is forward." },
+  { n: 2, title: "Set up", body: "Describe the aircraft in Aircraft Profile and link it in Connection. Work through Calibration once, use PID Tuning if it wobbles, and Parameters for any other setting. Nothing is written to the aircraft until you press Upload." },
+  { n: 3, title: "Fly", body: "Rehearse in the Flight Simulator with nothing plugged in. Before a real flight, Preflight Check gives one go or no-go verdict. Flight Data shows the live instruments, and Keyboard Flight flies a short test hop without a radio transmitter." },
+  { n: 4, title: "Review", body: "Drone Doctor scans the aircraft's health and says, in plain words, what to fix. Telemetry shows the raw data arriving over the link when something will not connect." },
 ];
 
 export function AboutPage() {
@@ -17,13 +16,12 @@ export function AboutPage() {
       <section className="about-hero">
         <BrandMark className="about-mark" />
         <h1 className="about-wordmark">AERONEX</h1>
-        <p className="about-tagline">Ground control for Pixhawk-class drones, reimagined for the browser.</p>
+        <p className="about-tagline">Design, set up, fly and review a Pixhawk drone from the browser.</p>
       </section>
 
       <p className="about-lede">
-        AERONEX is a modern, web-based ground control station for drones built on the Pixhawk flight-controller family. It connects to a real flight
-        controller over USB or a telemetry radio and brings the entire ground workflow — from first connection to flight-ready — into one clean, fast,
-        professional interface.
+        AERONEX is a ground station that runs in a web browser. It takes a Pixhawk drone from a drawing to a calibrated, checked aircraft ready to
+        fly, and there is nothing to install. Every page has a guide: press <kbd>?</kbd> on any of them.
       </p>
 
       <div className="about-grid">
@@ -48,7 +46,7 @@ export function AboutPage() {
       </div>
 
       <section className="about-section">
-        <h2>How to use it</h2>
+        <h2>How it works</h2>
         <ol className="about-steps">
           {STEPS.map((s) => (
             <li key={s.n} className="about-step">
@@ -91,7 +89,7 @@ export function AboutPage() {
       </div>
 
       <div className="about-cta">
-        <Link className="btn btn-primary" to="/connection"><Cable /> Connect a vehicle</Link>
+        <Link className="btn btn-primary" to="/connection"><Cable /> Connect aircraft</Link>
         <Link className="btn" to="/flight-data"><Plane /> Open the flight display</Link>
         <Link className="btn" to="/pid"><SlidersVertical /> Tune it</Link>
       </div>

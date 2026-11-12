@@ -1,11 +1,12 @@
-import { BatteryMedium, Bell, Check, ChevronDown, Plus, Satellite, Settings, ShieldAlert } from "lucide-react";
+import { BatteryMedium, Bell, Cable, Check, ChevronDown, CircleHelp, Plus, Satellite, Search, Settings, ShieldAlert } from "lucide-react";
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { LINK_STATUS, TELEMETRY_STALE_MS } from "../../features/connection/linkStatus";
 import { useDismiss, useNow } from "../../hooks/useNow";
 import { isPortOpen, useLink } from "../../state/linkStore";
 import { useNotify } from "../../state/notifyStore";
 import { useActiveProfile, useProfiles } from "../../state/profileStore";
+import { useUi } from "../../state/uiStore";
 import { BOARD_LABELS } from "../../vehicle/types";
 import { clockTime, GPS_FIX } from "../../utils/format";
 
@@ -23,7 +24,7 @@ function VehicleSwitch() {
       <button onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
         <span style={{ display: "grid", textAlign: "left", lineHeight: 1.15 }}>
           <span className="vs-name">{active?.name ?? "No profile"}</span>
-          <span className="vs-sub">{active ? BOARD_LABELS[active.board] : "Create a vehicle profile"}</span>
+          <span className="vs-sub">{active ? BOARD_LABELS[active.board] : "Create an aircraft profile"}</span>
         </span>
         <ChevronDown size={14} color="var(--muted)" />
       </button>
@@ -56,7 +57,7 @@ function VehicleSwitch() {
               nav("/vehicle");
             }}
           >
-            <Plus /> Manage vehicle profiles
+            <Plus /> Manage aircraft profiles
           </button>
         </div>
       )}
@@ -119,8 +120,14 @@ export function StatusBar() {
   const tel = useLink((s) => s.telemetry);
   const now = useNow(1000);
   const nav = useNavigate();
+  const { pathname } = useLocation();
+  const helpOpen = useUi((s) => s.overlay === "help");
+  const toggle = useUi((s) => s.toggle);
   const view = LINK_STATUS[status];
   const open = isPortOpen(status);
+  // Offered from every page but the one it leads to, and only while there
+  // is nothing linked: the one thing most of the app is waiting for.
+  const offerConnect = !open && status !== "selecting" && pathname !== "/connection";
   const fresh = (at?: number) => !!at && now - at < TELEMETRY_STALE_MS;
 
   return (
@@ -137,10 +144,15 @@ export function StatusBar() {
           className={`pill ${view.tone}${view.live ? " live" : ""}`}
           style={{ border: 0, cursor: "pointer" }}
           onClick={() => nav("/connection")}
-          title="Open Vehicle Connection"
+          title="Open Connection"
         >
           {view.label}
         </button>
+        {offerConnect && (
+          <button className="btn btn-sm sb-connect" onClick={() => nav("/connection")}>
+            <Cable aria-hidden /> Connect
+          </button>
+        )}
       </div>
 
       {vehicle && (
@@ -183,6 +195,17 @@ export function StatusBar() {
       )}
 
       <div className="sb-right">
+        <button className="icon-btn sb-only-narrow" aria-label="Search pages and actions" onClick={() => toggle("search")}>
+          <Search />
+        </button>
+        <button
+          className={`btn btn-ghost btn-sm sb-help${helpOpen ? " on" : ""}`}
+          onClick={() => toggle("help")}
+          aria-pressed={helpOpen}
+          title="Explain this page (press ?)"
+        >
+          <CircleHelp aria-hidden /> <span>Guide</span>
+        </button>
         <Notifications />
         <button className="icon-btn" aria-label="Settings" onClick={() => nav("/settings")}>
           <Settings />

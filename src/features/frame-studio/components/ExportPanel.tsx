@@ -270,7 +270,7 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
                 your active vehicle, <strong>{vehicleName}</strong>
               </>
             ) : (
-              "the design, since no vehicle profile is active"
+              "the design, since no aircraft profile is active"
             )}
             . Every part is inside, with a <code>README.txt</code> holding the material, the bolts to order and the
             build notes.
