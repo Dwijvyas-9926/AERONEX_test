@@ -1,4 +1,4 @@
-import { BatteryWarning, CircleStop, Home as HomeIcon, Info, PlaneLanding, PlaneTakeoff, Play, Power, RotateCcw, Route, Satellite, TriangleAlert, Unplug, Wind } from "lucide-react";
+import { Pencil, SlidersHorizontal, BatteryWarning, CircleStop, Home as HomeIcon, Info, PlaneLanding, PlaneTakeoff, Play, Power, RotateCcw, Route, Satellite, TriangleAlert, Unplug, Wind } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { derive, G, PRESETS, type Airframe } from "../../sim/airframe";
@@ -60,7 +60,7 @@ function Num({ label, value, onChange, step = 1, min, max, unit, hint }: { label
 
 /* ----------------------------------------------------------------- setup */
 
-function Setup() {
+function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => void }) {
   const sim = useSim();
   const profile = useActiveProfile();
   const af = sim.airframe;
@@ -74,13 +74,17 @@ function Setup() {
   const hoverMin = ((af.capacityMah / 1000) * af.cells * 3.7 * 0.8) / hoverW * 60;
   const flyable = d.thrustToWeight > 1.3;
 
-  const start = () => {
+  const start = async () => {
+    // Weight, thrust and battery are what the aircraft is built from, so a
+    // change to them means a new aircraft: stop the one flying and start again.
+    if (running) await linkManager.disconnect("Virtual aircraft restarted with new settings.");
     linkManager.connectVirtual({
       airframe: af,
       home: sim.home,
       soc: sim.soc,
       params: sim.useAircraftParams ? fromAircraft : {},
     });
+    onDone?.();
   };
 
   return (
@@ -191,8 +195,13 @@ function Setup() {
             </label>
           </div>
           <div className="form-foot">
-            <button className="btn btn-primary btn-lg" onClick={start}>
-              <Play /> Start the virtual aircraft
+            {running && (
+              <button className="btn btn-lg" onClick={onDone}>
+                Back to the flight, unchanged
+              </button>
+            )}
+            <button className="btn btn-primary btn-lg" onClick={() => void start()}>
+              {running ? <RotateCcw /> : <Play />} {running ? "Restart with these settings" : "Start the virtual aircraft"}
             </button>
           </div>
         </section>
@@ -302,7 +311,7 @@ function useSnap(): { snap: Snap | null; track: MapPoint[]; clearTrack: () => vo
   };
 }
 
-function ControlRoom() {
+function ControlRoom({ onEdit }: { onEdit: () => void }) {
   const sim = useSim();
   const events = useLink((s) => s.events);
   const status = useLink((s) => s.status);
@@ -352,8 +361,26 @@ function ControlRoom() {
   };
 
   if (!snap) return null;
+  const af = sim.airframe;
   return (
-    <div className="sim-room">
+    <>
+      <div className="sim-aircraft">
+        <div>
+          <strong>{af.name}</strong>
+          <span>
+            {af.massKg} kg, {Math.round(af.diagonalM * 1000)} mm, {Math.round((af.motorMaxThrustN / G) * 1000)} g thrust per motor, {af.cells}S {af.capacityMah} mAh
+          </span>
+        </div>
+        <div className="sim-row">
+          <Link className="btn btn-sm" to="/params">
+            <SlidersHorizontal /> Flight settings
+          </Link>
+          <button className="btn btn-sm" onClick={onEdit}>
+            <Pencil /> Change the aircraft
+          </button>
+        </div>
+      </div>
+      <div className="sim-room">
       <div className="stack">
         <section className="panel">
           <div className="panel-head">
@@ -534,7 +561,8 @@ function ControlRoom() {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -542,6 +570,7 @@ function ControlRoom() {
 
 export function SimulatorPage() {
   const [tab, setTab] = useState<"virtual" | "valley">("virtual");
+  const [editing, setEditing] = useState(false);
   const status = useLink((s) => s.status);
   const virtual = useLink((s) => s.virtual);
   const open = isPortOpen(status);
@@ -585,8 +614,19 @@ export function SimulatorPage() {
             aircraft at a time.
           </span>
         </div>
+      ) : open && virtual && editing ? (
+        <>
+          <div className="callout info" style={{ marginBottom: "var(--s5)" }}>
+            <Info />
+            <span>
+              The virtual aircraft is still running. Changing its weight, motors or battery builds a new aircraft, so it restarts on the ground at
+              home. Failsafe, speed and tuning settings do not need a restart: change those in <Link to="/params">Parameters</Link> while it flies.
+            </span>
+          </div>
+          <Setup running onDone={() => setEditing(false)} />
+        </>
       ) : open && virtual ? (
-        <ControlRoom />
+        <ControlRoom onEdit={() => setEditing(true)} />
       ) : (
         <Setup />
       )}

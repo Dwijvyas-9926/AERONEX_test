@@ -3569,3 +3569,70 @@ input[type="range"]::-moz-range-thumb {
   color: var(--muted);
   max-width: 100ch;
 }
+
+.sim-aircraft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-panel);
+  background: var(--graphite);
+}
+
+.sim-aircraft strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+}
+
+.sim-aircraft span {
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+
+.sim-aircraft .sim-row > .btn {
+  flex: none;
+}
+
+/* Commands that are not waypoints: take-off, and how the mission ends. */
+.mp-table tr.mp-cmd td {
+  padding-top: var(--s2);
+  padding-bottom: var(--s2);
+}
+
+.mp-table tr.mp-cmd svg {
+  width: 17px;
+  height: 17px;
+  color: var(--accent);
+}
+
+.mp-table tr.mp-cmd strong {
+  display: block;
+  font-weight: 600;
+}
+
+.mp-table tr.mp-cmd small {
+  display: block;
+  font-size: var(--t-sm);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.mp-table tr.mp-cmd.end td {
+  border-top: 1px solid var(--line-soft);
+}
+
+.mp-table tr.mp-cmd.end.hold svg {
+  color: var(--warn);
+}
+
+.fmap-tag {
+  fill: var(--accent) !important;
+  font-family: var(--font-ui) !important;
+  font-weight: 700;
+  text-anchor: start;
+}

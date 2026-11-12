@@ -14,7 +14,7 @@ export interface MapPoint {
 
 interface Props {
   /** Planned waypoints, in order. */
-  route?: (MapPoint & { label: string })[];
+  route?: (MapPoint & { label: string; tag?: string })[];
   /** Draw the leg back to home after the last waypoint. */
   closeRoute?: boolean;
   /** Where the aircraft has been. */
@@ -104,8 +104,18 @@ export function FlightMap({ route = [], closeRoute, track = [], ghost = [], airc
             <text y={u * 1.3} fontSize={u * 3.4} textAnchor="middle">
               {p.label}
             </text>
+            {p.tag && (
+              <text className="fmap-tag" x={u * 4} y={u * 1.2} fontSize={u * 3.2}>
+                {p.tag}
+              </text>
+            )}
           </g>
         ))}
+        {closeRoute && route.length > 0 && (
+          <text className="fmap-tag" x={u * 4} y={u * 1.2} fontSize={u * 3.2}>
+            Return and land
+          </text>
+        )}
         {mark && (
           <g className={`fmap-mark ${mark.tone}`} transform={`translate(${mark.e} ${-mark.n})`}>
             <path d={`M${-u * 2.4},${-u * 2.4} L${u * 2.4},${u * 2.4} M${u * 2.4},${-u * 2.4} L${-u * 2.4},${u * 2.4}`} strokeWidth={u * 0.9} />

@@ -1,4 +1,4 @@
-import { CircleCheck, CircleX, Download, FlaskConical, Play, Trash2, TriangleAlert, Upload, X } from "lucide-react";
+import { CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, Play, Trash2, TriangleAlert, Upload, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CMD, MODE_NAME, type MissionItem } from "../../sim/autopilot";
@@ -81,7 +81,9 @@ export function MissionPlanningPage() {
   const mission = useMemo(() => planToMission(sim.home, sim.takeoffAlt, sim.points, sim.ending), [sim.home, sim.takeoffAlt, sim.points, sim.ending]);
   const length = routeLength(sim.points, sim.ending);
   const cruise = params.WPNAV_SPEED / 100;
-  const route = sim.points.map((p, i) => ({ n: p.n, e: p.e, label: String(i + 1) }));
+  // The last waypoint carries its command on the map as well as in the list.
+  const lastTag = sim.ending === "land" ? " Land" : sim.ending === "hold" ? " Hover" : "";
+  const route = sim.points.map((p, i) => ({ n: p.n, e: p.e, label: String(i + 1), tag: i === sim.points.length - 1 ? lastTag.trim() : "" }));
   const empty = sim.points.length === 0;
 
   const send = () =>
@@ -202,11 +204,6 @@ export function MissionPlanningPage() {
               )}
             </div>
             <div className="panel-body mp-plan">
-              <div className="mp-line">
-                <span className="mp-step">Take off to</span>
-                <NumCell label="Take-off height" value={sim.takeoffAlt} min={2} max={500} onChange={(x) => sim.set("takeoffAlt", x)} />
-                <span className="muted">m</span>
-              </div>
               {empty ? (
                 <p className="mp-empty">Click the map to place the first waypoint. Home is the H in the middle; the grid is in metres.</p>
               ) : (
@@ -222,6 +219,19 @@ export function MissionPlanningPage() {
                     </tr>
                   </thead>
                   <tbody>
+                    <tr className="mp-cmd">
+                      <td>
+                        <PlaneTakeoff aria-label="Take off" />
+                      </td>
+                      <td colSpan={2}>
+                        <strong>Take off</strong>
+                        <small>Straight up from home</small>
+                      </td>
+                      <td>
+                        <NumCell label="Take-off height" value={sim.takeoffAlt} min={2} max={500} onChange={(x) => sim.set("takeoffAlt", x)} />
+                      </td>
+                      <td colSpan={2} />
+                    </tr>
                     {sim.points.map((p, i) => (
                       <tr key={p.id}>
                         <td className="num">{i + 1}</td>
@@ -236,11 +246,32 @@ export function MissionPlanningPage() {
                         </td>
                       </tr>
                     ))}
+                    {/* The last command, as a row of its own, so the list is the whole mission. */}
+                    <tr className={`mp-cmd end ${sim.ending}`}>
+                      <td>{sim.ending === "rtl" ? <HomeIcon aria-hidden /> : sim.ending === "land" ? <PlaneLanding aria-hidden /> : <CirclePause aria-hidden />}</td>
+                      <td colSpan={5}>
+                        <strong>{sim.ending === "rtl" ? "Return home and land" : sim.ending === "land" ? `Land at waypoint ${sim.points.length}` : `Hover at waypoint ${sim.points.length}`}</strong>
+                        <small>
+                          {sim.ending === "rtl"
+                            ? `Flies back to home at ${(params.RTL_ALT / 100).toFixed(0)} m or its own height if higher, then lands.`
+                            : sim.ending === "land"
+                              ? "Descends and lands where the last waypoint is, away from home."
+                              : "Stays in the air there until you take over. Nothing lands it."}
+                        </small>
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               )}
+              {empty && (
+                <div className="mp-line">
+                  <span className="mp-step">Take off to</span>
+                  <NumCell label="Take-off height" value={sim.takeoffAlt} min={2} max={500} onChange={(x) => sim.set("takeoffAlt", x)} />
+                  <span className="muted">m</span>
+                </div>
+              )}
               <div className="mp-line">
-                <span className="mp-step">Then</span>
+                <span className="mp-step">At the end</span>
                 <div className="segmented" role="group" aria-label="How the mission ends">
                   {(
                     [
