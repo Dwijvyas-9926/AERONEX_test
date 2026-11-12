@@ -27,15 +27,54 @@ describe("battery mounting", () => {
     const over = designFrame(spec({ batteryMount: "top", cameraId: "none" }));
     expect(under.profiles.find((p) => p.id === "bottom-plate")!.lightenedFrom).toBe(2);
     expect(over.profiles.find((p) => p.id === "bottom-plate")!.lightenedFrom).toBe(0);
-    // The top plate gains them: its stack opening plus two strap slots.
-    expect(over.profiles.find((p) => p.id === "top-plate")!.slots.length).toBeGreaterThan(
-      under.profiles.find((p) => p.id === "top-plate")!.slots.length,
-    );
+    // On top, they go in the battery deck — which only exists when it is needed.
+    expect(under.profiles.some((p) => p.id === "deck-plate")).toBe(false);
+    expect(over.profiles.find((p) => p.id === "deck-plate")!.lightenedFrom).toBe(2);
+    expect(over.stackUp.packOnPart).toBe("deck-plate");
+    expect(under.stackUp.packOnPart).toBe("bottom-plate");
+  });
+
+  it("gives a unibody's top plate the strap slots and the camera's feet", () => {
+    // It had neither: the slots were taken out of the chassis and put nowhere,
+    // and the mount was fitted to a plate the unibody does not have.
+    const count = (s: FrameSpec) => designFrame(s).profiles.find((p) => p.id === "top-plate")!.lightenedFrom!;
+    const bare = count(spec({ construction: "unibody", cameraId: "none" }));
+    expect(count(spec({ construction: "unibody", cameraId: "micro" }))).toBe(bare + 4);
+    expect(count(spec({ construction: "unibody", cameraId: "none", batteryMount: "top" }))).toBe(bare + 2);
+    expect(designFrame(spec({ construction: "unibody", batteryMount: "top" })).stackUp.packOnPart).toBe("top-plate");
   });
 
   it("says which plate to thread the strap through", () => {
-    expect(bomText(spec({ batteryMount: "top" }))).toContain("slots in the top plate");
+    expect(bomText(spec({ batteryMount: "top" }))).toContain("slots in the battery deck");
     expect(bomText(spec({ batteryMount: "bottom" }))).toContain("slots in the bottom plate");
+    expect(bomText(spec({ batteryMount: "top", construction: "unibody" }))).toContain("slots in the top plate");
+  });
+
+  it("stands the deck on standoffs tall enough for everything under it", () => {
+    for (const propIn of [3, 5, 7, 10]) {
+      for (const cameraId of ["none", "nano", "micro", "full"]) {
+        const d = designFrame(spec({ batteryMount: "top", propIn, cameraId, fixedDimMm: null }));
+        const where = `${propIn}" ${cameraId}`;
+        const { stackUp } = d;
+        // Clear of the stack, with air over it.
+        expect(stackUp.deckZMm!, `${where} stack`).toBeGreaterThanOrEqual(d.spec.stackHeightMm + 2 - 1e-6);
+        // Exactly as tall as the camera's side plates, when they are the tallest need.
+        if (d.cameraMount) expect(d.cameraMount.heightMm, `${where} cage`).toBe(stackUp.deckStandoffMm);
+        // And a pack that reaches under the discs is lifted out of their plane.
+        if (stackUp.packOverDiscs) expect(stackUp.packZMm - d.cg.thrustPlaneZMm, `${where} props`).toBeGreaterThanOrEqual(6 - 0.11);
+        expect(validateDesign(d).some((f) => f.id === "battery-in-the-discs"), where).toBe(false);
+      }
+    }
+  });
+
+  it("asks for the hardware the deck actually needs, and no phantom standoffs", () => {
+    const plain = bomText(spec({ batteryMount: "bottom" }));
+    // Eight standoffs "beside the arms" were once listed, with no hole to put them in.
+    expect(plain).not.toMatch(/standoff/i);
+    const deck = bomText(spec({ batteryMount: "top" }));
+    expect(deck).toMatch(/4 mm standoff|\d+ mm standoff, female both ends/);
+    expect(deck).toContain("Holding the battery deck above the stack");
+    expect(deck).toContain("up into a deck standoff");
   });
 
   it("brings the mass nearer the propellers when the pack goes on top", () => {
@@ -50,11 +89,18 @@ describe("battery mounting", () => {
     expect(f.find((x) => x.id === "cg-pendulous")?.severity).toBe("warn");
   });
 
-  it("warns when a top-mounted pack stands into the propeller discs", () => {
-    const f = validateDesign(designFrame(spec({ batteryMount: "top", battery: { l: 105, w: 35, h: 55, massG: 400 } })));
-    const hit = f.find((x) => x.id === "battery-in-the-discs");
-    expect(hit).toBeDefined();
+  it("still catches a pack left in the propellers' plane", () => {
+    // The builder lifts the deck clear, so this is the validator's own rule
+    // checked directly against a stack-up that did not.
+    const d = designFrame(spec({ batteryMount: "top" }));
+    expect(d.stackUp.packOverDiscs).toBe(true);
+    const low = { ...d, stackUp: { ...d.stackUp, packZMm: d.cg.thrustPlaneZMm - 5 } };
+    const hit = validateDesign(low).find((x) => x.id === "battery-in-the-discs");
+    expect(hit?.severity).toBe("error");
     expect(hit!.detail).toMatch(/lithium/i);
+    // A pack that stays between the discs is not a hazard at any height.
+    const slim = designFrame(spec({ batteryMount: "top", battery: { l: 60, w: 30, h: 30, massG: 120 } }));
+    expect(slim.stackUp.packOverDiscs).toBe(false);
   });
 });
 

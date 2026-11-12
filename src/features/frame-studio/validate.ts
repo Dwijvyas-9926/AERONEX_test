@@ -11,8 +11,9 @@
   margin they have rather than just being told "ok".
 */
 
-import { MATERIALS, propFit } from "./catalog";
+import { MATERIALS, propFit, cameraById } from "./catalog";
 import {
+  cameraPlateHeightMm,
   distanceToBoundary,
   distanceToSegment,
   pointInPolygon,
@@ -161,6 +162,9 @@ function checkPart(part: Profile): Finding[] {
 }
 
 /* ----------------------------------------------------------- whole design */
+
+/** Air a pack over the discs has to leave above the propellers, mm. */
+const PROP_AIR_MM = 6;
 
 export function validateDesign(d: FrameDesign): Finding[] {
   const out: Finding[] = [];
@@ -408,21 +412,54 @@ export function validateDesign(d: FrameDesign): Finding[] {
     that works loose lets a propeller reach the pack, which on a lithium pack
     is the worst failure on the aircraft.
   */
-  if (d.spec.batteryMount === "top") {
-    const packTopZ = d.section.heightMm + d.stock.topPlateMm + d.spec.battery.h;
-    const standsProud = round(packTopZ - d.cg.thrustPlaneZMm);
-    if (standsProud > 0) {
+  if (d.spec.batteryMount === "top" && d.stackUp.packOverDiscs) {
+    /*
+      Only where the pack and the discs overlap in plan, and only by how far
+      its underside falls short of clearing them. Measuring the pack's top
+      against the propellers flagged every top-mounted pack on every frame,
+      including the ones whose pack sits between the discs and cannot be
+      reached by a blade at any height.
+    */
+    const shortBy = round(d.cg.thrustPlaneZMm + PROP_AIR_MM - d.stackUp.packZMm);
+    if (shortBy > 0) {
       out.push({
         id: "battery-in-the-discs",
-        severity: standsProud > d.spec.battery.h * 0.5 ? "error" : "warn",
+        severity: shortBy > PROP_AIR_MM ? "error" : "warn",
         scope: "Fit",
         title: "A top-mounted pack reaches into the propeller discs",
         detail:
-          "The pack stands taller than the propellers are mounted, so a strap that works loose — or a hard enough impact — puts a blade into a lithium cell. Either strap it underneath, raise the motors on taller arms, or use a flatter pack.",
-        measured: `${standsProud} mm above the discs`,
-        limit: "level with the discs",
+          "The pack's corners sit under the propeller tips and not far enough above them, so a blade coning upwards under load — or a strap that works loose — reaches a lithium cell. A shorter or narrower pack, a wider frame, or strapping it underneath all fix it.",
+        measured: `${round(d.stackUp.packZMm - d.cg.thrustPlaneZMm)} mm above the discs`,
+        limit: `${PROP_AIR_MM} mm`,
       });
     }
+  }
+  const cage = d.stackUp.deckZMm !== null ? d.stackUp.deckStandoffMm : d.stackUp.topStandoffMm;
+  // A full-size camera needs a tall cage whatever else is done; that is the
+  // camera's height, not a fault, so the limit never sits below it.
+  const cageLimit = Math.max(40, cameraPlateHeightMm(cameraById(d.spec.cameraId)));
+  if (cage > cageLimit) {
+    out.push({
+      id: "cage-tall",
+      severity: "warn",
+      scope: "Fit",
+      title: "The top plate stands on very tall standoffs",
+      detail:
+        "Standoffs this long let the plate above rack sideways in a crash and carry the pack a long way above the arms. A shorter stack, a smaller camera or a pack that stays clear of the propellers would bring it down.",
+      measured: `${cage} mm`,
+      limit: `${cageLimit} mm`,
+    });
+  }
+  if (!d.cameraFits) {
+    const camera = cameraById(d.spec.cameraId);
+    out.push({
+      id: "camera-no-room",
+      severity: "error",
+      scope: "Fit",
+      title: `No room for a ${camera.name.split(" ")[0].toLowerCase()} camera mount`,
+      detail:
+        "The side plates stand in slots ahead of the stack, and on this frame there is not enough plate between the stack and the nose to cut them without running into a bolt or the stack opening. The mount has been left off rather than drawn where it does not fit. A smaller camera class, a smaller stack or a larger frame makes room.",
+    });
   }
 
   /*
@@ -499,7 +536,14 @@ export function validateDesign(d: FrameDesign): Finding[] {
     });
   }
 
-  if (d.referenceBand && d.wheelbaseMm > d.referenceBand.max) {
+  /*
+    Only when the size was a choice. A stretched X or an H measures longer on
+    the diagonal than a true X on the same propellers, and a small bolted
+    frame cannot be smaller than its clamp bolts allow — warning that the
+    frame is "larger than typical" when it is already the smallest this
+    layout can be told the user to fix something they had not chosen.
+  */
+  if (d.referenceBand && d.wheelbaseMm > d.referenceBand.max && d.wheelbaseMm > d.minWheelbaseMm + 0.5) {
     out.push({
       id: "wheelbase-large",
       severity: "warn",

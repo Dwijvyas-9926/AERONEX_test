@@ -188,6 +188,9 @@ function solveDepth(lo: number, hi: number, ok: (h: number) => boolean): number 
  */
 export const PAD_EDGE_FACTOR = 1.0;
 
+/** Radius added to a motor pad so its drawn, faceted edge still clears the bolts, mm. */
+const PAD_DRAWING_ALLOWANCE_MM = 0.2;
+
 /**
  * Minimum pad width to land the motor's bolt pattern with proper edge distance.
  *
@@ -197,7 +200,15 @@ export const PAD_EDGE_FACTOR = 1.0;
  * over the edge, which is a mistake that looks fine on screen.
  */
 export function motorPadWidth(pattern: number, bolt: number): number {
-  const padR = (pattern / 2) * Math.SQRT2 + bolt / 2 + PAD_EDGE_FACTOR * bolt;
+  /*
+    Plus a little for the way the pad is drawn. Its edge is a polygon, and a
+    polygon lies inside the circle it stands for, so a pad sized to give the
+    corner bolts exactly their edge distance gave them a tenth of a
+    millimetre less once drawn — and on a unibody, whose outline is sampled a
+    second time, validation then reported the studio's own pad as too close
+    to its own bolts.
+  */
+  const padR = (pattern / 2) * Math.SQRT2 + bolt / 2 + PAD_EDGE_FACTOR * bolt + PAD_DRAWING_ALLOWANCE_MM;
   return 2 * padR;
 }
 

@@ -145,14 +145,16 @@ export function partDrawing(d: FrameDesign, profile: Profile, turned = false): P
   const guides: Guide[] = [];
   const stack = d.spec.stackPattern + 6;
 
-  if (profile.id === "bottom-plate" || profile.id === "chassis") {
+  // The pack goes on the drawing of whichever part it is strapped to.
+  if (profile.id === d.stackUp.packOnPart) {
     const { l, w } = d.spec.battery;
     // The pack lies along the frame, so its length runs fore and aft.
     guides.push({ label: `Battery ${l} × ${w} mm`, shape: rect(w, l) });
+  }
+  if (profile.id === "bottom-plate" || profile.id === "chassis" || profile.id === "top-plate") {
     guides.push({ label: `Stack ${d.spec.stackPattern} mm`, shape: rect(stack, stack) });
-  } else if (profile.id === "top-plate") {
-    guides.push({ label: `Stack ${d.spec.stackPattern} mm`, shape: rect(stack, stack) });
-  } else if (profile.id === "camera-plate") {
+  }
+  if (profile.id === "camera-plate") {
     const camera = cameraById(d.spec.cameraId);
     if (camera.widthMm > 0) {
       /*
@@ -249,12 +251,11 @@ export function partSpecs(d: FrameDesign, profile: Profile): SpecRow[] {
   } else if (profile.id === "bottom-plate" || profile.id === "chassis") {
     rows.push({ label: "Stack pattern", value: `${d.spec.stackPattern} mm square, M${d.spec.stackBolt}` });
     rows.push({ label: "Arm clamp bolts", value: `M${d.rootBoltMm}` });
-    rows.push({
-      label: "Battery",
-      value: `${d.spec.battery.l} × ${d.spec.battery.w} mm, ${d.spec.batteryMount === "top" ? "on top" : "underneath"}`,
-    });
+  } else if (profile.id === "deck-plate") {
+    rows.push({ label: "Standoffs", value: `4 × ${d.stackUp.deckStandoffMm} mm, M${d.rootBoltMm}` });
   } else if (profile.id === "top-plate") {
-    rows.push({ label: "Arm clamp bolts", value: `M${d.rootBoltMm}` });
+    if (d.stackUp.topStandoffMm > 0) rows.push({ label: "Standoffs", value: `4 × ${d.stackUp.topStandoffMm} mm, M${d.rootBoltMm}` });
+    if (d.spec.construction === "bolted") rows.push({ label: "Arm clamp bolts", value: `M${d.rootBoltMm}` });
     rows.push({
       label: "Stack opening",
       value: d.stackClearance.openingMm > 0 ? `${mm(d.stackClearance.openingMm, 1)} square` : "none needed",
@@ -268,6 +269,12 @@ export function partSpecs(d: FrameDesign, profile: Profile): SpecRow[] {
     rows.push({ label: "Tilt holes", value: `${Math.max(0, profile.holes.length - 1)} positions` });
   }
 
+  if (profile.id === d.stackUp.packOnPart) {
+    rows.push({
+      label: "Battery",
+      value: `${d.spec.battery.l} × ${d.spec.battery.w} mm, ${d.spec.batteryMount === "top" ? "on top" : "underneath"}`,
+    });
+  }
   rows.push({ label: "Cut area", value: `${Math.round(profile.areaMm2)} mm²` });
   return rows;
 }

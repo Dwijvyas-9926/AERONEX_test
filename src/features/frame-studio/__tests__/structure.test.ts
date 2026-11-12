@@ -104,8 +104,11 @@ describe("fastener geometry", () => {
       Sizing off the flat span would give 25 mm, which leaves the corner holes
       hanging 0.3 mm over the edge.
     */
-    expect(motorPadWidth(16, 3)).toBeCloseTo(31.627, 2);
-    expect(motorPadWidth(9, 2)).toBeCloseTo(18.728, 2);
+    // Plus 0.2 mm on the radius, because the pad is drawn as a polygon and a
+    // polygon lies inside its circle: without it the drawn pad came up a
+    // tenth of a millimetre short of the edge distance it was sized for.
+    expect(motorPadWidth(16, 3)).toBeCloseTo(31.627 + 0.4, 2);
+    expect(motorPadWidth(9, 2)).toBeCloseTo(18.728 + 0.4, 2);
     // every pad must actually contain its own bolt circle with room to spare
     for (const [pattern, bolt] of [[9, 2], [12, 2], [16, 3], [19, 3], [25, 3]] as const) {
       const padR = motorPadWidth(pattern, bolt) / 2;

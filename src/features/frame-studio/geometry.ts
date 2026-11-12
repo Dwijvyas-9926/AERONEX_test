@@ -17,6 +17,9 @@ import {
   motorById,
   snapToStock,
   STACK_CLEARANCE_MM,
+  STACK_PATTERNS,
+  stackHeightFor,
+  standoffAtLeast,
   styleById,
   thicknessReferenceFor,
   WHEELBASE_REFERENCE,
@@ -242,6 +245,30 @@ export interface FrameDesign {
   };
   /** Where the camera side plates stand, when a camera is fitted. */
   cameraMount: CameraMount["placement"] | null;
+  /** False when a camera was asked for and no mount could be placed. */
+  cameraFits: boolean;
+  /**
+   * Where each layer sits, mm above the underside of the arms.
+   *
+   * The single source for every height in the frame: the solid view, the
+   * balance sum, validation and the hardware list all read this.
+   */
+  stackUp: {
+    /** Underside of the top plate. */
+    topPlateZMm: number;
+    /** Standoffs under the top plate: zero when it rests on the arms. */
+    topStandoffMm: number;
+    /** Underside of the battery deck, or null when there is none. */
+    deckZMm: number | null;
+    /** Standoffs between the top plate and the deck, mm. */
+    deckStandoffMm: number;
+    /** Face the pack rests against: its underside on top, its top underneath. */
+    packZMm: number;
+    /** The part the pack is strapped to. */
+    packOnPart: string;
+    /** True when a top-mounted pack reaches under the propeller discs in plan. */
+    packOverDiscs: boolean;
+  };
   /** What the plate cut-outs removed, if any were cut. */
   lightening: {
     count: number;
@@ -722,7 +749,100 @@ export interface PlateStock {
 }
 
 
-export function designFrame(rawSpec: FrameSpec): FrameDesign {
+/** How the plates above the arms are held, and how high. */
+interface Cage {
+  /** True when a bolted frame carries a battery deck above the clamp plate. */
+  hasDeck: boolean;
+  /** Standoffs between the clamp plate and that deck, mm. */
+  deckStandoffMm: number;
+  /** Standoffs under a unibody's top plate, mm. Zero on a bolted frame. */
+  topStandoffMm: number;
+}
+
+/** Shortest cage worth building, mm: room for wiring to leave the stack. */
+const MIN_CAGE_MM = 10;
+
+/**
+ * Air between the propellers' plane and the underside of a pack that
+ * overlaps them in plan, mm. Blades cone upwards under load, most at the
+ * tips — which is exactly the part of the disc a pack's corners reach.
+ */
+const PROP_CLEARANCE_MM = 6;
+
+/** Does the pack's footprint reach under (or over) any propeller disc? */
+export function packOverlapsDiscs(battery: FrameSpec["battery"], motors: Pt[], propDiaMm: number): boolean {
+  const hw = battery.w / 2;
+  const hl = battery.l / 2;
+  const reach = propDiaMm / 2 + 3;
+  return motors.some(([mx, my]) => {
+    const dx = Math.max(Math.abs(mx) - hw, 0);
+    const dy = Math.max(Math.abs(my) - hl, 0);
+    return Math.hypot(dx, dy) < reach;
+  });
+}
+
+/** A finite number inside [lo, hi], or the fallback when it is not a number at all. */
+function bounded(v: unknown, lo: number, hi: number, fallback: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
+}
+
+/**
+ * Make a spec safe to solve.
+ *
+ * The form limits what can be typed, but the form is not the only way a spec
+ * arrives: a record saved by an older build, a hand-edited one, or a field
+ * cleared mid-keystroke all reach the solver too. A sweep of hostile values
+ * found that a single NaN — in the thrust, the clearance, a battery
+ * dimension — did not fail: it produced an empty outline, holes "outside" a
+ * plate with no area and a 433-page print job, each reported as though it
+ * were a property of the design. Every number is therefore brought inside a
+ * range the solver was written for before anything is computed from it, and
+ * anything that is not a number falls back to a value that builds.
+ *
+ * The limits are wide. They are there to stop nonsense, not to second-guess
+ * an unusual build — validation is what comments on those.
+ */
+export function sanitizeSpec(raw: FrameSpec): FrameSpec {
+  const layout = LAYOUTS.some((l) => l.id === raw.layout) ? raw.layout : "true-x";
+  const propIn = bounded(raw.propIn, 2, 10, 5);
+  const stack = STACK_PATTERNS.reduce((best, p) =>
+    Math.abs(p.pattern - raw.stackPattern) < Math.abs(best.pattern - raw.stackPattern) ? p : best,
+  STACK_PATTERNS.find((p) => p.pattern === 30.5) ?? STACK_PATTERNS[0]);
+  const stackPattern = Number.isFinite(raw.stackPattern) ? stack.pattern : 30.5;
+  const stackBolt = raw.stackBolt === 2 || raw.stackBolt === 3 ? raw.stackBolt : stackPattern <= 20 ? 2 : 3;
+  const motor = motorById(raw.motorId);
+  const b = raw.battery ?? ({} as FrameSpec["battery"]);
+  const optional = (v: number | null, lo: number, hi: number): number | null =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? clamp(v, lo, hi) : null;
+  return {
+    ...raw,
+    layout,
+    propIn,
+    clearanceMm: bounded(raw.clearanceMm, 0, 80, 10),
+    wheelbaseMm: optional(raw.wheelbaseMm, 40, 900),
+    motorThrustG: bounded(raw.motorThrustG, 1, 20000, motor.thrustG),
+    stackPattern,
+    stackBolt,
+    stackHeightMm: bounded(raw.stackHeightMm, 4, 60, stackHeightFor(stackPattern)),
+    battery: {
+      l: bounded(b.l, 20, 300, 105),
+      w: bounded(b.w, 10, 150, 35),
+      h: bounded(b.h, 5, 120, 30),
+      massG: bounded(b.massG, 0, 5000, 180),
+    },
+    electronicsMassG: bounded(raw.electronicsMassG, 0, 5000, 120),
+    construction: raw.construction === "unibody" ? "unibody" : "bolted",
+    fixedDimMm: optional(raw.fixedDimMm, 1, 40),
+    plateThicknessMm: optional(raw.plateThicknessMm, 1, 12),
+    wallMm: bounded(raw.wallMm, 0.8, 10, 2.5),
+    lightenPlates: raw.lightenPlates !== false,
+    batteryMount: raw.batteryMount === "top" ? "top" : "bottom",
+    safetyFactor: bounded(raw.safetyFactor, 1, 10, 2),
+  };
+}
+
+export function designFrame(inputSpec: FrameSpec): FrameDesign {
+  const rawSpec = sanitizeSpec(inputSpec);
   const material = materialById(rawSpec.materialId);
   /*
     Unibody is a cut-only construction here, and deliberately so.
@@ -901,7 +1021,9 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     and four standoffs and adds four longer standoffs, so it carries roughly
     ten grams less ironmongery than the bolted equivalent.
   */
-  const hardwareG = spec.construction === "unibody" ? 15 : 25;
+  // A battery deck adds four standoffs and four more screws.
+  const hardwareG = (spec.construction === "unibody" ? 15 : 25)
+    + (spec.batteryMount === "top" && spec.construction === "bolted" ? 8 : 0);
   // The camera is carried mass like any other, so it belongs in the figure
   // the arms are sized against, not bolted on after the solve.
   const fixedMass = motor.massG * 4 + spec.battery.massG + spec.electronicsMassG + hardwareG + camera.massG;
@@ -930,28 +1052,103 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     this does: nothing the frame carries is above that plate, so the mount
     cannot foul anything.
   */
-  const deck = topPlateGeom(spec, plateGeom, camera, bodyLmm);
-  const mount = cameraMount(
+  const deck = topPlateGeom(spec, plateGeom, camera, bodyLmm, bodyWmm);
+
+  /*
+    How the layers stack, settled once.
+
+    A top-mounted pack cannot simply be strapped to the plate above the arms.
+    On a bolted frame that plate is the arm clamp: the stack stands through
+    the opening in it, so there is nothing flat to strap to, and it sits
+    level with the propellers — which is why every top-mounted pack was once
+    reported as standing in the discs, on every frame. What a real frame has
+    is a deck on standoffs above the stack, and the pack goes on that. So a
+    bolted frame with the pack on top gains that deck, held on standoffs that
+    ride on four of the arm clamp bolts, and its height is whichever is the
+    tallest of three needs: clearing the stack, clearing the camera, and
+    lifting the pack out of the propellers' plane where the two overlap in
+    plan. A unibody already has such a deck — its top plate — so only the
+    standoff height is at stake there.
+
+    The arm's thickness is taken from the first solve. It can step up a stock
+    size as the mass converges, which leaves the cage a millimetre or two
+    more generous than it needs to be and never less.
+  */
+  const motorHMm = 8 + motor.massG * 0.25;
+  const topMounted = spec.batteryMount === "top";
+  const packOverDiscs = topMounted && packOverlapsDiscs(spec.battery, motors, propDiaMm);
+  const propNeed = packOverDiscs ? motorHMm + PROP_CLEARANCE_MM - 2 * plates.topMm : 0;
+  const hasDeck = topMounted && spec.construction === "bolted";
+  const cameraNeed = cameraPlateHeightMm(camera);
+  const deckStandoffMm = hasDeck
+    ? standoffAtLeast(Math.max(
+        MIN_CAGE_MM,
+        spec.stackHeightMm + STACK_CLEARANCE_MM - solved.section.heightMm - plates.topMm,
+        propNeed,
+        cameraNeed,
+      ))
+    : 0;
+  const topStandoffMm = spec.construction === "unibody"
+    ? standoffAtLeast(Math.max(spec.stackHeightMm + STACK_CLEARANCE_MM, propNeed + plates.topMm))
+    : 0;
+  const cage: Cage = { hasDeck, deckStandoffMm, topStandoffMm };
+
+  const fittedMount = cameraMount(
     camera,
     plates.topMm,
     deck.l,
     deck.holes,
     stackOpening(spec, deck.w, deck.l, deck.holes),
     deck.outline,
+    hasDeck ? { bodyHeightMm: deckStandoffMm, topTabMm: plates.topMm + 1.5 } : {},
   );
-  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount, deck);
+  /*
+    A mount that could not be placed is left off rather than cut where it
+    does not fit; validation reports it. The camera's mass stays in the
+    weight the arms are sized for, since the user still means to carry one.
+  */
+  const cameraFits = !fittedMount || fittedMount.fitted;
+  const mount = cameraFits ? fittedMount : null;
+  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount, deck, cage);
   let frameG = frameMass(profiles, material, solved.section);
   for (let i = 0; i < 5; i++) {
     auwG = fixedMass + frameG;
     solved = solveSection(auwG);
     suggested = autoArm ? solved : solveSection(auwG, true);
-    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount, deck);
+    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount, deck, cage);
     const next = frameMass(profiles, material, solved.section);
     if (Math.abs(next - frameG) < 0.5) { frameG = next; break; }
     frameG = next;
   }
   auwG = fixedMass + frameG;
   const section = solved.section;
+
+  /*
+    Heights, measured up from the underside of the arms — the top face of a
+    bolted frame's bottom plate, or the underside of a unibody chassis. One
+    table, read by the solid view, the centre-of-gravity sum, validation and
+    the hardware list, so that none of them can hold its own opinion of where
+    a plate is. They used to: the hardware list stood a unibody's top plate
+    on stack-clearing standoffs while the solid view drew it a few
+    millimetres above the chassis and the balance sum put the pack lower
+    still.
+  */
+  const topPlateZMm = section.heightMm + topStandoffMm;
+  const deckZMm = hasDeck ? topPlateZMm + plates.topMm + deckStandoffMm : null;
+  const stackUp: FrameDesign["stackUp"] = {
+    topPlateZMm: round(topPlateZMm, 2),
+    topStandoffMm,
+    deckZMm: deckZMm === null ? null : round(deckZMm, 2),
+    deckStandoffMm,
+    packZMm: round(
+      topMounted
+        ? (deckZMm ?? topPlateZMm) + plates.topMm
+        : spec.construction === "unibody" ? 0 : -plates.bottomMm,
+      2,
+    ),
+    packOnPart: topMounted ? (hasDeck ? "deck-plate" : "top-plate") : spec.construction === "unibody" ? "chassis" : "bottom-plate",
+    packOverDiscs: topMounted && packOverDiscs,
+  };
 
   const totalThrustG = spec.motorThrustG * 4;
   const thrustToWeight = auwG > 0 ? totalThrustG / auwG : 0;
@@ -979,6 +1176,8 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     propMinWheelbaseMm,
     strapSlotMm: round(Math.min(bodyWmm * 0.55, 26)),
     cameraMount: mount?.placement ?? null,
+    cameraFits,
+    stackUp,
     cg: (() => {
       /*
         Heights from the top face of the bottom plate, positive up.
@@ -988,14 +1187,13 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
         closely enough across this range, and a column of numbers nobody can
         check is worse than one honest approximation.
       */
-      const plateT = plates.bottomMm;
       const armT = section.heightMm;
-      const motorHMm = 8 + motor.massG * 0.25;
       const propZ = armT + motorHMm;
-      const batteryZ =
-        spec.batteryMount === "top"
-          ? armT + plates.topMm + spec.battery.h / 2
-          : -plateT - spec.battery.h / 2;
+      // The pack sits where the stack-up puts it, not on the plate above the
+      // arms — which is the clamp plate, with the stack standing through it.
+      const batteryZ = topMounted
+        ? stackUp.packZMm + spec.battery.h / 2
+        : stackUp.packZMm - spec.battery.h / 2;
 
       const items: { m: number; z: number; y: number }[] = [
         // The plate sandwich, taken at its own mid-height.
@@ -1004,7 +1202,9 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
         { m: spec.battery.massG, z: batteryZ, y: 0 },
         // Stack and wiring, sitting on the bottom plate.
         { m: spec.electronicsMassG, z: spec.stackHeightMm / 2, y: 0 },
-        ...(camera.massG > 0 ? [{ m: camera.massG, z: armT + camera.widthMm / 2, y: bodyLmm / 2 }] : []),
+        ...(camera.massG > 0
+          ? [{ m: camera.massG, z: stackUp.topPlateZMm + plates.topMm + camera.widthMm / 2 + 12, y: mount?.placement.centreYMm ?? bodyLmm / 2 }]
+          : []),
       ];
       const total = items.reduce((s, i) => s + i.m, 0) || 1;
       const zMm = items.reduce((s, i) => s + i.m * i.z, 0) / total;
@@ -1040,7 +1240,7 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
     stackClearance: (() => {
       // The clear gap between the plates is whatever the arm is thick, since
       // the standoffs that hold the top plate up are sized to match the arm.
-      const gapMm = round(spec.construction === "unibody" ? spec.stackHeightMm + STACK_CLEARANCE_MM : section.heightMm, 2);
+      const gapMm = round(spec.construction === "unibody" ? topStandoffMm : section.heightMm, 2);
       const top = profiles.find((p) => p.id === "top-plate");
       return {
         gapMm,
@@ -1150,7 +1350,27 @@ export interface DeckGeom {
  * mount if there is one. `maxL` holds it inside the bottom plate so it never
  * overhangs.
  */
-export function topPlateGeom(spec: FrameSpec, g: PlateGeom, camera: CameraSpec, maxL: number): DeckGeom {
+export function topPlateGeom(spec: FrameSpec, g: PlateGeom, camera: CameraSpec, maxL: number, bodyW = maxL): DeckGeom {
+  if (spec.construction === "unibody") {
+    /*
+      A unibody's top plate stands on four standoffs of its own, in the gaps
+      between the arms, and is sized from those. It carries the camera and a
+      top-mounted pack exactly as the clamp plate does on a bolted frame, so
+      it has to be settled here for the same reason — the mount was once
+      fitted to the bolted frame's clamp plate and its slots then never cut
+      in the plate a unibody actually has.
+    */
+    const fitted = fitRoundedPlate(bodyW, maxL, 6, bottomPlateHoles(spec, g));
+    const standoffs = standoffHoles(g.motors, fitted.w, fitted.l, g.rootBolt);
+    const reachOf = (axis: 0 | 1) => Math.max(...standoffs.map((h) => Math.abs(h.c[axis])));
+    const fit = fitRoundedPlate(
+      2 * (reachOf(0) + EDGE_DISTANCE_FACTOR * g.rootBolt),
+      2 * (reachOf(1) + EDGE_DISTANCE_FACTOR * g.rootBolt),
+      6,
+      standoffs,
+    );
+    return { w: fit.w, l: fit.l, holes: standoffs, outline: roundedRect(fit.w, fit.l, 6) };
+  }
   const holes = armRootHoles(g);
   const reach = (axis: 0 | 1) => Math.max(...holes.map((h) => Math.abs(h.c[axis])));
   const seedW = 2 * (reach(0) + EDGE_DISTANCE_FACTOR * g.rootBolt);
@@ -1536,6 +1756,20 @@ export interface CameraMount {
   /** Slots to cut in the plate the side plates stand on. */
   footSlots: Pt[][];
   /**
+   * Slots for the tabs on the plates' top edge, when a deck sits on them.
+   * Empty when nothing is above the mount.
+   */
+  topSlots: Pt[][];
+  /**
+   * False when no position on the deck cleared its bolts and openings.
+   *
+   * The geometry returned in that case is the best-effort placement and must
+   * not be cut: the caller drops the mount and validation says why, instead
+   * of a slot being quietly drawn through a bolt hole — which is what an
+   * unchecked fallback did on the smallest frames.
+   */
+  fitted: boolean;
+  /**
    * How far back from the frame's centreline the mount reaches, mm.
    *
    * The camera lives at the very front and the battery sits behind it, so
@@ -1602,6 +1836,18 @@ export function cameraFootprintL(camera: CameraSpec, spread = TAB_SPREAD[0]): nu
   return camera.widthMm > 0 ? 2 * cameraDims(camera, spread).tabReach : 0;
 }
 
+/**
+ * Height of a camera side plate's body, mm.
+ *
+ * Room for the camera, the pivot above its centre and the tilt arc below —
+ * taken up to the next stocked standoff length, because when a deck goes
+ * over the cage the standoffs beside these plates have to be the same height
+ * and nobody stocks a 37 mm standoff.
+ */
+export function cameraPlateHeightMm(camera: CameraSpec): number {
+  return camera.widthMm > 0 ? standoffAtLeast(camera.widthMm + 16) : 0;
+}
+
 /** Plate left between a camera foot slot and the stack opening, mm. */
 const CAMERA_DECK_LIGAMENT = 3;
 /** Plate left between a camera foot slot and the deck's own edge, mm. */
@@ -1646,6 +1892,7 @@ export function cameraMount(
   deckHoles: Hole[] = [],
   deckBusy: Pt[][] = [],
   deckOutline: Pt[] | null = null,
+  opts: { bodyHeightMm?: number; topTabMm?: number } = {},
 ): CameraMount | null {
   if (camera.widthMm <= 0) return null;
 
@@ -1657,12 +1904,20 @@ export function cameraMount(
     straight bottom run depends on how it was generated, and a tab spliced
     into the wrong edge is a part that silently comes out inside out.
   */
-  const h = camera.widthMm + 16;
+  /*
+    Tall enough for the camera, its pivot and the tilt arc — and exactly as
+    tall as the cage when a deck sits on top, because then the side plates
+    are also what the deck's front edge rests on. The pivot is measured up
+    from the foot either way, so a taller cage leaves the camera where it was
+    rather than carrying it up towards the deck.
+  */
+  const h = Math.max(cameraPlateHeightMm(camera), opts.bodyHeightMm ?? 0);
   const base = -h / 2;
   const top = h / 2;
   const r = 3;
   const tabH = plateThicknessMm + 1.5;
-  const pivot: Pt = [0, top - camera.widthMm / 2 - 4];
+  const topTabH = opts.topTabMm ?? 0;
+  const pivot: Pt = [0, base + camera.widthMm / 2 + 12];
   const gap = camera.widthMm + 2 * CAMERA_SIDE_CLEARANCE_MM;
 
   /*
@@ -1734,6 +1989,7 @@ export function cameraMount(
 
   let dims = cameraDims(camera);
   let frontY = deckL / 2 - dims.tabReach - CAMERA_DECK_EDGE;
+  let fitted = !(deckHoles.length > 0 || deckBusy.length > 0);
   if (deckHoles.length > 0 || deckBusy.length > 0) {
     search: for (const spread of TAB_SPREAD) {
       const d = cameraDims(camera, spread);
@@ -1754,6 +2010,7 @@ export function cameraMount(
         if (fits(slotsFor(d, y))) {
           dims = d;
           frontY = y;
+          fitted = true;
           break search;
         }
       }
@@ -1765,10 +2022,19 @@ export function cameraMount(
   for (const cx of tabX) {
     outline.push([cx - tabW / 2, base], [cx - tabW / 2, base - tabH], [cx + tabW / 2, base - tabH], [cx + tabW / 2, base]);
   }
-  outline.push([w / 2, base], [w / 2, top - r]);
-  outline.push(...arcPoints([w / 2 - r, top - r], r, 0, 90, 4));
-  outline.push([-w / 2 + r, top]);
-  outline.push(...arcPoints([-w / 2 + r, top - r], r, 90, 90, 4));
+  if (topTabH > 0) {
+    // Square shoulders and a second pair of tabs, for the deck to drop onto.
+    outline.push([w / 2, base], [w / 2, top]);
+    for (const cx of [...tabX].reverse()) {
+      outline.push([cx + tabW / 2, top], [cx + tabW / 2, top + topTabH], [cx - tabW / 2, top + topTabH], [cx - tabW / 2, top]);
+    }
+    outline.push([-w / 2, top]);
+  } else {
+    outline.push([w / 2, base], [w / 2, top - r]);
+    outline.push(...arcPoints([w / 2 - r, top - r], r, 0, 90, 4));
+    outline.push([-w / 2 + r, top]);
+    outline.push(...arcPoints([-w / 2 + r, top - r], r, 90, 90, 4));
+  }
   outline.push([-w / 2, base]);
 
   /*
@@ -1807,6 +2073,8 @@ export function cameraMount(
   return {
     plate,
     footSlots,
+    topSlots: topTabH > 0 ? footSlots.map((slot) => slot.map((q) => [q[0], q[1]] as Pt)) : [],
+    fitted,
     rearYMm,
     placement: { spacingMm: gap + plateThicknessMm, centreYMm: frontY, heightMm: h },
   };
@@ -1814,7 +2082,7 @@ export function cameraMount(
 
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 
-function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock, mount: CameraMount | null, deck: DeckGeom): Profile[] {
+function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock, mount: CameraMount | null, deck: DeckGeom, cage: Cage): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
   const bottomT = plates.bottomMm;
@@ -1887,7 +2155,21 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   */
   const strapSlotPair = (frontY: number, rearY: number, holes: Hole[], outline: Pt[], busy: Pt[][] = []): Pt[][] => {
     const front = fitStrapSlot(frontY, holes, outline, busy);
-    const rear = fitStrapSlot(rearY, holes, outline, [...busy, ...(front ? [front] : [])]);
+    /*
+      The rear slot is fitted in the front half and then mirrored aft, so it
+      has to be fitted against the plate as it looks from behind. Fitting it
+      against the front's bolts was right for every layout that is the same
+      fore and aft and wrong for a dead cat, whose rear arms meet the plate
+      somewhere else — it put the rear slot a millimetre from two clamp
+      bolts.
+    */
+    const flip = ([x, y]: Pt): Pt => [x, -y];
+    const rear = fitStrapSlot(
+      rearY,
+      holes.map((h) => ({ ...h, c: flip(h.c) })),
+      outline.map(flip).reverse(),
+      [...busy, ...(front ? [front] : [])].map((poly) => poly.map(flip)),
+    );
     return [
       ...(front ? [front] : []),
       ...(rear ? [rear.map(([x, y]) => [x, -y] as Pt)] : []),
@@ -1955,13 +2237,9 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   const topStrapFrontY = mount
     ? Math.min(topL / 2 - 8, mount.rearYMm - slotW / 2 - 4)
     : topL / 2 - 8;
-  const topSlots = [
-    ...opening,
-    ...feet,
-    ...(strapsOnTop
-      ? strapSlotPair(topStrapFrontY, topL / 2 - 8, topHoles, topOutline, [...opening, ...feet])
-      : []),
-  ];
+  // On a bolted frame the pack straps to the deck above; on a unibody this
+  // plate is that deck, and is built further down.
+  const topSlots = [...opening, ...feet];
   const top: Profile = {
     id: "top-plate",
     name: "Top plate",
@@ -1977,7 +2255,52 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
       - topSlots.reduce((s, p) => s + polygonArea(p), 0),
   };
 
-  if (spec.construction === "bolted") return [bottom, top, ...arms, ...(mount ? [mount.plate] : [])];
+  if (spec.construction === "bolted") {
+    if (!cage.hasDeck) return [bottom, top, ...arms, ...(mount ? [mount.plate] : [])];
+
+    /*
+      The battery deck. The same outline as the clamp plate beneath it, since
+      its standoffs ride on the outer clamp bolt of each arm and it has to
+      reach all four. No stack opening — the standoffs were chosen to clear
+      the stack — but slots for the strap, and for the tabs on top of the
+      camera's side plates when there are any, which is what stops the cage
+      racking at the front.
+    */
+    const perArm = rootBoltOffsets(g.rootBolt).length;
+    const deckHoles = topHoles.filter((_, i) => i % perArm === perArm - 1);
+    const tabSlots = mount ? mount.topSlots : [];
+    const deckFunctional = [
+      ...tabSlots,
+      ...strapSlotPair(topStrapFrontY, topL / 2 - 8, deckHoles, topOutline, tabSlots),
+    ];
+    const deckSlots = spec.lightenPlates
+      ? [
+          ...deckFunctional,
+          ...lighteningCutouts({
+            outline: topOutline,
+            holes: deckHoles,
+            slots: deckFunctional,
+            bearings: bottomBearings,
+            boltMm: g.rootBolt,
+          }),
+        ]
+      : deckFunctional;
+    const deckPlate: Profile = {
+      id: "deck-plate",
+      name: "Battery deck",
+      qty: 1,
+      outline: topOutline,
+      holes: deckHoles,
+      slots: deckSlots,
+      lightenedFrom: deckFunctional.length,
+      thicknessMm: topT,
+      areaMm2:
+        polygonArea(topOutline)
+        - deckHoles.reduce((sum, h) => sum + Math.PI * h.r * h.r, 0)
+        - deckSlots.reduce((sum, p) => sum + polygonArea(p), 0),
+    };
+    return [bottom, top, deckPlate, ...arms, ...(mount ? [mount.plate] : [])];
+  }
 
   /*
     Unibody: the chassis is the plate and the arms as one piece.
@@ -2052,15 +2375,31 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
     opening anyway — wiring has to leave the stack somewhere, and a closed
     deck over a stack is a deck you have to remove to reach anything.
   */
-  const uniTopHoles: Hole[] = [...standoffs];
-  const uniFit = fitRoundedPlate(
-    2 * (Math.max(...standoffs.map((h) => Math.abs(h.c[0]))) + EDGE_DISTANCE_FACTOR * g.rootBolt),
-    2 * (Math.max(...standoffs.map((h) => Math.abs(h.c[1]))) + EDGE_DISTANCE_FACTOR * g.rootBolt),
-    6,
-    uniTopHoles,
-  );
-  const uniTopOutline = roundedRect(uniFit.w, uniFit.l, 6);
-  const uniTopSlots = stackOpening(spec, uniFit.w, uniFit.l, uniTopHoles);
+  /*
+    Sized by `topPlateGeom`, which the camera mount was fitted against. It
+    used to be worked out again here, separately, and the mount's foot slots
+    — fitted to a different plate — were then never cut in this one, so a
+    unibody's side plates had tabs and nowhere to put them. A top-mounted
+    pack had the same problem: its strap slots were taken out of the chassis
+    and not put anywhere.
+  */
+  const uniTopHoles: Hole[] = deck.holes;
+  const uniFit = { w: deck.w, l: deck.l };
+  const uniTopOutline = deck.outline;
+  const uniOpening = stackOpening(spec, uniFit.w, uniFit.l, uniTopHoles);
+  const uniTopSlots = [
+    ...uniOpening,
+    ...feet,
+    ...(strapsOnTop
+      ? strapSlotPair(
+          mount ? Math.min(uniFit.l / 2 - 8, mount.rearYMm - slotW / 2 - 4) : uniFit.l / 2 - 8,
+          uniFit.l / 2 - 8,
+          uniTopHoles,
+          uniTopOutline,
+          [...uniOpening, ...feet],
+        )
+      : []),
+  ];
   const uniTop: Profile = {
     id: "top-plate",
     name: "Top plate",

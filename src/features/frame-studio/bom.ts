@@ -11,7 +11,7 @@
   motor windings.
 */
 
-import { cameraById, STACK_CLEARANCE_MM } from "./catalog";
+import { cameraById } from "./catalog";
 import { planSheets } from "./exporters";
 import { type FrameDesign } from "./geometry";
 import { round } from "./structure";
@@ -22,26 +22,6 @@ export interface BomLine {
   /** Where it goes, in plain words. */
   purpose: string;
   note?: string;
-}
-
-/** Standard metric standoff lengths, mm. */
-const STANDOFF_STOCK = [5, 6, 8, 10, 12, 15, 16, 20, 25, 30, 35, 40, 45, 50];
-
-/**
- * Standoff height for a unibody, mm.
- *
- * Here the standoff's job is to clear the flight-controller stack, which is a
- * completely different requirement from the bolted case's "match the arm".
- *
- * This used to be guessed from the mounting pattern — 30 mm for a 30.5 mm
- * stack, 20 mm for a 20 mm one. A mounting pattern is a width, and a width
- * cannot tell you a height: it happened to land near enough for a full-size
- * stack and was 8 mm too tall for a short one. Now the user states the height
- * and the standoff is the next stocked size above it plus clearance.
- */
-function stackStandoffMm(d: FrameDesign): number {
-  const needed = d.spec.stackHeightMm + STACK_CLEARANCE_MM;
-  return STANDOFF_STOCK.find((s) => s >= needed) ?? Math.ceil(needed / 5) * 5;
 }
 
 /** Widest strap the plate's slots will actually pass, rounded to a size sold. */
@@ -62,28 +42,28 @@ export function buildBOM(d: FrameDesign): BomLine[] {
   const bottom = d.profiles.find((p) => p.id === "bottom-plate" || p.id === "chassis")!;
   const top = d.profiles.find((p) => p.id === "top-plate")!;
   const rootBolt = d.rootBoltMm;
+  const camera = cameraById(d.spec.cameraId);
 
   /*
-    The arm clamp is a sandwich, not a column.
+    The arm clamp is a sandwich: bottom plate, arm, top plate, with the arm
+    itself setting the gap. There are no standoffs in it. This list used to
+    ask for eight, "beside the arms", for which no plate has ever had a hole
+    — the arm is the spacer, and the bolts pass through it.
 
-    Bottom plate, arm, top plate — the standoffs sit *beside* the arms, in
-    parallel with them, not stacked in series. Adding the standoff height to
-    the bolt length made every clamp bolt 9-15 mm too long, and the note that
-    went with it contradicted its own arithmetic.
-
-    The standoff has to be exactly as thick as the arm it sits next to. One
-    even a millimetre taller and the top plate rests on the standoffs with the
-    arms swinging loose underneath, which is the failure this list exists to
-    prevent.
+    A unibody has no arm to do that job, so its top plate stands on four
+    standoffs tall enough to clear the stack. The height comes from the
+    design's own stack-up, the same figure the solid view and the balance
+    sum use.
   */
-  const standoffMm = unibody
-    ? stackStandoffMm(d)
-    : round(arm.thicknessMm, 1);
-  const clampStack = unibody
-    ? bottom.thicknessMm + top.thicknessMm + standoffMm
-    : bottom.thicknessMm + arm.thicknessMm + top.thicknessMm;
+  const standoffMm = d.stackUp.topStandoffMm;
+  const deck = d.profiles.find((p) => p.id === "deck-plate");
+  const deckStandoffMm = d.stackUp.deckStandoffMm;
+  const clampStack = bottom.thicknessMm + arm.thicknessMm + top.thicknessMm;
   // Two diameters of thread engagement past the sandwich for the nut.
   const clampBolt = standardBoltLength(clampStack + rootBolt * 2);
+  // Where a deck standoff rides on a clamp bolt, the standoff is the nut.
+  const clampBoltIntoStandoff = standardBoltLength(clampStack + rootBolt * 1.5);
+  const packPlate = d.profiles.find((p) => p.id === d.stackUp.packOnPart) ?? bottom;
 
   // Motor bolts thread into the motor bell and must not reach the windings.
   const motorBoltLen = standardBoltLength(arm.thicknessMm + 4);
@@ -107,28 +87,44 @@ export function buildBOM(d: FrameDesign): BomLine[] {
             qty: 4,
             item: `M${rootBolt} × ${standoffMm} mm standoff, female both ends`,
             purpose: "Holding the top plate off the chassis",
-            note: `Sits in the gaps between the arms. ${standoffMm} mm clears a ${d.spec.stackPattern} mm stack with its soft mounts — measure yours before ordering.`,
+            note: `Sits in the gaps between the arms. ${standoffMm} mm clears a ${d.spec.stackHeightMm} mm tall stack with its soft mounts — measure yours before ordering.`,
           },
         ]
       : [
           {
-            qty: 8,
+            qty: deck ? 4 : 8,
             item: `M${rootBolt} × ${clampBolt} mm cap head`,
-            purpose: "Arm clamp, two per arm through both plates",
-            note: `Clamps ${round(clampStack)} mm of plate and arm.`,
+            purpose: deck ? "Arm clamp, the inner bolt of each arm, through both plates" : "Arm clamp, two per arm through both plates",
+            note: `Clamps ${round(clampStack)} mm of plate and arm. The arm is the spacer — nothing else goes between the plates.`,
           },
           {
-            qty: 8,
+            qty: deck ? 4 : 8,
             item: `M${rootBolt} nyloc nut`,
             purpose: "Arm clamp bolts",
             note: "Nyloc, not plain — plain nuts back off under vibration.",
           },
-          {
-            qty: 8,
-            item: `M${rootBolt} × ${standoffMm} mm standoff`,
-            purpose: "Two per arm, holding the top plate off the arms",
-            note: `Exactly as thick as the arm (${round(arm.thicknessMm, 1)} mm). They sit beside the arms and set the top plate's height — a taller standoff leaves the arms loose.`,
-          },
+          ...(deck
+            ? [
+                {
+                  qty: 4,
+                  item: `M${rootBolt} × ${clampBoltIntoStandoff} mm cap head`,
+                  purpose: "Arm clamp, the outer bolt of each arm, up into a deck standoff",
+                  note: "These four thread into the standoffs instead of taking a nut, so the standoff clamps the arm and carries the deck. Thread-lock them.",
+                },
+                {
+                  qty: 4,
+                  item: `M${rootBolt} × ${deckStandoffMm} mm standoff, female both ends`,
+                  purpose: "Holding the battery deck above the stack",
+                  note: `${deckStandoffMm} mm clears a ${d.spec.stackHeightMm} mm stack${camera.widthMm > 0 ? ", matches the camera side plates" : ""}${d.stackUp.packOverDiscs ? " and lifts the pack above the propellers" : ""}.`,
+                },
+                {
+                  qty: 4,
+                  item: `M${rootBolt} × ${standardBoltLength(deck.thicknessMm + rootBolt * 1.5)} mm button head`,
+                  purpose: "Battery deck down into its standoffs",
+                  note: "Button heads sit low enough for the pack to lie flat over them.",
+                },
+              ]
+            : []),
         ]),
     {
       /*
@@ -152,13 +148,12 @@ export function buildBOM(d: FrameDesign): BomLine[] {
         the plate, with a little for the buckle.
       */
       qty: 2,
-      item: `Battery strap, ${strapWidthMm(d)} mm wide × ${Math.ceil((2 * d.spec.battery.h + d.spec.battery.w + bottom.thicknessMm + 30) / 10) * 10} mm long`,
-      purpose: `Through the slots in the ${d.spec.batteryMount === "top" ? "top" : "bottom"} plate`,
+      item: `Battery strap, ${strapWidthMm(d)} mm wide × ${Math.ceil((2 * d.spec.battery.h + d.spec.battery.w + packPlate.thicknessMm + 30) / 10) * 10} mm long`,
+      purpose: `Through the slots in the ${packPlate.name.toLowerCase()}`,
       note: `Long enough to go over a ${d.spec.battery.h} mm tall pack and back through. Buy a little longer rather than shorter — the tail tucks away.`,
     },
   ];
 
-  const camera = cameraById(d.spec.cameraId);
   if (camera.widthMm > 0) {
     lines.push({
       qty: 2,

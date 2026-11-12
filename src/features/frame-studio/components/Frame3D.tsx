@@ -170,7 +170,11 @@ export function Frame3D({ design: d, exploded }: Props) {
     // The camera side plates were built, exported and billed for, and then
     // left out of the one view that shows how the frame goes together.
     const cam = d.profiles.find((p) => p.id === "camera-plate");
+    const deck = d.profiles.find((p) => p.id === "deck-plate");
     return {
+      deck: deck ? geometryFor(deck) : null,
+      deckHoles: deck ? deck.holes : [],
+      topHoles: top.holes,
       base: geometryFor(base),
       baseId: base.id,
       top: geometryFor(top),
@@ -197,16 +201,49 @@ export function Frame3D({ design: d, exploded }: Props) {
       scene.base.dispose();
       scene.top.dispose();
       scene.camera?.dispose();
+      scene.deck?.dispose();
       for (const a of scene.arms) a.geometry.dispose();
     };
   }, [scene]);
 
-  // Real stack-up: bottom plate, arms resting on it, standoffs, top plate.
+  /*
+    Every height comes from the design's own stack-up table.
+
+    This view used to work the heights out for itself, and got them wrong
+    twice: it floated a bolted frame's top plate several millimetres above
+    the arms it is supposed to be clamping, and stood a unibody's top plate
+    just above the chassis where the hardware list has it on standoffs tall
+    enough to clear the stack. A preview that disagrees with the parts list
+    is worse than no preview.
+
+    The scene's zero is the underside of the bottom plate, so everything in
+    the table — measured from the underside of the arms — is lifted by the
+    bottom plate's thickness on a bolted frame.
+  */
+  const unibody = scene.arms.length === 0;
+  const lift = unibody ? 0 : scene.baseT;
   const gap = exploded ? Math.max(18, scene.armT * 3) : 0;
-  const zArm = scene.baseT + gap;
-  const zTop = scene.arms.length > 0
-    ? zArm + scene.armT + Math.max(5, scene.armT + 2) + gap
-    : scene.baseT + Math.max(5, scene.baseT + 2) + gap;
+  const zArm = lift + gap;
+  const zTop = lift + d.stackUp.topPlateZMm + gap * 2;
+  const zDeck = d.stackUp.deckZMm === null ? null : lift + d.stackUp.deckZMm + gap * 4;
+  const zCamera = zTop + scene.topT + gap;
+  /*
+    Standoffs, drawn where the plates' own holes say they go. Left out of the
+    exploded view, where the gaps they would span are not real distances.
+  */
+  const standoffs: { x: number; y: number; z0: number; h: number; r: number }[] = [];
+  if (!exploded) {
+    if (d.stackUp.topStandoffMm > 0) {
+      for (const h of scene.topHoles) {
+        standoffs.push({ x: h.c[0], y: h.c[1], z0: zTop - d.stackUp.topStandoffMm, h: d.stackUp.topStandoffMm, r: h.r * 1.8 });
+      }
+    }
+    if (zDeck !== null) {
+      for (const h of scene.deckHoles) {
+        standoffs.push({ x: h.c[0], y: h.c[1], z0: zTop + scene.topT, h: d.stackUp.deckStandoffMm, r: h.r * 1.8 });
+      }
+    }
+  }
 
   const finish = MATERIAL_FINISH[d.material.id] ?? FALLBACK_FINISH;
   const lookFor = (id: string): Finish => ({ ...finish, color: lookForPart(id).color });
@@ -256,6 +293,16 @@ export function Frame3D({ design: d, exploded }: Props) {
           )),
         )}
         <Part geometry={scene.top} look={lookFor("top-plate")} z={zTop} />
+        {scene.deck && zDeck !== null && <Part geometry={scene.deck} look={lookFor("deck-plate")} z={zDeck} />}
+        {standoffs.map((st, i) => (
+          <group key={`st-${i}`} rotation={[-Math.PI / 2, 0, 0]}>
+            {/* A cylinder's axis is its own Y; stand it along the scene's up. */}
+            <mesh position={[st.x, st.y, st.z0 + st.h / 2]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[st.r, st.r, st.h, 6]} />
+              <meshStandardMaterial color="#b9b4aa" metalness={0.85} roughness={0.35} />
+            </mesh>
+          </group>
+        ))}
         {scene.camera && d.cameraMount && [-1, 1].map((side) => (
           <CameraPart
             key={side}
@@ -264,13 +311,13 @@ export function Frame3D({ design: d, exploded }: Props) {
             x={(side * d.cameraMount!.spacingMm) / 2}
             y={d.cameraMount!.centreYMm}
             /*
-              Standing on the clamp plate, not the bottom plate. The body's
-              midpoint sits half its height above that plate's top face, which
-              puts the tab bottoms exactly in the slots cut for them — and
-              puts the whole mount above everything the frame carries, so it
-              can no longer run through the deck or brush an arm root.
+              Standing on the top plate. The body's midpoint sits half its
+              height above that plate's top face, which puts the tab bottoms
+              exactly in the slots cut for them — and the whole mount above
+              the arms, so it cannot run through the deck or brush an arm
+              root.
             */
-            z={zTop + scene.topT + d.cameraMount!.heightMm / 2 + gap}
+            z={zCamera + d.cameraMount!.heightMm / 2}
           />
         ))}
       </group>
@@ -281,7 +328,7 @@ export function Frame3D({ design: d, exploded }: Props) {
         maxDistance={reach * 4}
         autoRotate={!exploded}
         autoRotateSpeed={0.5}
-        target={[0, zArm * 0.5, 0]}
+        target={[0, (zDeck ?? zTop) * 0.4, 0]}
       />
     </Canvas>
   );

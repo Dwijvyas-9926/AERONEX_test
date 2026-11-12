@@ -26,6 +26,7 @@ export const PART_LOOK: Record<string, PartLook> = {
   chassis: { color: "#3f6b86", label: "Chassis" },
   arm: { color: "#c08436", label: "Arms" },
   "top-plate": { color: "#7d5a86", label: "Top plate" },
+  "deck-plate": { color: "#a8554e", label: "Battery deck" },
   "camera-plate": { color: "#4f8257", label: "Camera mount" },
 };
 

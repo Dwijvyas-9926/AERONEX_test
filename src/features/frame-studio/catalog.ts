@@ -284,6 +284,14 @@ export function stackHeightFor(pattern: number): number {
  */
 export const STACK_CLEARANCE_MM = 2;
 
+/** Standard metric standoff lengths, mm. */
+export const STANDOFF_STOCK = [5, 6, 8, 10, 12, 15, 16, 20, 25, 30, 35, 40, 45, 50];
+
+/** The shortest stocked standoff that is at least `mm` long. */
+export function standoffAtLeast(mm: number): number {
+  return STANDOFF_STOCK.find((s) => s >= mm - 1e-9) ?? Math.ceil(mm / 5) * 5;
+}
+
 /**
  * Published frame-size reference: prop diameter → typical wheelbase window.
  * Used as a sanity band against the computed clearance minimum.
