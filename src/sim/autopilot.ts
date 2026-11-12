@@ -107,6 +107,8 @@ export class Autopilot {
   target = { n: 0, e: 0, alt: 0, yaw: 0 };
   ekfOk = true;
   landed = true;
+  /** Where the current leg ends, for anything measuring progress; null when there is no leg. */
+  goal: { n: number; e: number; alt: number } | null = null;
   /** Set by the vehicle wrapper when a waypoint is reached. */
   onReached: ((seq: number) => void) | null = null;
 
@@ -236,6 +238,7 @@ export class Autopilot {
     }
     if (mode === this.mode) return true;
     this.mode = mode;
+    this.goal = null;
     this.holdHere();
     if (mode === MODE.RTL) this.rtl = { stage: "climb", since: this.phys.s.t };
     if (mode === MODE.GUIDED) this.guided = { kind: "hold", vx: 0, vy: 0, vz: 0, yawRate: 0, until: 0 };
@@ -391,6 +394,24 @@ export class Autopilot {
     }
     if (!this.armed) return;
 
+    /*
+      Touching down. On the ground the airframe cannot lean, so a position
+      controller still trying to correct a few centimetres winds its rate
+      integrators up against the earth, the mixer raises the throttle to make
+      room for them, and the aircraft hops instead of settling. ArduCopter
+      relaxes its attitude targets once it believes it has landed; so does this.
+    */
+    const settling = s.onGround && !this.landed && (this.mode === MODE.LAND || (this.mode === MODE.RTL && this.rtl.stage === "land"));
+    if (settling) {
+      for (const r of this.rate) r.reset();
+      this.rateTarget = [0, 0, 0];
+      this.velI = [0, 0];
+      const t = clamp(Math.min(thr, this.throttleOut - 0.6 * dt), 0, 1);
+      this.throttleOut = t;
+      this.out = [t, t, t, t];
+      return;
+    }
+
     // Sitting armed on the ground: motors idle, and disarm after the delay.
     if (idle && s.onGround) {
       if (this.groundArmedSince === null) this.groundArmedSince = s.t;
@@ -480,7 +501,7 @@ export class Autopilot {
   private landDetect(dt: number) {
     const s = this.phys.s;
     void dt;
-    if (s.onGround && this.throttleOut < this.p("MOT_THST_HOVER") * 0.75) {
+    if (s.onGround && this.throttleOut < Math.max(this.p("MOT_SPIN_MIN") + 0.02, this.p("MOT_THST_HOVER") * 0.75)) {
       if (this.landLowSince === null) this.landLowSince = s.t;
       if (s.t - this.landLowSince > 1) {
         this.landed = true;
@@ -496,6 +517,7 @@ export class Autopilot {
     const s = this.phys.s;
     const r = this.rtl;
     const rtlAlt = Math.max(this.alt, this.p("RTL_ALT") / 100);
+    this.goal = r.stage === "climb" ? { n: s.pos[0], e: s.pos[1], alt: Math.max(this.target.alt, rtlAlt) } : r.stage === "return" ? { n: 0, e: 0, alt: this.target.alt } : null;
     const speed = this.p("RTL_SPEED") > 0 ? this.p("RTL_SPEED") / 100 : wpSpeed;
     if (r.stage === "climb") {
       if (this.target.alt < rtlAlt) this.target.alt = rtlAlt;
@@ -528,6 +550,7 @@ export class Autopilot {
       return false;
     }
     const item = this.mission[this.missionSeq];
+    this.goal = null;
     if (!item) {
       this.auto.done = true;
       this.holdHere();
@@ -550,6 +573,7 @@ export class Autopilot {
           this.log("info", `Mission: take-off to ${relAlt.toFixed(0)} m`, "takeoff");
         }
         if (this.target.alt < relAlt) this.target.alt = relAlt;
+        this.goal = { n: s.pos[0], e: s.pos[1], alt: relAlt };
         if (this.alt >= relAlt - 0.5) next();
         return false;
       }
@@ -564,6 +588,7 @@ export class Autopilot {
         const here = item.x === 0 && item.y === 0;
         const dest = here ? { n: this.auto.legFrom?.n ?? s.pos[0], e: this.auto.legFrom?.e ?? s.pos[1] } : this.toLocal(item.x, item.y);
         if (relAlt > 0) this.target.alt = relAlt;
+        if (this.auto.holdUntil === null) this.goal = { n: dest.n, e: dest.e, alt: this.target.alt };
         const left = this.flyToward(dest.n, dest.e, speed, dt);
         const arrived = left < this.p("WPNAV_RADIUS") / 100 && Math.abs(this.alt - this.target.alt) < 1.5;
         if (arrived && item.command !== CMD.LOITER_UNLIM) {
@@ -621,7 +646,9 @@ export class Autopilot {
     const kp = this.p("PSC_POSXY_P");
     let vn = this.velCmd.n + kp * (this.target.n - s.pos[0]);
     let ve = this.velCmd.e + kp * (this.target.e - s.pos[1]);
-    const vmax = Math.max(this.p("WPNAV_SPEED"), this.p("LOIT_SPEED")) / 100 + 2;
+    // Catching up with the point being followed may add a little speed, not a lot:
+    // the cruise speed is a limit the pilot set.
+    const vmax = Math.max(3, Math.hypot(this.velCmd.n, this.velCmd.e) * 1.03 + 0.3);
     const vm = Math.hypot(vn, ve);
     if (vm > vmax) {
       vn *= vmax / vm;
@@ -816,6 +843,7 @@ export class Autopilot {
           if (this.landed && s.onGround) this.disarm("Position lost: disarmed on the ground");
           else {
             this.mode = a === 2 ? MODE.ALT_HOLD : MODE.LAND;
+            this.goal = null;
             this.holdHere();
             this.log("info", `Mode ${MODE_NAME[this.mode]} (failsafe)`, "mode");
           }

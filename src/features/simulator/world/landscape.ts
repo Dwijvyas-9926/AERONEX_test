@@ -10,12 +10,18 @@ import type { Terrain } from "../../../sim/terrain";
 */
 
 const C = (hex: string) => new THREE.Color(hex);
-const GRASS = [C("#55733a"), C("#6b8644"), C("#7d8f4c")];
-const DRY = C("#9a9258");
-const ROCK = C("#7c766d");
-const ROCK_HI = C("#a7a39b");
-const SAND = C("#b6a67c");
-const BED = C("#4d5b4a");
+/*
+  Colours taken from temperate grassland in clear afternoon light: grass is
+  olive and yellow-green rather than emerald, and it dries toward straw on
+  higher ground. Saturated greens are what make a generated landscape look
+  like a toy, so nothing here is far from grey.
+*/
+const GRASS = [C("#5d6b3c"), C("#737c46"), C("#888a52")];
+const DRY = C("#a59a68");
+const ROCK = C("#7f786d");
+const ROCK_HI = C("#8e8c8a");
+const SAND = C("#b3a680");
+const BED = C("#4a544a");
 
 function shade(terrain: Terrain, n: number, e: number, h: number, slope: number, out: THREE.Color) {
   // Patchy grass: two scales of variation so no large area is one flat colour.
@@ -172,6 +178,25 @@ export function cloudTexture(): THREE.CanvasTexture {
       const rad = s * (0.1 + r() * 0.16);
       const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
       g.addColorStop(0, "rgba(255,255,255,0.55)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, s, s);
+    }
+  });
+}
+
+/** A dense, ragged puff for smoke, dust and spray. */
+export function smokeTexture(): THREE.CanvasTexture {
+  return canvasTexture(128, (ctx, s) => {
+    let seed = 77;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 14; i++) {
+      const x = s * (0.3 + r() * 0.4);
+      const y = s * (0.3 + r() * 0.4);
+      const rad = s * (0.16 + r() * 0.2);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, "rgba(255,255,255,0.5)");
+      g.addColorStop(0.6, "rgba(255,255,255,0.22)");
       g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, s, s);

@@ -85,6 +85,64 @@ export const PARAM_DEFS: ParamDef[] = [
   { name: "SYSID_THISMAV", def: 1, help: "MAVLink system id" },
 ];
 
+/*
+  The range each parameter is held to. ArduCopter documents a range for every
+  parameter and a ground station warns outside it; the simulator enforces it,
+  because a model fed a negative speed or a NaN produces numbers that mean
+  nothing, and says nothing is wrong.
+*/
+const RANGE: Record<string, [number, number]> = {
+  ANGLE_MAX: [1000, 8000],
+  ATC_ACCEL_R_MAX: [0, 500000],
+  ATC_ACCEL_P_MAX: [0, 500000],
+  ATC_ACCEL_Y_MAX: [0, 500000],
+  WPNAV_SPEED: [20, 2000],
+  WPNAV_SPEED_UP: [10, 1000],
+  WPNAV_SPEED_DN: [10, 500],
+  WPNAV_ACCEL: [50, 500],
+  WPNAV_RADIUS: [5, 1000],
+  LOIT_SPEED: [20, 3500],
+  PILOT_SPEED_UP: [50, 500],
+  RTL_ALT: [0, 300000],
+  RTL_SPEED: [0, 2000],
+  RTL_LOIT_TIME: [0, 60000],
+  RTL_ALT_FINAL: [0, 1000],
+  LAND_SPEED: [30, 200],
+  LAND_ALT_LOW: [100, 10000],
+  DISARM_DELAY: [0, 127],
+  MOT_SPIN_ARM: [0, 0.2],
+  MOT_SPIN_MIN: [0, 0.3],
+  MOT_THST_HOVER: [0.02, 0.8],
+  BATT_LOW_TIMER: [0, 120],
+  FS_GCS_TIMEOUT: [2, 120],
+  RC_FS_TIMEOUT: [0.5, 10],
+  FENCE_ALT_MAX: [10, 1000],
+  FENCE_RADIUS: [30, 10000],
+  FENCE_MARGIN: [1, 10],
+};
+
+const DEF = new Map(PARAM_DEFS.map((d) => [d.name, d.def]));
+
+/** The value the simulator will use for a parameter, held inside its range. */
+export function sanitizeParam(name: string, value: number): number {
+  if (!Number.isFinite(value)) return DEF.get(name) ?? 0;
+  const r = RANGE[name];
+  if (r) return Math.min(r[1], Math.max(r[0], value));
+  // Gains, thresholds and capacities: never negative.
+  return Math.max(0, value);
+}
+
+/** Hold a whole set inside its ranges, and say which values had to be changed. */
+export function sanitizeParams(p: Params): { params: Params; notes: string[] } {
+  const out: Params = {};
+  const notes: string[] = [];
+  for (const [k, v] of Object.entries(p)) {
+    out[k] = sanitizeParam(k, v);
+    if (out[k] !== v && DEF.has(k)) notes.push(`${k} was ${Number.isFinite(v) ? v : "not a number"}, outside its range; ${out[k]} was used.`);
+  }
+  return { params: out, notes };
+}
+
 export type Params = Record<string, number>;
 
 /** Parameters for a virtual aircraft of this build, as a first tune would leave it. */
@@ -108,7 +166,7 @@ export function defaultParams(af: Airframe): Params {
   const ys = Math.min(2, Math.max(0.15, 9 / yawAuth));
   p.ATC_RAT_YAW_P = round(0.18 * ys);
   p.ATC_RAT_YAW_I = round(0.018 * ys);
-  p.MOT_THST_HOVER = round(Math.min(0.8, Math.max(0.1, dv.hoverThrottle)));
+  p.MOT_THST_HOVER = round(Math.min(0.8, Math.max(0.02, dv.hoverThrottle)));
   // An overpowered frame hovers below the stock idle and could never descend;
   // setting the idle under the hover point is part of any first tune.
   p.MOT_SPIN_MIN = round(Math.min(0.15, p.MOT_THST_HOVER * 0.5));

@@ -3818,3 +3818,21 @@ input[type="range"]::-moz-range-thumb {
   color: var(--danger);
   font-weight: 700;
 }
+
+/* On a narrow screen the readouts must not cover the view they describe. */
+@media (max-width: 720px) {
+  .world-hud.strip > div:nth-child(n + 5) {
+    display: none;
+  }
+  .world-hud.strip > div {
+    flex-basis: 60px;
+    padding: 4px 8px 5px;
+  }
+  .world-hud.top .world-chip:nth-child(2) {
+    display: none;
+  }
+  .world {
+    height: min(52vh, 460px);
+    min-height: 300px;
+  }
+}

@@ -24,6 +24,9 @@ const VERDICT: Record<Verdict, { tone: "ok" | "warn" | "bad"; title: string }> =
   timeout: { tone: "warn", title: "Still flying" },
   refused: { tone: "bad", title: "Would not start" },
   crashed: { tone: "bad", title: "Crashed" },
+  grounded: { tone: "bad", title: "Cannot take off" },
+  stuck: { tone: "bad", title: "Could not get there" },
+  "flew-away": { tone: "bad", title: "Flew away" },
 };
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
@@ -181,7 +184,7 @@ export function MissionPlanningPage() {
             ghost={result?.track}
             fenceRadius={params.FENCE_ENABLE ? params.FENCE_RADIUS : null}
             wind={{ speed: wind.speed, fromDeg: wind.from }}
-            mark={result && result.verdict !== "completed" && result.verdict !== "refused" ? { n: result.stats.endN, e: result.stats.endE, label: result.verdict === "crashed" ? "Crash" : "Ends here", tone: result.verdict === "crashed" ? "bad" : "ok" } : null}
+            mark={result && result.verdict !== "completed" && result.verdict !== "refused" && result.verdict !== "grounded" ? { n: result.stats.endN, e: result.stats.endE, label: result.verdict === "crashed" ? "Crash" : "Ends here", tone: result.verdict === "crashed" ? "bad" : "ok" } : null}
             terrain={terrain}
             onPick={(n, e) => {
               sim.addPoint(n, e);
@@ -388,7 +391,7 @@ export function MissionPlanningPage() {
               <p>{result.headline}</p>
             </div>
           </div>
-          {result.verdict !== "refused" && (
+          {result.verdict !== "refused" && result.verdict !== "grounded" && (
             <dl className="readouts mp-stats">
               <div className="readout"><dt>Flight time</dt><dd>{clock(result.stats.durationS)}</dd></div>
               <div className="readout"><dt>Distance flown</dt><dd>{result.stats.distanceM >= 1000 ? (result.stats.distanceM / 1000).toFixed(2) : Math.round(result.stats.distanceM)}<small>{result.stats.distanceM >= 1000 ? "km" : "m"}</small></dd></div>

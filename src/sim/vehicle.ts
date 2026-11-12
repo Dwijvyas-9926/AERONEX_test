@@ -2,7 +2,7 @@ import { encode, type FieldValue } from "../mavlink/encode";
 import { decode, MavlinkParser, type Decoded } from "../mavlink/parser";
 import type { Airframe } from "./airframe";
 import { Autopilot, MODE, type Home, type Inputs, type MissionItem, type SimEvent } from "./autopilot";
-import { defaultParams, PARAM_DEFS, type Params } from "./params";
+import { defaultParams, PARAM_DEFS, sanitizeParam, sanitizeParams, type Params } from "./params";
 import { euler, Physics } from "./physics";
 import type { Terrain } from "./terrain";
 
@@ -38,6 +38,10 @@ export class VirtualVehicle {
   readonly ap: Autopilot;
   readonly home: Home;
   terrain: Terrain | null = null;
+  /** Parameters that were outside their range and had to be changed. */
+  paramNotes: string[] = [];
+  private fullThrottleOnGround = 0;
+  private saidGrounded = false;
   gpsOk = true;
   rcOk = true;
   sticks: Inputs["sticks"] = null;
@@ -68,7 +72,9 @@ export class VirtualVehicle {
       this.phys.ground = o.terrain.surface;
       this.phys.water = o.terrain.isWater;
     }
-    this.ap = new Autopilot(this.phys, { ...defaultParams(o.airframe), ...(o.params ?? {}) }, o.home);
+    const clean = sanitizeParams({ ...defaultParams(o.airframe), ...(o.params ?? {}) });
+    this.paramNotes = clean.notes;
+    this.ap = new Autopilot(this.phys, clean.params, o.home);
     this.ap.mode = MODE.STABILIZE;
     this.ap.onReached = (seq) => this.send("MISSION_ITEM_REACHED", { seq });
     this.paramNames = PARAM_DEFS.map((d) => d.name);
@@ -100,10 +106,32 @@ export class VirtualVehicle {
       this.ap.step(SIM_DT, this.inputs());
       this.phys.step(this.ap.out, SIM_DT);
     }
+    this.watchGrounded(steps * SIM_DT);
     this.clock += wallSeconds;
     // Stick overrides lapse if the ground station stops sending them.
     if (this.sticks && this.rcOverrideAt >= 0 && this.clock - this.rcOverrideAt > 1.5) this.sticks = null;
     if (telemetry) this.emit();
+  }
+
+  /**
+   * Full throttle and still on the ground: the aircraft cannot lift itself.
+   * A real autopilot says nothing about this — it just sits there roaring —
+   * so the simulator says it, once.
+   */
+  private watchGrounded(dt: number) {
+    const s = this.phys.s;
+    const trying = this.ap.armed && !this.ap.landed && s.onGround && !s.crashed && this.ap.throttleOut > 0.85;
+    this.fullThrottleOnGround = trying ? this.fullThrottleOnGround + dt : 0;
+    if (!trying && !this.ap.armed) this.saidGrounded = false;
+    if (this.fullThrottleOnGround > 4 && !this.saidGrounded) {
+      this.saidGrounded = true;
+      const sag = s.volts < this.phys.af.cells * 3.1;
+      this.ap.log(
+        "error",
+        sag ? "Simulator: full throttle but no lift, battery sagging" : "Simulator: full throttle but too heavy to lift",
+        "grounded",
+      );
+    }
   }
 
   /** Everything the vehicle has to say since the last call, as one buffer. */
@@ -346,7 +374,10 @@ export class VirtualVehicle {
         const i = this.paramNames.indexOf(id);
         if (i < 0) break;
         const v = num("param_value");
-        if (Number.isFinite(v)) ap.params[id] = Math.fround(v);
+        if (Number.isFinite(v)) {
+          ap.params[id] = sanitizeParam(id, Math.fround(v));
+          if (ap.params[id] !== Math.fround(v)) ap.log("warn", `${id} is outside its range: using ${ap.params[id]}`);
+        }
         this.sendParam(i, false);
         break;
       }

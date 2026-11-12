@@ -1,4 +1,4 @@
-import { Line, OrbitControls, Sky } from "@react-three/drei";
+import { Line, OrbitControls, PerformanceMonitor, Sky } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as THREE from "three";
@@ -15,7 +15,7 @@ import type { Terrain } from "../../../sim/terrain";
 import { GRAPHICS, type GraphicsPreset } from "../../../state/settingsStore";
 import type { Ending, PlanPoint } from "../../../state/simStore";
 import { applyTwinMaterials } from "../../digital-twin/twinMaterials";
-import { blobTexture, cloudTexture, groundDetail, labelTexture, padTexture, plantTrees, terrainGeometry } from "./landscape";
+import { blobTexture, cloudTexture, groundDetail, labelTexture, padTexture, plantTrees, smokeTexture, terrainGeometry } from "./landscape";
 
 /*
   The world the virtual aircraft flies in.
@@ -56,6 +56,11 @@ interface Pose {
   throttle: number;
   armed: boolean;
   seq: number;
+  /** Velocity in world axes, m/s, as it was a moment ago: what a crash scatters debris with. */
+  vel: THREE.Vector3;
+  /** 0–1, set by an impact and decaying: how hard the camera is shaking. */
+  shake: number;
+  crashed: boolean;
 }
 
 const SUN = new THREE.Vector3(0.48, 0.6, 0.36).normalize();
@@ -93,7 +98,7 @@ function Ground({ terrain, shadows }: { terrain: Terrain; shadows: boolean }) {
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, terrain.waterLevel, 0]}>
         <planeGeometry args={[3200, 3200]} />
-        <meshStandardMaterial color="#2c5f78" roughness={0.12} metalness={0.55} transparent opacity={0.9} />
+        <meshStandardMaterial color="#2f5263" roughness={0.1} metalness={0.6} transparent opacity={0.92} />
       </mesh>
     </>
   );
@@ -117,11 +122,11 @@ function Trees({ terrain, shadows, max }: { terrain: Terrain; shadows: boolean; 
       if (t.kind === 0) {
         m.compose(new THREE.Vector3(t.x, t.y + t.h * 0.62, t.z), q, new THREE.Vector3(t.w, t.h * 0.78, t.w));
         conifer.current?.setMatrixAt(ci, m);
-        conifer.current?.setColorAt(ci++, c.setHSL(0.31 + t.tint * 0.05, 0.42, 0.17 + t.tint * 0.07));
+        conifer.current?.setColorAt(ci++, c.setHSL(0.3 + t.tint * 0.04, 0.26, 0.15 + t.tint * 0.06));
       } else {
         m.compose(new THREE.Vector3(t.x, t.y + t.h * 0.66, t.z), q, new THREE.Vector3(t.w * 1.25, t.h * 0.5, t.w * 1.25));
         broad.current?.setMatrixAt(bi, m);
-        broad.current?.setColorAt(bi++, c.setHSL(0.26 + t.tint * 0.07, 0.45, 0.24 + t.tint * 0.08));
+        broad.current?.setColorAt(bi++, c.setHSL(0.22 + t.tint * 0.07, 0.3, 0.21 + t.tint * 0.09));
       }
     });
     for (const [mesh, n] of [
@@ -141,7 +146,7 @@ function Trees({ terrain, shadows, max }: { terrain: Terrain; shadows: boolean; 
     <>
       <instancedMesh ref={trunk} args={[undefined, undefined, n]} castShadow={shadows}>
         <cylinderGeometry args={[0.7, 1, 1, 6]} />
-        <meshStandardMaterial color="#4a3a2a" roughness={1} />
+        <meshStandardMaterial color="#40352a" roughness={1} />
       </instancedMesh>
       <instancedMesh ref={conifer} args={[undefined, undefined, n]} castShadow={shadows}>
         <coneGeometry args={[0.5, 1, 7]} />
@@ -316,7 +321,7 @@ function HomeBase({ wind }: { wind: { speed: number; fromDeg: number } }) {
       <group position={[8.5, 0, 6]} rotation={[0, -0.5, 0]}>
         <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
           <boxGeometry args={[3.2, 2.3, 2.4]} />
-          <meshStandardMaterial color="#c9c2b2" roughness={0.85} />
+          <meshStandardMaterial color="#b9b3a4" roughness={0.9} />
         </mesh>
         <mesh position={[0, 2.42, 0]} castShadow>
           <boxGeometry args={[3.5, 0.14, 2.7]} />
@@ -456,6 +461,7 @@ function Model({ object, forward, up, scalePercent, airframe, env, spin }: Pick<
 function Flight(props: FlightWorldProps & { pose: MutableRefObject<Pose>; env: THREE.Texture | null; shadows: boolean }) {
   const { terrain, pose, view } = props;
   const craft = useRef<THREE.Group>(null);
+  const wreck = useRef<THREE.Group>(null);
   const blob = useRef<THREE.Mesh>(null);
   const drop = useRef<THREE.Mesh>(null);
   const beacon = useRef<THREE.Sprite>(null);
@@ -491,12 +497,25 @@ function Flight(props: FlightWorldProps & { pose: MutableRefObject<Pose>; env: T
     p.throttle = v.ap.throttleOut;
     p.armed = v.ap.armed;
     p.seq = v.ap.missionSeq;
+    p.crashed = s.crashed;
+    // Kept from before the impact: the physics zeroes velocity when it stops.
+    if (!s.crashed && !s.onGround) p.vel.set(s.vel[1], -s.vel[2], -s.vel[0]);
     spin.current = v.ap.armed ? 60 + 620 * v.ap.throttleOut : 0;
 
     if (craft.current) {
       craft.current.position.copy(p.pos);
       craft.current.quaternion.copy(p.quat);
       craft.current.visible = view !== "fpv";
+      if (wreck.current) {
+        // A wreck does not sit square on its feet: it settles tipped over, and
+        // in water it goes under.
+        const water = s.crashed && s.crashWhy === "water";
+        const k = 1 - Math.exp(-0.12);
+        const tip = s.crashed ? 1 : 0;
+        wreck.current.rotation.x += ((water ? 0.5 : 0.62) * tip - wreck.current.rotation.x) * k;
+        wreck.current.rotation.z += ((water ? -0.35 : 0.48) * tip - wreck.current.rotation.z) * k;
+        wreck.current.position.y += ((water ? -props.airframe.diagonalM * 0.9 : s.crashed ? props.airframe.diagonalM * 0.12 : 0) - wreck.current.position.y) * (water ? 0.012 : k);
+      }
     }
     const agl = Math.max(0, p.pos.y - p.ground);
     const far = camera.position.distanceTo(p.pos);
@@ -543,8 +562,8 @@ function Flight(props: FlightWorldProps & { pose: MutableRefObject<Pose>; env: T
     <>
       <directionalLight
         ref={sun}
-        intensity={2.6}
-        color="#fff1d6"
+        intensity={2.9}
+        color="#ffe8c2"
         castShadow={props.shadows}
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-22}
@@ -556,7 +575,9 @@ function Flight(props: FlightWorldProps & { pose: MutableRefObject<Pose>; env: T
         shadow-bias={-0.0004}
       />
       <group ref={craft}>
+        <group ref={wreck}>
         <Model object={props.object} forward={props.forward} up={props.up} scalePercent={props.scalePercent} airframe={props.airframe} env={props.env} spin={spin} />
+        </group>
       </group>
       <mesh ref={blob} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
         <planeGeometry args={[1, 1]} />
@@ -571,6 +592,237 @@ function Flight(props: FlightWorldProps & { pose: MutableRefObject<Pose>; env: T
       </sprite>
       <primitive object={trail.line} />
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ crash */
+
+interface Puff {
+  sprite: THREE.Sprite;
+  vel: THREE.Vector3;
+  born: number;
+  life: number;
+  from: number;
+  to: number;
+  peak: number;
+}
+
+/**
+ * What a crash looks like: a flash and a burst of dust, pieces thrown the way
+ * the aircraft was travelling, a scorch on the ground and smoke that the wind
+ * carries off. In water there is a splash and rings instead, and no smoke.
+ *
+ * It starts from the simulator's own crash flag and impact speed, so a gentle
+ * tip-over throws little and a fall from height throws a lot.
+ */
+function CrashEffects({ pose, terrain, wind, size }: { pose: MutableRefObject<Pose>; terrain: Terrain; wind: { speed: number; fromDeg: number }; size: number }) {
+  const DEBRIS = 22;
+  const group = useRef<THREE.Group>(null);
+  const debris = useRef<THREE.InstancedMesh>(null);
+  const scorch = useRef<THREE.Mesh>(null);
+  const flash = useRef<THREE.PointLight>(null);
+  const rings = useRef<(THREE.Mesh | null)[]>([]);
+  const tag = useRef<THREE.Group>(null);
+  const puffTex = useMemo(() => smokeTexture(), []);
+  const blobTex = useMemo(() => blobTexture(), []);
+  const st = useRef({ active: false, water: false, t: 0, at: new THREE.Vector3(), energy: 0, nextSmoke: 0, puffs: [] as Puff[] });
+  const bits = useMemo(() => Array.from({ length: DEBRIS }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), s: 1, rest: false })), []);
+  const tmp = useMemo(() => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(), w: new THREE.Vector3(), c: new THREE.Color() }), []);
+
+  const puff = (pos: THREE.Vector3, vel: THREE.Vector3, color: string, life: number, from: number, to: number, peak: number, now: number) => {
+    const g = group.current;
+    if (!g) return;
+    const s = st.current;
+    // Reuse the oldest once there are plenty.
+    let p = s.puffs.length >= 70 ? s.puffs.shift()! : null;
+    if (!p) {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true, depthWrite: false, opacity: 0 }));
+      g.add(sprite);
+      p = { sprite, vel: new THREE.Vector3(), born: 0, life: 1, from: 1, to: 1, peak: 1 };
+    }
+    p.sprite.position.copy(pos);
+    (p.sprite.material as THREE.SpriteMaterial).color.set(color);
+    p.sprite.material.rotation = Math.random() * 6.28;
+    p.vel.copy(vel);
+    Object.assign(p, { born: now, life, from, to, peak });
+    s.puffs.push(p);
+  };
+
+  useFrame(({ clock }, dtRaw) => {
+    const dt = Math.min(dtRaw, 0.05);
+    const now = clock.elapsedTime;
+    const s = st.current;
+    const p = pose.current;
+    const v = linkManager.sim;
+
+    // The moment of impact.
+    if (p.crashed && !s.active && v) {
+      const ph = v.phys.s;
+      s.active = true;
+      s.water = ph.crashWhy === "water";
+      s.t = now;
+      s.at.copy(p.pos).setY(terrain.surface(ph.pos[0], ph.pos[1]));
+      const speed = Math.hypot(p.vel.x, p.vel.y, p.vel.z);
+      s.energy = Math.min(1, 0.25 + speed / 14);
+      s.nextSmoke = now;
+      p.shake = s.water ? 0.25 : 0.35 + 0.65 * s.energy;
+      const k = size / 0.7;
+      for (const b of bits) {
+        b.rest = false;
+        b.p.copy(s.at).add(tmp.w.set((Math.random() - 0.5) * size, 0.1 + Math.random() * size * 0.5, (Math.random() - 0.5) * size));
+        // Thrown along the way it was going, spread out, and bounced up.
+        b.v.set(p.vel.x * (0.2 + Math.random() * 0.5), Math.abs(p.vel.y) * (0.15 + Math.random() * 0.45) + 1 + Math.random() * 3 * s.energy, p.vel.z * (0.2 + Math.random() * 0.5));
+        b.v.x += (Math.random() - 0.5) * 6 * s.energy;
+        b.v.z += (Math.random() - 0.5) * 6 * s.energy;
+        b.w.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18);
+        b.s = k * (0.018 + Math.random() * 0.045);
+      }
+      const burst = s.water ? 20 : 16;
+      for (let i = 0; i < burst; i++) {
+        const a = (i / burst) * 6.28 + Math.random() * 0.4;
+        const out = (s.water ? 1.6 : 2.6) * (0.5 + Math.random()) * (0.5 + s.energy);
+        puff(
+          tmp.w.copy(s.at).setY(s.at.y + 0.2),
+          new THREE.Vector3(Math.cos(a) * out, s.water ? 3.5 + Math.random() * 4 * s.energy : 0.6 + Math.random() * 1.6, Math.sin(a) * out),
+          s.water ? "#f2f7f9" : i % 3 ? "#cdbf9c" : "#a3977b",
+          s.water ? 1.1 + Math.random() * 0.5 : 1.8 + Math.random() * 1.4,
+          size * 1.2,
+          size * (s.water ? 3 : 7) * (0.6 + s.energy),
+          s.water ? 0.95 : 0.85,
+          now,
+        );
+      }
+    }
+    // Put back at home: clear everything away.
+    if (!p.crashed && s.active) {
+      s.active = false;
+      for (const q of s.puffs) q.sprite.material.opacity = 0;
+    }
+    const age = now - s.t;
+    const on = s.active;
+    windVector(wind, tmp.w);
+
+    // Smoke, for a while, thinning out.
+    if (on && !s.water && age < 40 && now >= s.nextSmoke) {
+      s.nextSmoke = now + 0.16 + age * 0.012;
+      puff(
+        new THREE.Vector3(s.at.x + (Math.random() - 0.5) * size * 0.5, s.at.y + size * 0.3, s.at.z + (Math.random() - 0.5) * size * 0.5),
+        new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.4 + Math.random() * 0.9, (Math.random() - 0.5) * 0.4),
+        age < 8 ? "#23211f" : "#4d4a45",
+        4.5 + Math.random() * 2.5,
+        size * 1.3,
+        size * 10,
+        0.9 * Math.max(0.3, 1 - age / 40),
+        now,
+      );
+    }
+    for (const q of s.puffs) {
+      const a = (now - q.born) / q.life;
+      const m = q.sprite.material as THREE.SpriteMaterial;
+      if (a >= 1 || !on) {
+        m.opacity = 0;
+        continue;
+      }
+      // The wind takes smoke and spray with it; dust slows and settles.
+      q.sprite.position.addScaledVector(q.vel, dt).addScaledVector(tmp.w, dt * 0.55);
+      q.vel.multiplyScalar(Math.exp(-dt * 1.4));
+      if (s.water) q.vel.y -= 9.8 * dt * 0.8;
+      const sc = q.from + (q.to - q.from) * (1 - (1 - a) * (1 - a));
+      q.sprite.scale.set(sc, sc, 1);
+      m.opacity = q.peak * Math.min(1, a * 8) * (1 - a) ** 1.4;
+    }
+
+    // Pieces: thrown, falling, bouncing once or twice, then lying where they stop.
+    const mesh = debris.current;
+    if (mesh) {
+      mesh.visible = on && !s.water;
+      if (mesh.visible) {
+        bits.forEach((b, i) => {
+          if (!b.rest) {
+            b.v.y -= 9.81 * dt;
+            b.p.addScaledVector(b.v, dt);
+            b.r.x += b.w.x * dt;
+            b.r.y += b.w.y * dt;
+            b.r.z += b.w.z * dt;
+            const floor = terrain.surface(-b.p.z, b.p.x) + b.s * 0.4;
+            if (b.p.y < floor) {
+              b.p.y = floor;
+              b.v.y = -b.v.y * 0.32;
+              b.v.x *= 0.55;
+              b.v.z *= 0.55;
+              b.w.multiplyScalar(0.5);
+              if (Math.abs(b.v.y) < 0.6 && Math.hypot(b.v.x, b.v.z) < 0.4) b.rest = true;
+            }
+          }
+          tmp.m.compose(b.p, tmp.q.setFromEuler(b.r), tmp.s.set(b.s * 2.4, b.s * 0.35, b.s));
+          mesh.setMatrixAt(i, tmp.m);
+          // Mostly carbon, with a few pieces of shell and one of the gold trim.
+          mesh.setColorAt(i, tmp.c.set(i % 7 === 0 ? "#d8a648" : i % 3 === 0 ? "#d9cfba" : "#1d1a17"));
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }
+    }
+
+    if (scorch.current) {
+      scorch.current.visible = on && !s.water;
+      scorch.current.position.set(s.at.x, s.at.y + 0.05, s.at.z);
+      scorch.current.scale.setScalar(size * (1.8 + 1.8 * s.energy));
+      (scorch.current.material as THREE.MeshBasicMaterial).opacity = Math.min(0.42, age * 3);
+    }
+    if (flash.current) {
+      flash.current.position.set(s.at.x, s.at.y + 0.5, s.at.z);
+      flash.current.intensity = on && !s.water ? Math.max(0, 1 - age / 0.22) * 260 * s.energy : 0;
+    }
+    rings.current.forEach((r, i) => {
+      if (!r) return;
+      const a = (age - i * 0.45) / 3.2;
+      r.visible = on && s.water && a > 0 && a < 1;
+      r.position.set(s.at.x, s.at.y + 0.03, s.at.z);
+      r.scale.setScalar(size * (1 + a * 14));
+      (r.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - a);
+    });
+    if (tag.current) {
+      tag.current.visible = on;
+      tag.current.position.set(s.at.x, s.at.y + size * 3 + 1.2, s.at.z);
+    }
+  });
+
+  return (
+    <group ref={group}>
+      <instancedMesh ref={debris} args={[undefined, undefined, DEBRIS]} frustumCulled={false} castShadow visible={false}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial roughness={0.6} metalness={0.3} />
+      </instancedMesh>
+      <mesh ref={scorch} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={1}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial map={blobTex} color="#2a2119" transparent depthWrite={false} polygonOffset polygonOffsetFactor={-3} />
+      </mesh>
+      <pointLight ref={flash} color="#ffb060" intensity={0} distance={40} decay={2} />
+      {[0, 1, 2].map((i) => (
+        <mesh key={i} ref={(m) => void (rings.current[i] = m)} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+          <ringGeometry args={[0.46, 0.5, 48]} />
+          <meshBasicMaterial color="#e8f1f5" transparent depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      <group ref={tag} visible={false}>
+        <CrashTag />
+      </group>
+    </group>
+  );
+}
+
+function CrashTag() {
+  const l = useMemo(() => labelTexture("CRASH", "#ffffff", "#c8452d"), []);
+  const ref = useRef<THREE.Sprite>(null);
+  useFrame(({ camera }) => {
+    const k = lensScale(camera);
+    ref.current?.scale.set(0.042 * l.aspect * k, 0.042 * k, 1);
+  });
+  return (
+    <sprite ref={ref} renderOrder={12}>
+      <spriteMaterial map={l.tex} sizeAttenuation={false} depthTest={false} transparent />
+    </sprite>
   );
 }
 
@@ -640,6 +892,14 @@ function CameraRig({ view, pose, terrain, size }: { view: WorldView; pose: Mutab
         c.update();
       }
     }
+    // An impact shakes the camera for a moment.
+    if (p.shake > 0.01 && view !== "fpv") {
+      const a = p.shake * Math.min(1.2, 0.25 + camera.position.distanceTo(p.pos) * 0.012);
+      camera.position.x += (Math.random() - 0.5) * a;
+      camera.position.y += (Math.random() - 0.5) * a;
+      camera.position.z += (Math.random() - 0.5) * a;
+    }
+    p.shake *= Math.exp(-Math.min(dt, 0.1) * 5);
     // Never under the ground.
     if (view !== "fpv") {
       const floor = terrain.surface(-camera.position.z, camera.position.x) + 0.4;
@@ -656,7 +916,7 @@ function Atmosphere({ onEnv }: { onEnv: (t: THREE.Texture) => void }) {
   const { gl, scene } = useThree();
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 0.62;
+    gl.toneMappingExposure = 0.66;
     const pmrem = new THREE.PMREMGenerator(gl);
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = env;
@@ -673,17 +933,22 @@ function Atmosphere({ onEnv }: { onEnv: (t: THREE.Texture) => void }) {
 
 export default function FlightWorld(props: FlightWorldProps) {
   const g = GRAPHICS[props.graphics];
-  const pose = useRef<Pose>({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), yaw: 0, ground: 0, throttle: 0, armed: false, seq: 0 });
+  const pose = useRef<Pose>({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), yaw: 0, ground: 0, throttle: 0, armed: false, seq: 0, vel: new THREE.Vector3(), shake: 0, crashed: false });
   const [env, setEnv] = useState<THREE.Texture | null>(null);
   const onEnv = useCallback((t: THREE.Texture) => setEnv(t), []);
   const size = props.airframe.diagonalM + props.airframe.propDiaM;
   const trees = props.graphics === "low" ? 1500 : props.graphics === "medium" ? 3500 : 7000;
+  // If the computer cannot keep up, give up sharpness before smoothness: a
+  // slow 3D view makes the whole app, and the simulation behind it, sluggish.
+  const [dpr, setDpr] = useState(g.dpr[1]);
   return (
-    <Canvas shadows={g.shadows} dpr={g.dpr} camera={{ fov: 55, near: 0.06, far: 40000, position: [4, 3, 6] }} gl={{ logarithmicDepthBuffer: true, antialias: true }}>
-      <Sky distance={300000} sunPosition={SUN} turbidity={2.6} rayleigh={0.85} mieCoefficient={0.004} mieDirectionalG={0.8} />
-      <fog attach="fog" args={["#b7cbdd", 500, 10500]} />
+    <Canvas shadows={g.shadows} dpr={dpr} camera={{ fov: 55, near: 0.06, far: 40000, position: [4, 3, 6] }} gl={{ logarithmicDepthBuffer: true, antialias: true }}>
+      <PerformanceMonitor bounds={() => [28, 55]} onChange={({ factor }) => setDpr(Math.round((0.5 + (g.dpr[1] - 0.5) * factor) * 20) / 20)} />
+      <Sky distance={300000} sunPosition={SUN} turbidity={3.2} rayleigh={1.05} mieCoefficient={0.005} mieDirectionalG={0.82} />
+      {/* Haze the colour of the sky at the horizon: distance fades to it, as it does outdoors. */}
+      <fog attach="fog" args={["#c2cfd8", 260, 8200]} />
       <Atmosphere onEnv={onEnv} />
-      <hemisphereLight args={["#d5e6ff", "#6a7446", 0.85]} />
+      <hemisphereLight args={["#cfdcec", "#6b6a4a", 0.8]} />
       <Ground terrain={props.terrain} shadows={g.shadows} />
       <Trees terrain={props.terrain} shadows={g.shadows} max={trees} />
       <Clouds wind={props.wind} />
@@ -691,6 +956,7 @@ export default function FlightWorld(props: FlightWorldProps) {
       <Route terrain={props.terrain} route={props.route} takeoffAlt={props.takeoffAlt} ending={props.ending} pose={pose} fenceRadius={props.fenceRadius} />
       <WindStreaks wind={props.wind} pose={pose} />
       <Flight {...props} pose={pose} env={env} shadows={g.shadows} />
+      <CrashEffects pose={pose} terrain={props.terrain} wind={props.wind} size={size} />
       <CameraRig view={props.view} pose={pose} terrain={props.terrain} size={size} />
     </Canvas>
   );

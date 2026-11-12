@@ -106,11 +106,19 @@ export class Physics {
   private gustN = 0;
   private gustE = 0;
   private gustD = 0;
+  /**
+   * No four motors are identical. A percent or two of difference is what the
+   * autopilot's integrators spend their time cancelling, and it is why an
+   * aircraft with its gains set to zero does not hover: it rolls over.
+   */
+  private trim: [number, number, number, number];
 
   constructor(af: Airframe, opts: { soc?: number; yawDeg?: number; seed?: number } = {}) {
     this.af = af;
     this.d = derive(af);
     this.rand = mulberry32(opts.seed ?? 1);
+    const t = mulberry32((opts.seed ?? 1) + 101);
+    this.trim = [0, 0, 0, 0].map(() => 1 + (t() - 0.5) * 0.03) as [number, number, number, number];
     const soc = opts.soc ?? 1;
     this.s = {
       t: 0,
@@ -164,7 +172,7 @@ export class Physics {
     let total = 0;
     let power = 0;
     for (let i = 0; i < 4; i++) {
-      const want = Math.max(0, Math.min(1, cmd[i])) * af.motorMaxThrustN * vf * this.faults.motor[i];
+      const want = Math.max(0, Math.min(1, cmd[i])) * af.motorMaxThrustN * vf * this.faults.motor[i] * this.trim[i];
       s.thrust[i] += (want - s.thrust[i]) * Math.min(1, dt / d.motorTauS);
       total += s.thrust[i];
       // Momentum-theory induced power for one disc, over a 50% overall efficiency.
@@ -204,7 +212,7 @@ export class Physics {
     const va: Vec3 = [s.vel[0] - wind[0], s.vel[1] - wind[1], s.vel[2] - wind[2]];
     const speed = Math.hypot(va[0], va[1], va[2]);
     const kq = 0.5 * RHO * d.cdA * speed;
-    const kl = 0.25 * af.massKg;
+    const kl = 0.1 * af.massKg;
     const acc: Vec3 = [
       (f[0] - (kq + kl) * va[0]) / af.massKg,
       (f[1] - (kq + kl) * va[1]) / af.massKg,

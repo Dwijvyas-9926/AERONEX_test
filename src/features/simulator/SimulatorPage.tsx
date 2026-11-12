@@ -86,7 +86,7 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
   // Hover power from momentum theory, as the physics computes it.
   const hoverW = (4 * ((af.massKg * G) / 4) ** 1.5) / Math.sqrt(2 * 1.225 * (d.discArea / 4)) / 0.5;
   const hoverMin = ((af.capacityMah / 1000) * af.cells * 3.7 * 0.8) / hoverW * 60;
-  const flyable = d.thrustToWeight > 1.3;
+  const flyable = d.thrustToWeight >= 1.5;
 
   const start = async () => {
     // Weight, thrust and battery are what the aircraft is built from, so a
@@ -180,12 +180,33 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
               <dd>{hoverMin.toFixed(0)}<small>min</small></dd>
             </div>
           </dl>
-          {!flyable && (
+          {d.thrustToWeight < 1.05 ? (
             <div className="callout danger" style={{ margin: "0 var(--s5) var(--s5)" }}>
               <TriangleAlert />
-              <span>These motors cannot lift this weight with anything to spare. The simulator will fly it, and it will not leave the ground.</span>
+              <span>
+                The four motors make {((4 * af.motorMaxThrustN) / G).toFixed(1)} kg of thrust and the aircraft weighs {af.massKg} kg. It cannot leave the
+                ground. Lighten it or fit bigger motors.
+              </span>
             </div>
-          )}
+          ) : d.thrustToWeight < 1.5 ? (
+            <div className="callout warn" style={{ margin: "0 var(--s5) var(--s5)" }}>
+              <TriangleAlert />
+              <span>
+                Thrust to weight of {d.thrustToWeight.toFixed(2)} : 1 is marginal. It may lift, but it will sink when it leans to move and has nothing
+                in hand for wind. Aim for 2 : 1 or more.
+              </span>
+            </div>
+          ) : d.thrustToWeight > 12 ? (
+            <div className="callout warn" style={{ margin: "0 var(--s5) var(--s5)" }}>
+              <TriangleAlert />
+              <span>Thrust to weight of {d.thrustToWeight.toFixed(0)} : 1 is far beyond any real aircraft. Check the weight and the thrust of one motor.</span>
+            </div>
+          ) : hoverMin < 3 ? (
+            <div className="callout warn" style={{ margin: "0 var(--s5) var(--s5)" }}>
+              <TriangleAlert />
+              <span>This battery gives under three minutes in the air. Check the capacity.</span>
+            </div>
+          ) : null}
         </section>
 
         <section className="panel">

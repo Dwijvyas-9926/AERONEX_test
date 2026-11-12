@@ -64,7 +64,8 @@ export function derive(af: Airframe): Derived {
     kYaw: 0.06 * af.propDiaM,
     // Bigger propellers have more inertia and spin up more slowly.
     motorTauS: Math.min(0.12, Math.max(0.025, 0.25 * af.propDiaM)),
-    cdA: 0.22 * af.diagonalM ** 2 + 0.004,
+    // A 450 mm quad leans about 12° to hold 10 m/s, which this reproduces.
+    cdA: 0.12 * af.diagonalM ** 2 + 0.003,
     discArea: 4 * Math.PI * (af.propDiaM / 2) ** 2,
     rPack: af.cells * (0.018 / capAh) + 0.004,
     hoverThrottle: (af.massKg * G) / (4 * af.motorMaxThrustN),
