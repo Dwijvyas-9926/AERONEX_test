@@ -137,14 +137,15 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
       const page = pageSizeById(pageSizeId);
       const plan = planPrint(d, page);
       const bytes = toPrintPDF(d, plan, vehicleName);
-      download(`${stem}-check-sheet.pdf`, new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      download(`${stem}-part-drawings.pdf`, new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      const parts = new Set(plan.pages.map((pg) => pg.profile.id)).size;
       notify(
         "success",
-        `${stem}-check-sheet.pdf saved`,
-        `${plan.tiles.length} ${page.name} page${plan.tiles.length > 1 ? "s" : ""} at 1:1. Print at 100%, check the ruler, then lay your parts on it.`,
+        `${stem}-part-drawings.pdf saved`,
+        `${parts} part${parts > 1 ? "s" : ""} across ${plan.pages.length} ${page.name} page${plan.pages.length > 1 ? "s" : ""} at 1:1. Print at 100%, check the ruler, then lay your parts on it.`,
       );
     } catch (err) {
-      notify("error", "Export failed", err instanceof Error ? err.message : "The check sheet could not be built.");
+      notify("error", "Export failed", err instanceof Error ? err.message : "The part drawings could not be built.");
     } finally {
       setBusy(null);
     }
@@ -238,10 +239,11 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
         <div className="fs-xcheck">
           <button className="fs-xcard wide" onClick={savePrint} disabled={busy !== null}>
             <Printer />
-            <b>Print &amp; check sheet — PDF</b>
+            <b>Part drawings — PDF</b>
             <small>
-              The frame at 1:1 on paper. Lay your real motors, stack and battery on it and find the mistakes before you
-              pay for a cut — the cheapest check there is. Print at 100%, not "fit to page".
+              Every part at 1:1 on its own page, dimensioned. Lay your real motors, stack and battery on the drawings
+              and find the mistakes before you pay for a cut — the cheapest check there is. Print at 100%, not "fit to
+              page".
             </small>
             <Download className="fs-xcard-go" />
           </button>
@@ -252,7 +254,10 @@ export function ExportPanel({ design: d, findings }: { design: FrameDesign; find
                 <option key={p.id} value={p.id}>{p.name} — {p.widthMm} × {p.heightMm} mm</option>
               ))}
             </select>
-            <small>{printPlan.tiles.length} page{printPlan.tiles.length === 1 ? "" : "s"} at 1:1 in one PDF.</small>
+            <small>
+              {new Set(printPlan.pages.map((pg) => pg.profile.id)).size} parts on{" "}
+              {printPlan.pages.length} page{printPlan.pages.length === 1 ? "" : "s"} at 1:1, in one PDF.
+            </small>
           </label>
         </div>
 

@@ -817,18 +817,11 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
   /*
     A camera lengthens the frame, which is not a side effect — it is why
     frames built around a camera are longer than racing frames of the same
-    wheelbase. Its side plates stand in slots at the front, and those slots
-    have to sit entirely forward of the stack's bolts and still leave a rim
-    of plate ahead of them. On an 84.7 mm plate with a 30.5 mm stack there is
-    simply not enough length for a micro mount, so the plate grows to make
-    room rather than the mount being quietly cut through the stack bolts.
+    wheelbase. The mount itself stands on the clamp plate, so that is the
+    plate whose length `cameraDeckHalfL` budgets; the bottom plate has to be
+    at least as long again, because the clamp plate must not overhang it.
   */
-  const cameraHalfL = camera.widthMm > 0
-    ? stackOpeningSize(spec) / 2
-      + MIN_SLOT_CLEARANCE
-      + cameraFootprintL(camera) + 2 * CAMERA_CLEARANCE_MM
-      + 2
-    : 0;
+  const cameraHalfL = camera.widthMm > 0 ? cameraDeckHalfL(spec, camera) + 2 : 0;
   const bodyLmm = round(2 * Math.max(rootHalfL + edgeMargin, stackSpan / 2 + 12, spec.battery.l * 0.325, wheelbaseMm * 0.17, cameraHalfL, 28));
 
   /*
@@ -924,18 +917,35 @@ export function designFrame(rawSpec: FrameSpec): FrameDesign {
   const plates: PlateStock = { bottomMm: bottomPlateMm, topMm: topPlateMm, wallMm };
   /*
     The camera mount is settled once, before the mass loop. Nothing it
-    depends on — the spec, the plate thickness, the frame's length, the
-    plate's bolt pattern — changes while the arm section converges, and its
-    placement search is the most expensive thing in the build.
+    depends on — the spec, the plate thickness, the clamp plate's size and
+    bolt pattern — changes while the arm section converges, and its placement
+    search is the most expensive thing in the build.
+
+    It is fitted to the clamp plate, not the bottom plate. The side plates
+    stand 35 mm tall for a micro camera, which is five times the gap between
+    the plates, so standing them on the bottom plate ran them straight up
+    through the clamp plate — visible in the solid view as the mount passing
+    through the deck and brushing an arm root. Real frames bolt the camera
+    cage to the middle plate and let the camera sit above it, which is what
+    this does: nothing the frame carries is above that plate, so the mount
+    cannot foul anything.
   */
-  const mount = cameraMount(camera, plates.bottomMm, bodyLmm, bottomPlateHoles(spec, plateGeom));
-  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount);
+  const deck = topPlateGeom(spec, plateGeom, camera, bodyLmm);
+  const mount = cameraMount(
+    camera,
+    plates.topMm,
+    deck.l,
+    deck.holes,
+    stackOpening(spec, deck.w, deck.l, deck.holes),
+    deck.outline,
+  );
+  let profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount, deck);
   let frameG = frameMass(profiles, material, solved.section);
   for (let i = 0; i < 5; i++) {
     auwG = fixedMass + frameG;
     solved = solveSection(auwG);
     suggested = autoArm ? solved : solveSection(auwG, true);
-    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount);
+    profiles = buildProfiles(spec, motor, solved.section, bodyWmm, bodyLmm, plateGeom, plates, mount, deck);
     const next = frameMass(profiles, material, solved.section);
     if (Math.abs(next - frameG) < 0.5) { frameG = next; break; }
     frameG = next;
@@ -1118,6 +1128,41 @@ export function armRootHoles(g: PlateGeom): Hole[] {
   return holes;
 }
 
+/** The clamp plate's size, outline and bolts. */
+export interface DeckGeom {
+  w: number;
+  l: number;
+  holes: Hole[];
+  outline: Pt[];
+}
+
+/**
+ * Size the clamp plate.
+ *
+ * Hoisted out of the part builder because the camera mount has to be fitted
+ * against this plate — it is what the side plates stand on — and the mount is
+ * settled once, before the arm section converges. Derived in two places they
+ * drift, and the symptom is a mount whose feet were fitted to one plate and
+ * cut into another.
+ *
+ * The plate is the other half of the arm clamp, so it has to reach every arm
+ * root bolt with edge distance to spare, and long enough to carry the camera
+ * mount if there is one. `maxL` holds it inside the bottom plate so it never
+ * overhangs.
+ */
+export function topPlateGeom(spec: FrameSpec, g: PlateGeom, camera: CameraSpec, maxL: number): DeckGeom {
+  const holes = armRootHoles(g);
+  const reach = (axis: 0 | 1) => Math.max(...holes.map((h) => Math.abs(h.c[axis])));
+  const seedW = 2 * (reach(0) + EDGE_DISTANCE_FACTOR * g.rootBolt);
+  const seedL = Math.min(
+    maxL,
+    Math.max(2 * (reach(1) + EDGE_DISTANCE_FACTOR * g.rootBolt), 2 * cameraDeckHalfL(spec, camera)),
+  );
+  const fitted = fitRoundedPlate(seedW, seedL, 6, holes);
+  const l = Math.min(fitted.l, maxL);
+  return { w: fitted.w, l, holes, outline: roundedRect(fitted.w, l, 6) };
+}
+
 /**
  * Standoff positions for a unibody frame, on the bisectors between arms.
  *
@@ -1228,17 +1273,6 @@ const MIN_SLOT_CLEARANCE = 1.6;
  * proportion of something that is itself still being sized.
  */
 const CAMERA_CLEARANCE_MM = 0.8;
-
-/** Grow a closed slot outward by `by` millimetres about its own centre. */
-function growSlot(poly: Pt[], by: number): Pt[] {
-  const cx = poly.reduce((a, p) => a + p[0], 0) / poly.length;
-  const cy = poly.reduce((a, p) => a + p[1], 0) / poly.length;
-  const halfX = Math.max(...poly.map((p) => Math.abs(p[0] - cx)));
-  const halfY = Math.max(...poly.map((p) => Math.abs(p[1] - cy)));
-  const sx = halfX > 0 ? (halfX + by) / halfX : 1;
-  const sy = halfY > 0 ? (halfY + by) / halfY : 1;
-  return poly.map(([x, y]) => [cx + (x - cx) * sx, cy + (y - cy) * sy] as Pt);
-}
 
 /* ------------------------------------------------------- lightening holes */
 
@@ -1519,6 +1553,14 @@ export interface CameraMount {
  * room for it. Derived twice, they drift, and the symptom is a mount that
  * the plate was grown for but which still lands on the stack bolts.
  */
+/**
+ * How much wider than the tab a foot slot is cut, mm.
+ *
+ * A sliding fit, not a press fit: the plates are cut to a tolerance and a
+ * tab that needs persuading into its slot is a tab that cracks a laminate.
+ */
+const SLOT_OVERSIZE = 0.3;
+
 function cameraDims(camera: CameraSpec, spread = TAB_SPREAD[0]) {
   const w = camera.widthMm + 10;
   /*
@@ -1526,12 +1568,19 @@ function cameraDims(camera: CameraSpec, spread = TAB_SPREAD[0]) {
     two slots keep a wall between them. Narrowing the spread alone brought
     them to 1.4 mm apart on a 3" — the generator was happy and the validator
     was not, which is the validator being right.
+
+    The wall is sized a little over the minimum rather than exactly on it.
+    Solved to land on 1.6 mm it came out at 1.5999999999999996, and the fit
+    check — which asks for 1.6 — then rejected its own arithmetic, walked
+    every remaining position and gave up, leaving the placement to an
+    unchecked fallback. A tenth of a millimetre of headroom costs nothing and
+    keeps the two sides of that comparison on speaking terms.
   */
-  const room = 2 * w * spread - MIN_SLOT_CLEARANCE - 0.3;
+  const room = 2 * w * spread - MIN_SLOT_CLEARANCE - SLOT_OVERSIZE - 0.1;
   const tabW = Math.min(Math.max(6, w * 0.3), room);
   // Half the distance from the outer edge of the forward tab slot to the
   // outer edge of the rear one.
-  const tabReach = w * spread + tabW / 2 + 0.15;
+  const tabReach = w * spread + tabW / 2 + SLOT_OVERSIZE / 2;
   return { w, tabW, tabReach, tabX: [-w * spread, w * spread], usable: tabW >= 5 };
 }
 
@@ -1548,12 +1597,56 @@ function cameraDims(camera: CameraSpec, spread = TAB_SPREAD[0]) {
 const TAB_SPREAD = [0.25, 0.18, 0.12];
 
 /** Fore-aft length of plate the mount's tab slots occupy, mm. */
-export function cameraFootprintL(camera: CameraSpec): number {
-  // The widest spread, so the frame's length budget is the conservative one.
-  return camera.widthMm > 0 ? 2 * cameraDims(camera).tabReach : 0;
+export function cameraFootprintL(camera: CameraSpec, spread = TAB_SPREAD[0]): number {
+  // The widest spread by default, so a frame's length budget is conservative.
+  return camera.widthMm > 0 ? 2 * cameraDims(camera, spread).tabReach : 0;
 }
 
-export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL: number, plateHoles: Hole[] = []): CameraMount | null {
+/** Plate left between a camera foot slot and the stack opening, mm. */
+const CAMERA_DECK_LIGAMENT = 3;
+/** Plate left between a camera foot slot and the deck's own edge, mm. */
+const CAMERA_DECK_EDGE = 2;
+
+/**
+ * Half-length of clamp plate a camera mount needs, mm.
+ *
+ * The mount stands on the clamp plate, so it is that plate — not the bottom
+ * plate — whose length has to be budgeted for it. The feet have to sit
+ * entirely forward of the stack opening and still leave a rim of plate ahead
+ * of them, and on a plate sized only from the arm root bolts there is no such
+ * band at all: an 78.6 mm clamp plate with a 30.5 mm stack has 18 mm of
+ * usable length between the opening and the nose, where a micro mount's feet
+ * want 19. So the plate grows to carry the mount, which is exactly why frames
+ * built around a camera carry a longer middle plate than racing frames of the
+ * same wheelbase.
+ *
+ * Budgeted at the middle foot spread rather than the widest: the widest is
+ * preferred and tried first, but growing every camera frame's clamp plate to
+ * guarantee it costs more plate than the extra rigidity is worth, and the
+ * placement search narrows the spread when it has to.
+ */
+export function cameraDeckHalfL(spec: FrameSpec, camera: CameraSpec): number {
+  if (camera.widthMm <= 0) return 0;
+  return stackOpeningSize(spec) / 2
+    + CAMERA_DECK_LIGAMENT
+    + cameraFootprintL(camera, TAB_SPREAD[1])
+    + CAMERA_DECK_EDGE;
+}
+
+/**
+ * The side plates, and the slots in the deck they stand in.
+ *
+ * `deck` is the plate the mount bolts to — the clamp plate, whose outline,
+ * bolts and stack opening the feet all have to miss.
+ */
+export function cameraMount(
+  camera: CameraSpec,
+  plateThicknessMm: number,
+  deckL: number,
+  deckHoles: Hole[] = [],
+  deckBusy: Pt[][] = [],
+  deckOutline: Pt[] | null = null,
+): CameraMount | null {
   if (camera.widthMm <= 0) return null;
 
   /*
@@ -1586,7 +1679,7 @@ export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL:
     for (const side of [-1, 1]) {
       for (const cx of dims.tabX) {
         out.push(
-          roundedRect(plateThicknessMm + 0.3, dims.tabW + 0.3, 0.4).map(
+          roundedRect(plateThicknessMm + SLOT_OVERSIZE, dims.tabW + SLOT_OVERSIZE, 0.4).map(
             ([x, yy]) => [x + (side * (gap + plateThicknessMm)) / 2, yy + y + cx] as Pt,
           ),
         );
@@ -1595,42 +1688,70 @@ export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL:
     return out;
   };
 
-  // Bounding-box rejection first, as everywhere else that searches: the walk
-  // below tries dozens of positions and almost every bolt is far from almost
-  // every foot.
-  const clears = (slots: Pt[][]) =>
+  /*
+    Every foot has to clear the deck's bolts, the deck's edge, whatever is
+    already cut in it — the stack opening above all — and the other three
+    feet. `clearsBy` tests all four symmetrically and bails on the first
+    thing too close.
+
+    It is not what the walk below leans on, though. `clearsBy` measures
+    containment first, against a thirty-odd point outline, and the thing that
+    actually rejects nearly every position tried is the stack opening — which
+    it only reaches last. So each candidate is boxed off against the openings
+    first, which for the axis-aligned feet and the centred opening they have
+    to stay forward of is the same answer for a fraction of the work.
+  */
+  const box = (poly: Pt[]) => {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const [x, y] of poly) {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    }
+    return [x0, y0, x1, y1] as const;
+  };
+  /** Do two boxes stand at least `need` apart? Exact for axis-aligned cuts. */
+  const apart = (b: readonly number[], q: readonly number[], need: number) =>
+    q[0] - b[2] >= need || b[0] - q[2] >= need || q[1] - b[3] >= need || b[1] - q[3] >= need;
+
+  const busyBoxes = deckBusy.map(box);
+  const half = deckL / 2 - MIN_SLOT_CLEARANCE;
+  const roughlyClear = (slots: Pt[][]) =>
     slots.every((slot) => {
-      let x0 = Infinity;
-      let y0 = Infinity;
-      let x1 = -Infinity;
-      let y1 = -Infinity;
-      for (const [x, y] of slot) {
-        x0 = Math.min(x0, x);
-        y0 = Math.min(y0, y);
-        x1 = Math.max(x1, x);
-        y1 = Math.max(y1, y);
-      }
-      return plateHoles.every((hole) => {
-        const r = hole.r + MIN_SLOT_CLEARANCE;
-        if (hole.c[0] + r < x0 || hole.c[0] - r > x1 || hole.c[1] + r < y0 || hole.c[1] - r > y1) return true;
-        if (pointInPolygon(hole.c, slot)) return false;
-        for (let i = 0, j = slot.length - 1; i < slot.length; j = i++) {
-          if (distanceToSegment(hole.c, slot[j], slot[i]) - hole.r < MIN_SLOT_CLEARANCE) return false;
-        }
-        return true;
-      });
+      const b = box(slot);
+      if (b[1] < -half || b[3] > half) return false;
+      return busyBoxes.every((q) => apart(b, q, MIN_SLOT_CLEARANCE));
     });
 
+  const boundary = deckOutline ?? roundedRect(deckL, deckL, 6);
+  const fits = (slots: Pt[][]) =>
+    roughlyClear(slots)
+    && slots.every((slot) => clearsBy(slot, boundary, deckHoles, deckBusy, MIN_SLOT_CLEARANCE));
+
   let dims = cameraDims(camera);
-  let frontY = bodyL / 2 - dims.tabReach - 2;
-  if (plateHoles.length > 0) {
+  let frontY = deckL / 2 - dims.tabReach - CAMERA_DECK_EDGE;
+  if (deckHoles.length > 0 || deckBusy.length > 0) {
     search: for (const spread of TAB_SPREAD) {
       const d = cameraDims(camera, spread);
       if (!d.usable) continue;
-      const front = bodyL / 2 - d.tabReach - 2;
+      /*
+        The four feet move together, so how far they stand from each other
+        never changes as the mount slides fore and aft. Settle it once for
+        the spread instead of re-asking it at every position along the walk —
+        and reject the spread outright when its own feet are too close, which
+        is the honest reading of a spread that cannot be cut.
+      */
+      const boxes = slotsFor(d, 0).map(box);
+      if (!boxes.every((b, i) => boxes.every((q, j) => i === j || apart(b, q, MIN_SLOT_CLEARANCE)))) continue;
+
+      const front = deckL / 2 - d.tabReach - CAMERA_DECK_EDGE;
       const floor = d.tabReach + CAMERA_CLEARANCE_MM + MIN_SLOT_CLEARANCE;
       for (let y = front; y >= floor; y -= 1) {
-        if (clears(slotsFor(d, y))) {
+        if (fits(slotsFor(d, y))) {
           dims = d;
           frontY = y;
           break search;
@@ -1693,7 +1814,7 @@ export function cameraMount(camera: CameraSpec, plateThicknessMm: number, bodyL:
 
 const deg2rad = (d: number) => (d * Math.PI) / 180;
 
-function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock, mount: CameraMount | null): Profile[] {
+function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult, bodyW: number, bodyL: number, g: PlateGeom, plates: PlateStock, mount: CameraMount | null, deck: DeckGeom): Profile[] {
   // Plate thicknesses are resolved by the caller from the published reference
   // (and scaled for a printed material's much lower modulus), not guessed here.
   const bottomT = plates.bottomMm;
@@ -1774,16 +1895,11 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   };
   const strapsOnTop = spec.batteryMount === "top";
   /*
-    Camera first, straps after. The side plates have to stand at the very
-    front; the straps can move inboard, and the lightening runs last of all
-    so it sees both and keeps away from them.
+    The camera's feet are in the clamp plate, not here, so the bottom plate's
+    strap slots have nothing at the nose to dodge any more and the front one
+    goes back to the edge where it belongs.
   */
-  // The front slot tucks in behind the camera; the rear one stays at the back.
-  const strapFrontY = mount ? Math.min(slotY, mount.rearYMm - slotW / 2 - 4) : slotY;
-  const slots: Pt[][] = [
-    ...(mount ? mount.footSlots : []),
-    ...(strapsOnTop ? [] : strapSlotPair(strapFrontY, slotY, bottomHoles, bottomOutline, mount ? mount.footSlots : [])),
-  ];
+  const slots: Pt[][] = strapsOnTop ? [] : strapSlotPair(slotY, slotY, bottomHoles, bottomOutline);
   const bottomBearings = g.motors.map((m) => Math.atan2(m[1], m[0]));
   const bottomSlots = spec.lightenPlates
     ? [
@@ -1812,44 +1928,38 @@ function buildProfiles(spec: FrameSpec, motor: MotorSpec, section: SectionResult
   /*
     The top plate is the other half of the clamp, so it has to reach every arm
     root bolt with edge distance to spare — it cannot just be a smaller
-    rectangle. Size it from the bolts it must cover, then trim to the bottom
-    plate so it never overhangs.
+    rectangle. It is sized by `topPlateGeom`, which the caller runs before the
+    mass loop because the camera mount is fitted against it.
 
     It does not carry the stack. The stack bolts to the bottom plate, and
     since it stands far taller than the gap between the plates, the top plate
     is opened up to let it through — the same thing a Mark4's middle plate
     does. Putting the stack's bolt pattern in both plates, as this once did,
     described a stack squashed into a 5 mm gap.
+
+    It does carry the camera: the side plates stand in slots cut here and the
+    camera sits above, clear of everything, which is how a real frame mounts a
+    camera cage.
   */
-  const rootHoles = armRootHoles(g);
-  const topHoles: Hole[] = [...rootHoles];
-  const seedW = 2 * (Math.max(...rootHoles.map((h) => Math.abs(h.c[0]))) + EDGE_DISTANCE_FACTOR * g.rootBolt);
-  const seedL = 2 * (Math.max(...rootHoles.map((h) => Math.abs(h.c[1]))) + EDGE_DISTANCE_FACTOR * g.rootBolt);
-  const fittedTop = fitRoundedPlate(seedW, seedL, 6, topHoles);
-  const topW = fittedTop.w;
-  const topL = fittedTop.l;
-  const topOutline = roundedRect(topW, topL, 6);
+  const topHoles = deck.holes;
+  const topW = deck.w;
+  const topL = deck.l;
+  const topOutline = deck.outline;
+  const opening = stackOpening(spec, topW, topL, topHoles);
+  const feet = mount ? mount.footSlots : [];
   /*
-    Clearance where the camera's side plates pass through.
-
-    The side plates stand on the bottom plate and reach well above the arm
-    clamp, and the clamp plate — sized from the arm root bolts — reaches far
-    enough forward to be in their way. In the solid view they went straight
-    through it. Real frames notch the deck where something passes through it,
-    so the clamp plate is notched here, using the same rectangles the bottom
-    plate is slotted with, opened up for a sliding fit rather than a tight one.
+    Straps last, and only after the camera. The side plates have to stand at
+    the very front; a strap slot can move inboard, and the lightening runs
+    last of all so it sees both and keeps away from them.
   */
-  const cameraClearance = mount
-    ? mount.footSlots
-        .map((s) => growSlot(s, CAMERA_CLEARANCE_MM))
-        .filter((s) => s.every((p) => pointInPolygon(p, topOutline)))
-    : [];
-
+  const topStrapFrontY = mount
+    ? Math.min(topL / 2 - 8, mount.rearYMm - slotW / 2 - 4)
+    : topL / 2 - 8;
   const topSlots = [
-    ...stackOpening(spec, topW, topL, topHoles),
-    ...cameraClearance,
+    ...opening,
+    ...feet,
     ...(strapsOnTop
-      ? strapSlotPair(topL / 2 - 8, topL / 2 - 8, topHoles, topOutline, [...stackOpening(spec, topW, topL, topHoles), ...cameraClearance])
+      ? strapSlotPair(topStrapFrontY, topL / 2 - 8, topHoles, topOutline, [...opening, ...feet])
       : []),
   ];
   const top: Profile = {

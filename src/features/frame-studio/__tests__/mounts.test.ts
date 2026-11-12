@@ -66,11 +66,65 @@ describe("the camera mount", () => {
     expect(cameraFootprintL(cameraById("none"))).toBe(0);
   });
 
-  it("adds two side plates, cut from plate stock", () => {
+  it("adds two side plates, cut from the plate they stand in", () => {
+    const d = designFrame(spec());
     const p = part(spec(), "camera-plate")!;
     expect(p.qty).toBe(2);
-    expect(p.thicknessMm).toBe(designFrame(spec()).stock.bottomPlateMm);
+    expect(p.thicknessMm).toBe(d.stock.topPlateMm);
     expect(polygonArea(p.outline)).toBeGreaterThan(0);
+  });
+
+  it("stands on the clamp plate, not the bottom plate", () => {
+    /*
+      The side plates are 35 mm tall for a micro camera and the gap between
+      the plates is about 7, so standing them on the bottom plate ran them
+      straight up through the clamp plate and past an arm root — which is what
+      the solid view showed. Mounting them on the clamp plate puts the whole
+      cage above everything the frame carries, which is also how a real frame
+      holds a camera.
+    */
+    for (const c of CAMERAS.filter((x) => x.widthMm > 0)) {
+      for (const propIn of [3, 5, 7, 10]) {
+        const s = spec({ cameraId: c.id, propIn, fixedDimMm: null });
+        const d = designFrame(s);
+        const where = `${c.id} ${propIn}"`;
+        const top = part(s, "top-plate")!;
+        const bottom = part(s, "bottom-plate")!;
+        const plate = part(s, "camera-plate")!;
+        const mount = d.cameraMount!;
+
+        // Four feet: two tabs on each of the two side plates.
+        // A foot slot is a thin strip straddling one side plate's mid-plane.
+        const feet = top.slots.slice(0, top.lightenedFrom).filter((slot) => {
+          const xs = slot.map((q) => q[0]);
+          const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+          const wide = Math.max(...xs) - Math.min(...xs);
+          return Math.abs(Math.abs(mid) - mount.spacingMm / 2) < 0.2
+            && Math.abs(wide - (plate.thicknessMm + 0.3)) < 0.01;
+        });
+        expect(feet.length, `${where} feet in the clamp plate`).toBe(4);
+        /*
+          And nothing in the bottom plate: fitting a camera now cuts the same
+          bottom plate a camera-less frame gets. Which also frees its front
+          strap slot to go back to the edge, where a strap round a battery
+          belongs — it used to be pushed inboard to dodge the mount, and on a
+          small frame that left two slots 24 mm apart on a 105 mm pack.
+        */
+        const bare = part(spec({ cameraId: "none", propIn, fixedDimMm: null }), "bottom-plate")!;
+        expect(bottom.lightenedFrom, `${where} bottom-plate cuts`).toBe(bare.lightenedFrom);
+
+        /*
+          The tabs reach a millimetre and a half past the far face of the
+          plate they drop into, so seating the body's underside on that
+          plate's top face — which is what the solid view does — leaves the
+          tabs in their slots rather than standing the cage proud of them.
+        */
+        const bodyBottom = -mount.heightMm / 2;
+        const tabBottom = Math.min(...plate.outline.map((q) => q[1]));
+        expect(bodyBottom - tabBottom, `${where} tab depth`)
+          .toBeCloseTo(plate.thicknessMm + 1.5, 6);
+      }
+    }
   });
 
   it("gives every camera size a pivot and tilt holes that do not overlap", () => {
@@ -104,16 +158,27 @@ describe("the camera mount", () => {
     expect(micro.bodyWmm).toBe(none.bodyWmm); // only the length needs to give
   });
 
-  it("keeps its tab slots clear of every bolt on the plate below", () => {
+  it("keeps its tab slots clear of every bolt and cut-out in the plate below", () => {
     for (const c of CAMERAS.filter((x) => x.widthMm > 0)) {
       for (const propIn of [3, 5, 7, 10]) {
-        const bottom = part(spec({ cameraId: c.id, propIn, fixedDimMm: null }), "bottom-plate")!;
-        for (const slot of bottom.slots) {
-          for (const h of bottom.holes) {
+        const top = part(spec({ cameraId: c.id, propIn, fixedDimMm: null }), "top-plate")!;
+        for (const slot of top.slots) {
+          for (const h of top.holes) {
             const gap = Math.min(...slot.map((p) => Math.hypot(p[0] - h.c[0], p[1] - h.c[1]))) - h.r;
             expect(gap, `${c.id} ${propIn}"`).toBeGreaterThan(1.4);
           }
         }
+        /*
+          And every cut in the plate against every other. This is the check
+          that caught the mount placed 0.3 mm from the stack opening: the fit
+          search had rejected its own arithmetic by a rounding hair, walked
+          every remaining position and fallen through to an unchecked
+          fallback. A sliver that thin is only a warning, so the suite's
+          no-errors sweep passed straight over it.
+        */
+        const d = designFrame(spec({ cameraId: c.id, propIn, fixedDimMm: null }));
+        const touching = validateDesign(d).filter((f) => /-slots-\d+-\d+$/.test(f.id));
+        expect(touching.map((f) => `${f.id} ${f.measured}`), `${c.id} ${propIn}"`).toEqual([]);
       }
     }
   });

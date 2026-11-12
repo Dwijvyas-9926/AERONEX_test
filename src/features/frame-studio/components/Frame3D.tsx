@@ -263,7 +263,14 @@ export function Frame3D({ design: d, exploded }: Props) {
             look={lookFor("camera-plate")}
             x={(side * d.cameraMount!.spacingMm) / 2}
             y={d.cameraMount!.centreYMm}
-            z={scene.baseT + d.cameraMount!.heightMm / 2 + gap}
+            /*
+              Standing on the clamp plate, not the bottom plate. The body's
+              midpoint sits half its height above that plate's top face, which
+              puts the tab bottoms exactly in the slots cut for them — and
+              puts the whole mount above everything the frame carries, so it
+              can no longer run through the deck or brush an arm root.
+            */
+            z={zTop + scene.topT + d.cameraMount!.heightMm / 2 + gap}
           />
         ))}
       </group>

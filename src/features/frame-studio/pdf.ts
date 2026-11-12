@@ -82,6 +82,21 @@ const WINANSI: Record<string, [number, number, number]> = {
   "…": [0x85, 1000, 1000],
 };
 
+/**
+ * Can WinAnsi carry this character at all?
+ *
+ * `textWidth` and `pdfString` both fall back for anything it cannot, and they
+ * fall back differently — one to the width of "?", the other to the glyph
+ * "?". So an unmappable character measures and lays out perfectly and then
+ * prints as a question mark, which is how "12 × \u2300 3.0 mm" reached a
+ * drawing as "12 x ? 3.0 mm". Anything the studio prints is checked against
+ * this instead of being assumed.
+ */
+export function encodable(ch: string): boolean {
+  const code = ch.codePointAt(0)!;
+  return (code >= 32 && code <= 126) || ch in WINANSI || (code >= 0xa0 && code <= 0xff);
+}
+
 /** Width of `text` in millimetres at `size`. */
 export function textWidth(text: string, size: number, bold = false): number {
   const w = widths(bold);
