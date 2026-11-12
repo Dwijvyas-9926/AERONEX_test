@@ -55,7 +55,7 @@ export interface PhysState {
   /** Vertical speed at the last touch-down, m/s. */
   lastImpact: number;
   /** Why a touch-down counted as a crash. */
-  crashWhy: "impact" | "tipped" | "sliding" | null;
+  crashWhy: "impact" | "tipped" | "sliding" | "water" | null;
   /** Sideways speed at the last touch-down, m/s. */
   lastSlide: number;
 }
@@ -98,6 +98,10 @@ export class Physics {
   env: Environment = { windSpeed: 0, windFromDeg: 0, gust: 0 };
   faults: Faults = { motor: [1, 1, 1, 1] };
   s: PhysState;
+  /** Height of the ground or water under a point, m above home. Flat unless set. */
+  ground: (n: number, e: number) => number = () => 0;
+  /** Is that point water? Coming down in it is the end of the flight. */
+  water: (n: number, e: number) => boolean = () => false;
   private rand: () => number;
   private gustN = 0;
   private gustE = 0;
@@ -213,7 +217,7 @@ export class Physics {
         s.vel = [0, 0, 0];
         s.acc = [0, 0, 0];
         s.w = [0, 0, 0];
-        s.pos[2] = 0;
+        s.pos[2] = -this.ground(s.pos[0], s.pos[1]);
         if (!s.crashed) s.q = quatFromYaw(euler(s.q).yaw);
         s.t += dt;
         return;
@@ -241,7 +245,8 @@ export class Physics {
     s.q = [nq[0] / n, nq[1] / n, nq[2] / n, nq[3] / n];
 
     // Ground contact.
-    if (s.pos[2] >= 0) {
+    const floor = -this.ground(s.pos[0], s.pos[1]);
+    if (s.pos[2] >= floor) {
       const e = euler(s.q);
       const tilt = Math.acos(Math.max(-1, Math.min(1, Math.cos(e.roll) * Math.cos(e.pitch))));
       const impact = s.vel[2];
@@ -249,11 +254,11 @@ export class Physics {
       s.lastImpact = impact;
       // Harder than a firm landing, tipped over, or skidding fast: a crash.
       if (!s.crashed) {
-        s.crashWhy = impact > 2.5 ? "impact" : tilt > 0.9 ? "tipped" : slide > 4 ? "sliding" : null;
+        s.crashWhy = this.water(s.pos[0], s.pos[1]) ? "water" : impact > 2.5 ? "impact" : tilt > 0.9 ? "tipped" : slide > 4 ? "sliding" : null;
         s.lastSlide = slide;
       }
       if (s.crashWhy) s.crashed = true;
-      s.pos[2] = 0;
+      s.pos[2] = floor;
       s.vel = [0, 0, 0];
       s.w = [0, 0, 0];
       s.onGround = true;

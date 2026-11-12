@@ -189,7 +189,9 @@ export const GUIDES: Record<string, Guide> = {
     steps: [
       "Describe the aircraft: weight, size, motor thrust and battery. Copy them from your Aircraft Profile or Frame Studio design if you have one.",
       "Press Start the virtual aircraft. The top bar shows Virtual aircraft while it runs.",
+      "Choose a landscape. The aircraft collides with its hills and water, so a route that is too low will show it.",
       "Take off, or fly the mission you planned. Speed time up to 10× for a long flight.",
+      "Watch in the 3D world: Chase, Orbit, Ground, Top and Onboard cameras. If you imported a model in Digital Twin, that is the aircraft you see.",
       "Make something go wrong: stop a motor, lose GPS or the link, add wind, and watch what the failsafe settings do.",
       "Change a setting in Parameters and try again. It takes effect at once.",
     ],

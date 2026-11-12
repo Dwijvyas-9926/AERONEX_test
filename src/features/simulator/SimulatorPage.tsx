@@ -1,5 +1,5 @@
 import { Pencil, SlidersHorizontal, BatteryWarning, CircleStop, Home as HomeIcon, Info, PlaneLanding, PlaneTakeoff, Play, Power, RotateCcw, Route, Satellite, TriangleAlert, Unplug, Wind } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { derive, G, PRESETS, type Airframe } from "../../sim/airframe";
 import { MODE_NAME } from "../../sim/autopilot";
@@ -15,6 +15,20 @@ import { clockTime } from "../../utils/format";
 import { fromFrameStudio, fromProfile } from "./airframeSources";
 import { FlightMap, type MapPoint } from "./FlightMap";
 import { ValleyDemo } from "./ValleyDemo";
+import { makeTerrain, TERRAIN_LABEL, type TerrainKind } from "../../sim/terrain";
+import { rehydrateModel, useModel } from "../../state/modelStore";
+import { useSettings } from "../../state/settingsStore";
+import type { WorldView } from "./world/FlightWorld";
+
+const FlightWorld = lazy(() => import("./world/FlightWorld"));
+const FLAT = makeTerrain("flat");
+const VIEWS: [WorldView, string, string][] = [
+  ["chase", "Chase", "Follow from behind"],
+  ["orbit", "Orbit", "Drag to look around the aircraft"],
+  ["ground", "Ground", "Watch from the ground station, as a pilot would"],
+  ["top", "Top", "Straight down, north up"],
+  ["fpv", "Onboard", "The view from the aircraft's nose"],
+];
 
 /** Run a command and say so if the aircraft refuses it. */
 export async function order(label: string, fn: () => Promise<unknown>) {
@@ -83,6 +97,7 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
       home: sim.home,
       soc: sim.soc,
       params: sim.useAircraftParams ? fromAircraft : {},
+      terrain: makeTerrain(sim.terrain),
     });
     onDone?.();
   };
@@ -182,6 +197,17 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
             <Num label="Home longitude" unit="°" value={sim.home.lon} step={0.0001} min={-180} max={180} onChange={(v) => sim.set("home", { ...sim.home, lon: v })} />
             <Num label="Home height above sea level" unit="m" value={sim.home.altMsl} min={-400} max={6000} onChange={(v) => sim.set("home", { ...sim.home, altMsl: v })} />
             <Num label="Battery at the start" unit="%" value={Math.round(sim.soc * 100)} min={5} max={100} step={5} onChange={(v) => sim.set("soc", v / 100)} />
+            <label className="field span2">
+              <span>Landscape</span>
+              <select className="select" value={sim.terrain} onChange={(e) => sim.set("terrain", e.target.value as TerrainKind)}>
+                {(Object.keys(TERRAIN_LABEL) as TerrainKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {TERRAIN_LABEL[k].name}
+                  </option>
+                ))}
+              </select>
+              <small>{TERRAIN_LABEL[sim.terrain].detail} The aircraft collides with this ground; trees are scenery only.</small>
+            </label>
             <label className="sim-check span2">
               <input type="checkbox" checked={sim.useAircraftParams && applied > 0} disabled={applied === 0} onChange={(e) => sim.set("useAircraftParams", e.target.checked)} />
               <span>
@@ -320,6 +346,18 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
   const [speed, setSpeed] = useState(1);
   const [takeoffAlt, setTakeoffAlt] = useState(15);
   const [gcsCut, setGcsCut] = useState(false);
+  const [show, setShow] = useState<"world" | "map">("world");
+  const [view, setView] = useState<WorldView>("chase");
+  const graphics = useSettings((s) => s.graphics);
+  const profile = useActiveProfile();
+  const object = useModel((s) => s.object);
+  const modelStatus = useModel((s) => s.status);
+  const imported = profile?.model.source === "imported" ? profile.model : null;
+  // The model set up in Digital Twin: load it if this page is the first to need it.
+  useEffect(() => {
+    if (profile && profile.model.source === "imported") void rehydrateModel(profile.id, profile.model);
+  }, [profile]);
+  const terrain = linkManager.sim?.terrain ?? FLAT;
   const ready = status === "connected";
 
   useEffect(() => {
@@ -477,7 +515,14 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
       <div className="stack">
         <section className="panel sim-map-panel">
           <div className="panel-head">
-            <h3>Where it is</h3>
+            <div className="segmented" role="group" aria-label="View">
+              <button aria-pressed={show === "world"} onClick={() => setShow("world")}>
+                3D world
+              </button>
+              <button aria-pressed={show === "map"} onClick={() => setShow("map")}>
+                Map
+              </button>
+            </div>
             <div className="segmented" role="group" aria-label="Simulation speed">
               {[1, 2, 5, 10].map((x) => (
                 <button
@@ -493,14 +538,57 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
               ))}
             </div>
           </div>
-          <FlightMap
-            route={route}
-            closeRoute={sim.ending === "rtl"}
-            track={track}
-            aircraft={{ n: snap.n, e: snap.e, yawDeg: snap.yawDeg }}
-            fenceRadius={snap.fence}
-            wind={{ speed: wind.windSpeed, fromDeg: wind.windFromDeg }}
-          />
+          {show === "world" ? (
+            <div className="world">
+              <Suspense fallback={<div className="world-loading">Building the landscape…</div>}>
+                <FlightWorld
+                  terrain={terrain}
+                  airframe={sim.airframe}
+                  route={sim.points}
+                  takeoffAlt={sim.takeoffAlt}
+                  ending={sim.ending}
+                  wind={{ speed: wind.windSpeed, fromDeg: wind.windFromDeg }}
+                  view={view}
+                  graphics={graphics}
+                  object={imported && modelStatus === "ready" ? object : null}
+                  forward={imported?.forward ?? "-z"}
+                  up={imported?.up ?? "+y"}
+                  scalePercent={imported?.scalePercent ?? 100}
+                  fenceRadius={snap.fence}
+                />
+              </Suspense>
+              <div className="world-hud top">
+                <span className={`world-chip ${snap.crashed ? "bad" : snap.armed ? "on" : ""}`}>{snap.crashed ? "Crashed" : (MODE_NAME[snap.mode] ?? "Mode")}</span>
+                <span className="world-chip">{imported && modelStatus === "ready" ? imported.filename : imported ? "Loading your model…" : "Standard quadcopter"}</span>
+              </div>
+              <div className="world-hud views" role="group" aria-label="Camera">
+                {VIEWS.map(([k, label, tip]) => (
+                  <button key={k} aria-pressed={view === k} title={tip} onClick={() => setView(k)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <dl className="world-hud strip">
+                <div><dt>Height</dt><dd>{snap.alt.toFixed(1)} m</dd></div>
+                <div><dt>Above ground</dt><dd>{Math.max(0, snap.alt - terrain.surface(snap.n, snap.e)).toFixed(1)} m</dd></div>
+                <div><dt>Speed</dt><dd>{snap.speed.toFixed(1)} m/s</dd></div>
+                <div><dt>Heading</dt><dd>{String(Math.round((snap.yawDeg + 360) % 360)).padStart(3, "0")}°</dd></div>
+                <div><dt>Home</dt><dd>{Math.hypot(snap.n, snap.e).toFixed(0)} m</dd></div>
+                <div><dt>Battery</dt><dd className={snap.soc < 0.2 ? "bad" : undefined}>{Math.max(0, Math.round(snap.soc * 100))}%</dd></div>
+                <div><dt>Wind</dt><dd>{wind.windSpeed} m/s</dd></div>
+              </dl>
+            </div>
+          ) : (
+            <FlightMap
+              route={route}
+              closeRoute={sim.ending === "rtl"}
+              track={track}
+              aircraft={{ n: snap.n, e: snap.e, yawDeg: snap.yawDeg }}
+              fenceRadius={snap.fence}
+              wind={{ speed: wind.windSpeed, fromDeg: wind.windFromDeg }}
+              terrain={terrain}
+            />
+          )}
         </section>
       </div>
 

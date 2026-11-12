@@ -845,8 +845,10 @@ export class Autopilot {
         const how =
           s.crashWhy === "sliding"
             ? `touched down moving sideways at ${s.lastSlide.toFixed(1)} m/s and went over`
-            : s.crashWhy === "tipped"
-              ? "came down on its side"
+            : s.crashWhy === "water"
+              ? "came down in the water"
+              : s.crashWhy === "tipped"
+                ? "came down on its side"
               : `hit the ground at ${s.lastImpact.toFixed(1)} m/s`;
         this.log("error", `Crash: ${how}`, "crash");
         this.disarm("Crash: disarming");

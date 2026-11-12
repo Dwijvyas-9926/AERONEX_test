@@ -11,6 +11,7 @@ import { notify } from "../../state/notifyStore";
 import { useParams } from "../../state/paramStore";
 import { planToMission, routeLength, useSim, type Ending, type PlanPoint } from "../../state/simStore";
 import { FlightMap } from "../simulator/FlightMap";
+import { makeTerrain } from "../../sim/terrain";
 import { modelledParams, order } from "../simulator/SimulatorPage";
 
 const M_PER_DEG = 111319.5;
@@ -78,6 +79,8 @@ export function MissionPlanningPage() {
   const [faultAt, setFaultAt] = useState<{ by: "waypoint" | "time"; value: number }>({ by: "waypoint", value: 1 });
   const [motor, setMotor] = useState({ n: 1, level: 0 });
 
+  // The landscape the aircraft will meet: the running simulator's, or the one chosen for it.
+  const terrain = useMemo(() => (linked && virtual && linkManager.sim?.terrain) || makeTerrain(sim.terrain), [linked, virtual, sim.terrain]);
   const mission = useMemo(() => planToMission(sim.home, sim.takeoffAlt, sim.points, sim.ending), [sim.home, sim.takeoffAlt, sim.points, sim.ending]);
   const length = routeLength(sim.points, sim.ending);
   const cruise = params.WPNAV_SPEED / 100;
@@ -136,7 +139,7 @@ export function MissionPlanningPage() {
           fault === "none"
             ? []
             : [{ kind: fault, motor: motor.n, level: motor.level / 100, at: faultAt.by === "time" ? { time: faultAt.value } : { waypoint: faultAt.value + 1 } }];
-        setResult(predict(sim.airframe, params, sim.home, mission, { windSpeed: wind.speed, windFromDeg: wind.from, gust: wind.gust / 100, soc: charge / 100, faults }));
+        setResult(predict(sim.airframe, params, sim.home, mission, { windSpeed: wind.speed, windFromDeg: wind.from, gust: wind.gust / 100, soc: charge / 100, faults }, 7, terrain));
       } catch (e) {
         notify("error", "The prediction failed", (e as Error).message);
       } finally {
@@ -179,6 +182,7 @@ export function MissionPlanningPage() {
             fenceRadius={params.FENCE_ENABLE ? params.FENCE_RADIUS : null}
             wind={{ speed: wind.speed, fromDeg: wind.from }}
             mark={result && result.verdict !== "completed" && result.verdict !== "refused" ? { n: result.stats.endN, e: result.stats.endE, label: result.verdict === "crashed" ? "Crash" : "Ends here", tone: result.verdict === "crashed" ? "bad" : "ok" } : null}
+            terrain={terrain}
             onPick={(n, e) => {
               sim.addPoint(n, e);
               setResult(null);
@@ -214,6 +218,7 @@ export function MissionPlanningPage() {
                       <th>North (m)</th>
                       <th>East (m)</th>
                       <th>Height (m)</th>
+                      <th title="Height of the waypoint above the ground beneath it">Clear (m)</th>
                       <th>Wait (s)</th>
                       <th aria-label="Remove" />
                     </tr>
@@ -230,7 +235,7 @@ export function MissionPlanningPage() {
                       <td>
                         <NumCell label="Take-off height" value={sim.takeoffAlt} min={2} max={500} onChange={(x) => sim.set("takeoffAlt", x)} />
                       </td>
-                      <td colSpan={2} />
+                      <td colSpan={3} />
                     </tr>
                     {sim.points.map((p, i) => (
                       <tr key={p.id}>
@@ -238,6 +243,9 @@ export function MissionPlanningPage() {
                         <td><NumCell label={`Waypoint ${i + 1} north`} value={p.n} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { n: x })} /></td>
                         <td><NumCell label={`Waypoint ${i + 1} east`} value={p.e} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { e: x })} /></td>
                         <td><NumCell label={`Waypoint ${i + 1} height`} value={p.alt} min={2} max={500} onChange={(x) => sim.updatePoint(p.id, { alt: x })} /></td>
+                        <td className={`num mp-clear${p.alt - terrain.surface(p.n, p.e) < 10 ? " low" : ""}`} title={`The ground here is ${terrain.surface(p.n, p.e).toFixed(0)} m above home`}>
+                          {terrain.isWater(p.n, p.e) ? "water" : Math.round(p.alt - terrain.surface(p.n, p.e))}
+                        </td>
                         <td><NumCell label={`Waypoint ${i + 1} wait`} value={p.holdS} min={0} max={600} onChange={(x) => sim.updatePoint(p.id, { holdS: x })} /></td>
                         <td>
                           <button className="icon-btn" aria-label={`Remove waypoint ${i + 1}`} onClick={() => sim.removePoint(p.id)}>
@@ -249,7 +257,7 @@ export function MissionPlanningPage() {
                     {/* The last command, as a row of its own, so the list is the whole mission. */}
                     <tr className={`mp-cmd end ${sim.ending}`}>
                       <td>{sim.ending === "rtl" ? <HomeIcon aria-hidden /> : sim.ending === "land" ? <PlaneLanding aria-hidden /> : <CirclePause aria-hidden />}</td>
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <strong>{sim.ending === "rtl" ? "Return home and land" : sim.ending === "land" ? `Land at waypoint ${sim.points.length}` : `Hover at waypoint ${sim.points.length}`}</strong>
                         <small>
                           {sim.ending === "rtl"

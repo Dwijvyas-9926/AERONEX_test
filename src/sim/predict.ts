@@ -3,6 +3,7 @@ import { CMD, MODE, MODE_NAME, type Home, type MissionItem, type SimEvent } from
 import type { Params } from "./params";
 import { euler, type Environment } from "./physics";
 import { VirtualVehicle } from "./vehicle";
+import type { Terrain } from "./terrain";
 
 /*
   Fly a mission before it is flown.
@@ -74,6 +75,10 @@ export interface Prediction {
     endN: number;
     endE: number;
     impact: number;
+    /** Least height above the ground while travelling, m; null if it never travelled. */
+    minClearanceM: number | null;
+    /** Height of the ground where the flight ended, m above home. */
+    endGroundM: number;
     reached: number[];
     commands: number;
   };
@@ -81,8 +86,8 @@ export interface Prediction {
 
 const LIMIT_S = 45 * 60;
 
-export function predict(airframe: Airframe, params: Params, home: Home, mission: MissionItem[], sc: Scenario, seed = 7): Prediction {
-  const v = new VirtualVehicle({ airframe, home, params, soc: sc.soc, seed });
+export function predict(airframe: Airframe, params: Params, home: Home, mission: MissionItem[], sc: Scenario, seed = 7, terrain?: Terrain): Prediction {
+  const v = new VirtualVehicle({ airframe, home, params, soc: sc.soc, seed, terrain });
   v.setScriptedGcs(true);
   v.phys.env = { windSpeed: sc.windSpeed, windFromDeg: sc.windFromDeg, gust: sc.gust };
   v.ap.mission = mission.map((m) => ({ ...m }));
@@ -114,7 +119,7 @@ export function predict(airframe: Airframe, params: Params, home: Home, mission:
   };
 
   const track: TrackPoint[] = [];
-  const stats = { durationS: 0, distanceM: 0, maxAltM: 0, maxSpeed: 0, maxLeanDeg: 0, atLeanLimitS: 0, maxThrottle: 0, usedMah: 0, endSoc: sc.soc, minVolts: Infinity, maxAmps: 0, endN: 0, endE: 0, impact: 0, reached, commands: Math.max(0, mission.length - 1) };
+  const stats = { durationS: 0, distanceM: 0, maxAltM: 0, maxSpeed: 0, maxLeanDeg: 0, atLeanLimitS: 0, maxThrottle: 0, usedMah: 0, endSoc: sc.soc, minVolts: Infinity, maxAmps: 0, endN: 0, endE: 0, impact: 0, minClearanceM: null as number | null, endGroundM: 0, reached, commands: Math.max(0, mission.length - 1) };
   const startMah = v.phys.s.usedMah;
   const finish = (verdict: Verdict, headline: string): Prediction => {
     const s = v.phys.s;
@@ -124,6 +129,7 @@ export function predict(airframe: Airframe, params: Params, home: Home, mission:
     stats.endN = s.pos[0];
     stats.endE = s.pos[1];
     stats.impact = s.lastImpact;
+    stats.endGroundM = v.phys.ground(s.pos[0], s.pos[1]);
     if (!Number.isFinite(stats.minVolts)) stats.minVolts = s.volts;
     return { verdict, headline, findings: findings(v, airframe, verdict, stats, sc, mission), track, events: v.events.slice(), stats };
   };
@@ -154,6 +160,11 @@ export function predict(airframe: Airframe, params: Params, home: Home, mission:
     lastE = s.pos[1];
     stats.maxAltM = Math.max(stats.maxAltM, alt);
     stats.maxSpeed = Math.max(stats.maxSpeed, Math.hypot(s.vel[0], s.vel[1]));
+    // Travelling under control: a landing, wherever it happens, is not a near miss.
+    if (!s.onGround && v.ap.mode !== MODE.LAND && Math.hypot(s.vel[0], s.vel[1]) > 2) {
+      const agl = alt - v.phys.ground(s.pos[0], s.pos[1]);
+      stats.minClearanceM = Math.min(stats.minClearanceM ?? Infinity, agl);
+    }
     if (!s.onGround) {
       const lean = (Math.acos(Math.max(-1, Math.min(1, Math.cos(e.roll) * Math.cos(e.pitch)))) * 180) / Math.PI;
       stats.maxLeanDeg = Math.max(stats.maxLeanDeg, lean);
@@ -173,7 +184,11 @@ export function predict(airframe: Airframe, params: Params, home: Home, mission:
             ? "the battery ran flat"
             : v.ap.failsafes.has("control")
               ? "it lost control"
-              : s.crashWhy === "sliding"
+              : s.crashWhy === "water"
+                ? "it came down in the water"
+                : stats.endGroundM > 1.5 && v.ap.mode !== MODE.LAND && !v.ap.failsafes.has("control")
+                  ? `it flew into rising ground, ${stats.endGroundM.toFixed(0)} m above home`
+                  : s.crashWhy === "sliding"
                 ? `it touched down drifting sideways at ${s.lastSlide.toFixed(0)} m/s and went over`
                 : "it hit the ground too hard";
         return finish("crashed", `It crashed ${Math.round(off)} m from home after ${clock(s.t)}: ${cause}.`);
@@ -208,6 +223,11 @@ function findings(v: VirtualVehicle, af: Airframe, verdict: Verdict, st: Predict
   if (flew && st.endSoc >= 0.2 && verdict !== "crashed") out.push({ sev: "ok", text: `Battery: used ${Math.round(st.usedMah)} mAh and finished with ${Math.round(st.endSoc * 100)}%.` });
   if (flew && Number.isFinite(st.minVolts) && st.minVolts / af.cells < 3.3) out.push({ sev: "warn", text: `Voltage sagged to ${(st.minVolts / af.cells).toFixed(2)} V per cell under load. Below 3.3 V damages a LiPo.` });
 
+  if (verdict === "crashed" && st.endGroundM > 1.5 && v.phys.soc > 0.01 && !fired("loss-of-control")) {
+    out.push({ sev: "bad", text: `The ground there is ${st.endGroundM.toFixed(0)} m above home. Mission heights are measured from home, not from the ground below, so a waypoint or a return that is high enough at home can be too low over a hill.` });
+  } else if (st.minClearanceM !== null && st.minClearanceM < 8 && verdict !== "crashed") {
+    out.push({ sev: st.minClearanceM < 4 ? "bad" : "warn", text: `It passed within ${Math.max(0, st.minClearanceM).toFixed(0)} m of the ground on the way. Trees are not simulated: leave at least 15 m.` });
+  }
   if (fired("fs-fence")) out.push({ sev: "warn", text: "The geofence was breached and turned the aircraft back. Part of the route lies outside FENCE_RADIUS or above FENCE_ALT_MAX." });
   if (fired("fs-gcs")) out.push({ sev: "warn", text: "The ground-station failsafe fired when the link went quiet." });
   if (fired("fs-radio")) out.push({ sev: "warn", text: "The radio failsafe fired when the transmitter was lost." });

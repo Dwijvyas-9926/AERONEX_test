@@ -1,4 +1,5 @@
 import { useMemo, useRef } from "react";
+import type { Terrain } from "../../sim/terrain";
 
 /*
   A plan view in metres, north up, with home at the origin.
@@ -29,6 +30,36 @@ interface Props {
   onPick?: (n: number, e: number) => void;
   /** Half-width of the view, m, at the least. */
   minSpan?: number;
+  /** The landscape, shaded under the grid. */
+  terrain?: Terrain | null;
+}
+
+/** The ground as a picture: green low, brown high, lit from the north-west, water blue. */
+function relief(terrain: Terrain, span: number): string {
+  const N = 150;
+  const c = document.createElement("canvas");
+  c.width = c.height = N;
+  const ctx = c.getContext("2d")!;
+  const img = ctx.createImageData(N, N);
+  const cell = (span * 2) / N;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const e = -span + (i + 0.5) * cell;
+      const n = span - (j + 0.5) * cell;
+      const h = terrain.land(n, e);
+      const k = (j * N + i) * 4;
+      if (h < terrain.waterLevel) {
+        img.data.set([34, 66, 86, 255], k);
+        continue;
+      }
+      const light = Math.max(-1, Math.min(1, ((terrain.land(n + cell, e - cell) - h) / cell) * 2.2));
+      const t = Math.min(1, h / 90);
+      const s = 1 + light * 0.45;
+      img.data.set([(34 + 58 * t) * s, (46 + 30 * t) * s, (24 + 14 * t) * s, 255], k);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL();
 }
 
 const niceStep = (span: number) => {
@@ -38,7 +69,7 @@ const niceStep = (span: number) => {
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * pow;
 };
 
-export function FlightMap({ route = [], closeRoute, track = [], ghost = [], aircraft, fenceRadius, wind, mark, onPick, minSpan = 60 }: Props) {
+export function FlightMap({ route = [], closeRoute, track = [], ghost = [], aircraft, fenceRadius, wind, mark, onPick, minSpan = 60, terrain }: Props) {
   const ref = useRef<SVGSVGElement>(null);
 
   // Fit everything worth seeing, square, with room round the edge.
@@ -57,6 +88,7 @@ export function FlightMap({ route = [], closeRoute, track = [], ghost = [], airc
     return Math.ceil(far / step) * step;
   }, [route, ghost, track, aircraft, mark, minSpan]);
 
+  const shaded = useMemo(() => (terrain && terrain.kind !== "flat" ? relief(terrain, span) : null), [terrain, span]);
   const step = niceStep(span);
   const lines: number[] = [];
   for (let v = -span; v <= span + 1e-6; v += step) lines.push(Math.round(v * 1000) / 1000);
@@ -79,6 +111,7 @@ export function FlightMap({ route = [], closeRoute, track = [], ghost = [], airc
   return (
     <div className={`fmap${onPick ? " pickable" : ""}`}>
       <svg ref={ref} viewBox={`${-span} ${-span} ${span * 2} ${span * 2}`} onClick={pick} role="img" aria-label="Plan view of the flight, north up">
+        {shaded && <image href={shaded} x={-span} y={-span} width={span * 2} height={span * 2} preserveAspectRatio="none" opacity={0.9} />}
         <g className="fmap-grid">
           {lines.map((v) => (
             <g key={v}>

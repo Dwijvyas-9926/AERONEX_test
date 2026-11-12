@@ -3636,3 +3636,185 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 700;
   text-anchor: start;
 }
+
+/* =========================================================
+   The 3D flight world
+   ========================================================= */
+.sim-room {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
+  grid-template-areas:
+    "world side"
+    "ctl side";
+}
+
+.sim-room > :nth-child(1) {
+  grid-area: ctl;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s5);
+  align-items: start;
+}
+
+.sim-room > :nth-child(1) > * + * {
+  margin-top: 0;
+}
+
+.sim-room > :nth-child(2) {
+  grid-area: world;
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.sim-room > :nth-child(3) {
+  grid-area: side;
+}
+
+@media (max-width: 1180px) {
+  .sim-room {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "world" "side" "ctl";
+  }
+}
+
+@media (max-width: 720px) {
+  .sim-room > :nth-child(1) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sim-map-panel .panel-head {
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.world {
+  position: relative;
+  height: min(60vh, 660px);
+  min-height: 380px;
+  background: #9db6c9;
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  overflow: hidden;
+}
+
+.world canvas {
+  display: block;
+}
+
+.world-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: #20303c;
+  font-weight: 600;
+}
+
+.world-hud {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  pointer-events: none;
+}
+
+.world-hud.top {
+  top: var(--s3);
+  left: var(--s3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.world-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(20, 15, 10, 0.72);
+  backdrop-filter: blur(6px);
+  color: #f2e8d6;
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.world-chip.on {
+  background: rgba(216, 166, 72, 0.92);
+  color: #17120c;
+}
+
+.world-chip.bad {
+  background: rgba(214, 87, 63, 0.95);
+  color: #fff;
+}
+
+.world-hud.views {
+  top: var(--s3);
+  right: var(--s3);
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: rgba(20, 15, 10, 0.72);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+.world-hud.views button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cfc0a5;
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.world-hud.views button[aria-pressed="true"] {
+  background: #f2e8d6;
+  color: #17120c;
+}
+
+.world-hud.strip {
+  left: var(--s3);
+  right: var(--s3);
+  bottom: var(--s3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(20, 15, 10, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.world-hud.strip > div {
+  flex: 1 1 84px;
+  padding: 6px 12px 7px;
+  background: rgba(20, 15, 10, 0.62);
+}
+
+.world-hud.strip dt {
+  font-size: 0.6875rem;
+  color: #cfc0a5;
+}
+
+.world-hud.strip dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+  font-weight: 600;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.world-hud.strip dd.bad {
+  color: #ff8a70;
+}
+
+.mp-clear {
+  color: var(--ink-2);
+}
+
+.mp-clear.low {
+  color: var(--danger);
+  font-weight: 700;
+}

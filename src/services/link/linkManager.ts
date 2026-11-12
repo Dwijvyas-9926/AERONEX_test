@@ -77,10 +77,13 @@ class LinkManager {
     this.timers.push(
       window.setInterval(() => {
         const now = performance.now();
-        // A background tab runs timers rarely; do not leap the aircraft forward.
-        const wall = Math.min(0.25, (now - last) / 1000);
+        const real = (now - last) / 1000;
         last = now;
-        vehicle.advance(wall * this.simSpeed, wall);
+        // A background tab, or a slow frame of the 3D view, runs timers rarely.
+        // Do not leap the aircraft forward to catch up — but do let its
+        // telemetry clock keep real time, or its once-a-second heartbeat
+        // falls behind and the link is reported stale while it is fine.
+        vehicle.advance(Math.min(0.25, real) * this.simSpeed, Math.min(5, real));
         const out = vehicle.drain();
         if (out.length && this.session) {
           if (this.session.ingest(out)) this.flush(true);

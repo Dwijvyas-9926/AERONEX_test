@@ -254,3 +254,53 @@ describe("energy", () => {
     expect(v.phys.s.volts).toBeLessThan(12.6);
   });
 });
+
+describe("terrain", () => {
+  it("is level at home on every landscape, and the same each time", async () => {
+    const { makeTerrain } = await import("../terrain");
+    for (const kind of ["flat", "hills", "highlands"] as const) {
+      const t = makeTerrain(kind);
+      for (const [n, e] of [[0, 0], [20, -15], [-40, 30]]) expect(t.land(n, e), `${kind} ${n},${e}`).toBe(0);
+      expect(makeTerrain(kind).land(412, -388)).toBe(t.land(412, -388));
+    }
+    const hills = makeTerrain("hills");
+    let top = 0;
+    for (let n = -900; n <= 900; n += 30) for (let e = -900; e <= 900; e += 30) top = Math.max(top, hills.land(n, e));
+    expect(top).toBeGreaterThan(20);
+    expect(top).toBeLessThan(110);
+    expect(hills.isWater(-170, 250)).toBe(true);
+  });
+
+  it("stops an aircraft that flies into a hill, and lets one that clears it pass", async () => {
+    const { makeTerrain } = await import("../terrain");
+    const terrain = makeTerrain("hills");
+    // Find the highest ground within reach and fly straight at it.
+    let best = { n: 0, e: 0, h: 0 };
+    for (let n = -700; n <= 700; n += 20) for (let e = -700; e <= 700; e += 20) if (terrain.land(n, e) > best.h) best = { n, e, h: terrain.land(n, e) };
+    const fly = (alt: number) => {
+      const v = new VirtualVehicle({ airframe: PRESETS[0], home: HOME, terrain });
+      v.setScriptedGcs(true);
+      flyMission(v, [wp(0, 0, 0, 0), wp(1, 0, 0, alt, CMD.TAKEOFF), wp(2, best.n, best.e, alt), wp(3, 0, 0, 0, CMD.RTL)], 600);
+      return v;
+    };
+    const low = fly(Math.max(6, best.h - 12));
+    expect(low.phys.s.crashed).toBe(true);
+    expect(-low.phys.s.pos[2]).toBeGreaterThan(3);
+    const high = fly(best.h + 25);
+    expect(high.phys.s.crashed).toBe(false);
+  });
+
+  it("lands on the ground where it is, not at home's height", async () => {
+    const { makeTerrain } = await import("../terrain");
+    const terrain = makeTerrain("hills");
+    let spot = { n: 0, e: 0 };
+    for (let n = 150; n <= 600 && !spot.n; n += 10) for (let e = -300; e <= 300; e += 10) if (terrain.land(n, e) > 8 && terrain.land(n, e) < 14) { spot = { n, e }; break; }
+    expect(spot.n).toBeGreaterThan(0);
+    const v = new VirtualVehicle({ airframe: PRESETS[0], home: HOME, terrain });
+    v.setScriptedGcs(true);
+    flyMission(v, [wp(0, 0, 0, 0), wp(1, 0, 0, 60, CMD.TAKEOFF), wp(2, spot.n, spot.e, 60), wp(3, 0, 0, 0, CMD.LAND)], 600);
+    expect(v.phys.s.crashed).toBe(false);
+    expect(v.ap.armed).toBe(false);
+    expect(-v.phys.s.pos[2]).toBeGreaterThan(6);
+  });
+});

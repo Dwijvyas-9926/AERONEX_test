@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { PRESETS, type Airframe } from "../sim/airframe";
 import { CMD, type Home, type MissionItem } from "../sim/autopilot";
+import type { TerrainKind } from "../sim/terrain";
 
 /* What the simulator flies and where, and the mission being planned. Kept in
    this browser, so a plan survives a reload. */
@@ -23,6 +24,7 @@ interface SimState {
   home: Home;
   /** Battery at the start, 0–1. */
   soc: number;
+  terrain: TerrainKind;
   /** Start from the parameters last read from a real aircraft, where there are any. */
   useAircraftParams: boolean;
   takeoffAlt: number;
@@ -43,6 +45,7 @@ export const useSim = create<SimState>()(
       airframe: PRESETS[0],
       home: { lat: 23.0225, lon: 72.5714, altMsl: 53 },
       soc: 1,
+      terrain: "hills",
       useAircraftParams: true,
       takeoffAlt: 20,
       points: [],
@@ -53,7 +56,12 @@ export const useSim = create<SimState>()(
       removePoint: (id) => set((s) => ({ points: s.points.filter((p) => p.id !== id) })),
       clearPoints: () => set({ points: [] }),
     }),
-    { name: "aeronex.sim.v1", storage: createJSONStorage(() => localStorage), version: 1 },
+    {
+      name: "aeronex.sim.v1",
+      storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (old) => ({ terrain: "hills", ...(old as object) }) as SimState,
+    },
   ),
 );
 

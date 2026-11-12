@@ -4,6 +4,7 @@ import type { Airframe } from "./airframe";
 import { Autopilot, MODE, type Home, type Inputs, type MissionItem, type SimEvent } from "./autopilot";
 import { defaultParams, PARAM_DEFS, type Params } from "./params";
 import { euler, Physics } from "./physics";
+import type { Terrain } from "./terrain";
 
 /*
   A virtual aircraft that speaks MAVLink.
@@ -22,6 +23,8 @@ export interface VehicleOptions {
   soc?: number;
   yawDeg?: number;
   seed?: number;
+  /** The landscape. Level ground when left out. */
+  terrain?: Terrain;
 }
 
 const SELF = { sysid: 1, compid: 1 };
@@ -34,6 +37,7 @@ export class VirtualVehicle {
   readonly phys: Physics;
   readonly ap: Autopilot;
   readonly home: Home;
+  terrain: Terrain | null = null;
   gpsOk = true;
   rcOk = true;
   sticks: Inputs["sticks"] = null;
@@ -59,6 +63,11 @@ export class VirtualVehicle {
   constructor(o: VehicleOptions) {
     this.home = o.home;
     this.phys = new Physics(o.airframe, { soc: o.soc, yawDeg: o.yawDeg, seed: o.seed });
+    if (o.terrain) {
+      this.terrain = o.terrain;
+      this.phys.ground = o.terrain.surface;
+      this.phys.water = o.terrain.isWater;
+    }
     this.ap = new Autopilot(this.phys, { ...defaultParams(o.airframe), ...(o.params ?? {}) }, o.home);
     this.ap.mode = MODE.STABILIZE;
     this.ap.onReached = (seq) => this.send("MISSION_ITEM_REACHED", { seq });
@@ -114,7 +123,7 @@ export class VirtualVehicle {
   reset(soc = 1) {
     const s = this.phys.s;
     this.ap.disarm("Reset");
-    Object.assign(s, { pos: [0, 0, 0], vel: [0, 0, 0], acc: [0, 0, 0], w: [0, 0, 0], thrust: [0, 0, 0, 0], onGround: true, crashed: false, crashWhy: null, usedMah: (1 - soc) * this.phys.af.capacityMah });
+    Object.assign(s, { pos: [0, 0, -this.phys.ground(0, 0)], vel: [0, 0, 0], acc: [0, 0, 0], w: [0, 0, 0], thrust: [0, 0, 0, 0], onGround: true, crashed: false, crashWhy: null, usedMah: (1 - soc) * this.phys.af.capacityMah });
     this.phys.faults.motor = [1, 1, 1, 1];
     this.gpsOk = true;
     this.rcOk = true;
