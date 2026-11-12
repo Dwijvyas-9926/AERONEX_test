@@ -256,10 +256,24 @@ export class VehicleSession {
         this.onDecoded?.("STATUSTEXT", d);
         break;
       }
+      case "MISSION_CURRENT":
+        this.telemetry = { ...this.telemetry, mission: { at: t, value: { seq: d.seq as number } } };
+        break;
+      case "HOME_POSITION":
+        this.telemetry = {
+          ...this.telemetry,
+          home: { at: t, value: { lat: (d.latitude as number) / 1e7, lon: (d.longitude as number) / 1e7, altMsl: (d.altitude as number) / 1000 } },
+        };
+        break;
       case "COMMAND_ACK":
       case "PARAM_VALUE":
       case "MAG_CAL_PROGRESS":
       case "MAG_CAL_REPORT":
+      case "MISSION_REQUEST_INT":
+      case "MISSION_REQUEST":
+      case "MISSION_ACK":
+      case "MISSION_COUNT":
+      case "MISSION_ITEM_INT":
         this.onDecoded?.(f.name, d);
         break;
     }

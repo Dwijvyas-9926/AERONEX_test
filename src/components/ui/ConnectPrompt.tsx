@@ -50,7 +50,7 @@ export function ConnectPrompt({
           </Link>
           {simulator && (
             <Link className="btn btn-ghost" to="/simulator">
-              <Gamepad2 /> Open the simulator
+              <Gamepad2 /> Use the virtual aircraft
             </Link>
           )}
         </div>

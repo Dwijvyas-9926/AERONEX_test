@@ -83,7 +83,6 @@ export function FullParamsPage() {
         </header>
         <ConnectPrompt
           title="Connect an aircraft to read its parameters"
-          simulator={false}
           items={[
             { icon: ListTree, title: "Every parameter, grouped", detail: "The full list from the autopilot, searchable by name." },
             { icon: PencilLine, title: "Staged edits", detail: "Change values freely; nothing is written until you press Upload." },

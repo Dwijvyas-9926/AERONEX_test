@@ -33,7 +33,6 @@ export function TelemetryPage() {
       {!hasData ? (
         <ConnectPrompt
           title="Connect an aircraft to watch the link"
-          simulator={false}
           items={[
             { icon: Activity, title: "Messages", detail: "Each kind of data the aircraft sends, and how many times a second it arrives." },
             { icon: HeartPulse, title: "Link health", detail: "Time since the last heartbeat, and how many messages arrived damaged." },

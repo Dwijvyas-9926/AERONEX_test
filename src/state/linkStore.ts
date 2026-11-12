@@ -3,8 +3,10 @@ import type { FirmwareFamily } from "../mavlink/identity";
 import type { ParserStats } from "../mavlink/parser";
 
 /*
-  Physical-aircraft link state. This store only ever describes a real serial
-  connection. Simulated vehicles live in their own store and can never write here.
+  The link to an aircraft. Usually that is a serial port with a flight
+  controller on the other end; it can also be the virtual aircraft, which
+  speaks the same MAVLink through the same session. `virtual` says which, so
+  no page can mistake a simulated reading for a real one.
 */
 
 export type LinkStatus =
@@ -53,6 +55,9 @@ export interface Telemetry {
   sensors?: Stamped<{ present: number; enabled: number; health: number }>;
   ekf?: Stamped<{ flags: number; velVar: number; posHoriz: number; posVert: number; compass: number; terrain: number }>;
   vibration?: Stamped<{ x: number; y: number; z: number; clip0: number; clip1: number; clip2: number }>;
+  /** Which mission item the autopilot is working on. */
+  mission?: Stamped<{ seq: number }>;
+  home?: Stamped<{ lat: number; lon: number; altMsl: number }>;
 }
 
 export interface LinkEvent {
@@ -86,6 +91,8 @@ export interface LinkStats extends ParserStats {
 
 export interface LinkState {
   status: LinkStatus;
+  /** True when the aircraft on the link is the simulator's, not hardware. */
+  virtual: boolean;
   method: LinkMethod;
   baud: number;
   portLabel: string | null;
@@ -120,6 +127,7 @@ export const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 92
 
 export const useLink = create<LinkState>((set) => ({
   status: "idle",
+  virtual: false,
   method: "usb",
   baud: DEFAULT_BAUD.usb,
   portLabel: null,

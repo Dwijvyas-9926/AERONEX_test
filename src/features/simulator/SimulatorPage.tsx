@@ -1,65 +1,594 @@
-import { useCallback, useEffect, useRef } from "react";
-import { exportSimParts, rehydrateModel, useModel } from "../../state/modelStore";
+import { BatteryWarning, CircleStop, Home as HomeIcon, Info, PlaneLanding, PlaneTakeoff, Play, Power, RotateCcw, Route, Satellite, TriangleAlert, Unplug, Wind } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { derive, G, PRESETS, type Airframe } from "../../sim/airframe";
+import { MODE_NAME } from "../../sim/autopilot";
+import { PARAM_DEFS, type Params } from "../../sim/params";
+import { euler } from "../../sim/physics";
+import { commandLink, COPTER_MODE } from "../../services/link/commandLink";
+import { linkManager, rememberedParams } from "../../services/link/linkManager";
+import { isPortOpen, useLink } from "../../state/linkStore";
+import { notify } from "../../state/notifyStore";
 import { useActiveProfile } from "../../state/profileStore";
+import { planToMission, useSim } from "../../state/simStore";
+import { clockTime } from "../../utils/format";
+import { fromFrameStudio, fromProfile } from "./airframeSources";
+import { FlightMap, type MapPoint } from "./FlightMap";
+import { ValleyDemo } from "./ValleyDemo";
 
-/*
-  The Flight Simulator hosts the Avion digital twin exactly as authored (its own
-  3D world, relief-mission logic, telemetry, inspector and cameras), loaded in an
-  isolated frame. The app supplies the model to fly: when a model is imported in
-  Digital Twin it is exported to GLB and handed to the twin as a blob URL
-  in the frame's query string; otherwise the twin falls back to its built-in
-  Avion. The only edits to the original file were vendoring its three.js and
-  reading that model parameter — no sim logic or visuals were changed.
-*/
-const SIM_URL = `${import.meta.env.BASE_URL}avion-simulator.html`;
+/** Run a command and say so if the aircraft refuses it. */
+export async function order(label: string, fn: () => Promise<unknown>) {
+  try {
+    const r = await fn();
+    if (typeof r === "number" && r !== 0) notify("warn", `${label}: refused`, "The aircraft's reason is in the events list.");
+  } catch (e) {
+    notify("error", `${label} failed`, (e as Error).message);
+  }
+}
 
-export function SimulatorPage() {
+/** Parameters the simulator models, out of a set read from a real aircraft. */
+export function modelledParams(values: Record<string, number> | undefined): Params {
+  const out: Params = {};
+  if (!values) return out;
+  for (const d of PARAM_DEFS) if (Number.isFinite(values[d.name])) out[d.name] = values[d.name];
+  return out;
+}
+
+function Num({ label, value, onChange, step = 1, min, max, unit, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; unit?: string; hint?: string }) {
+  return (
+    <label className="field">
+      <span>
+        {label}
+        {unit ? ` (${unit})` : ""}
+      </span>
+      <input
+        className="input"
+        type="number"
+        value={Number.isFinite(value) ? value : ""}
+        step={step}
+        min={min}
+        max={max}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (e.target.value !== "" && Number.isFinite(v)) onChange(max !== undefined ? Math.min(max, min !== undefined ? Math.max(min, v) : v) : min !== undefined ? Math.max(min, v) : v);
+        }}
+      />
+      {hint && <small>{hint}</small>}
+    </label>
+  );
+}
+
+/* ----------------------------------------------------------------- setup */
+
+function Setup() {
+  const sim = useSim();
   const profile = useActiveProfile();
-  const object = useModel((s) => s.object);
-  const status = useModel((s) => s.status);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const imported = profile?.model.source === "imported" ? profile.model : null;
+  const af = sim.airframe;
+  const d = derive(af);
+  const remembered = useMemo(() => rememberedParams(), []);
+  const fromAircraft = useMemo(() => modelledParams(remembered?.values), [remembered]);
+  const applied = Object.keys(fromAircraft).length;
+  const setAf = (patch: Partial<Airframe>) => sim.set("airframe", { ...af, ...patch, name: patch.name ?? "Custom aircraft" });
+  // Hover power from momentum theory, as the physics computes it.
+  const hoverW = (4 * ((af.massKg * G) / 4) ** 1.5) / Math.sqrt(2 * 1.225 * (d.discArea / 4)) / 0.5;
+  const hoverMin = ((af.capacityMah / 1000) * af.cells * 3.7 * 0.8) / hoverW * 60;
+  const flyable = d.thrustToWeight > 1.3;
 
-  // Load the active profile's imported model so it's ready to hand over.
-  useEffect(() => {
-    if (profile) void rehydrateModel(profile.id, profile.model);
-  }, [profile?.id, profile?.model.source]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // The twin asks for its model once its own scripts are up ('avion:ready');
-  // we answer with the imported geometry (or null -> built-in). Responding only
-  // after readiness keeps the heavy export off the frame's init path.
-  const sendModel = useCallback(() => {
-    const win = iframeRef.current?.contentWindow;
-    if (!win) return;
-    const parts = exportSimParts();
-    win.postMessage({ type: "avion:model", parts: parts ?? null }, "*");
-  }, []);
-
-  useEffect(() => {
-    const onMsg = (ev: MessageEvent) => {
-      if ((ev.data as { type?: string })?.type === "avion:ready") sendModel();
-    };
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, [sendModel]);
-
-  // Reload the frame when the model OR its orientation/scale changes, so the
-  // twin re-bakes the geometry (exportSimParts reads the current orientation).
-  const frameKey = object
-    ? `${object.uuid}:${imported?.forward ?? "-z"}:${imported?.up ?? "+y"}:${imported?.scalePercent ?? 100}`
-    : "builtin";
+  const start = () => {
+    linkManager.connectVirtual({
+      airframe: af,
+      home: sim.home,
+      soc: sim.soc,
+      params: sim.useAircraftParams ? fromAircraft : {},
+    });
+  };
 
   return (
-    <div className="sim-page">
-      {status === "importing" ? (
-        <div className="sim-stage" style={{ display: "grid", placeItems: "center" }}>
-          <div className="import-progress" style={{ position: "static", background: "transparent" }}>
-            <div className="spinner" />
-            <strong>Preparing your model…</strong>
+    <div className="split">
+      <div className="stack">
+        <section className="panel">
+          <div className="panel-head">
+            <h3>The aircraft to simulate</h3>
+            <span className="muted" style={{ fontSize: "var(--t-sm)" }}>{af.name}</span>
           </div>
+          <div className="panel-body form-grid">
+            <label className="field span2">
+              <span>Start from</span>
+              <select
+                className="select"
+                value={PRESETS.findIndex((p) => p.name === af.name)}
+                onChange={(e) => {
+                  const p = PRESETS[Number(e.target.value)];
+                  if (p) sim.set("airframe", p);
+                }}
+              >
+                <option value={-1} disabled>
+                  {af.name}
+                </option>
+                {PRESETS.map((p, i) => (
+                  <option key={p.name} value={i}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="span2 sim-fill">
+              <button
+                className="btn"
+                onClick={() => {
+                  const r = fromProfile(profile, af);
+                  if (r.filled.length === 0) notify("info", "Nothing to copy yet", "Add a weight or a motor diagonal to the Aircraft Profile first.");
+                  else {
+                    sim.set("airframe", r.airframe);
+                    notify("success", "Copied from the Aircraft Profile", `Took its ${r.filled.join(" and ")}. Check the rest.`);
+                  }
+                }}
+              >
+                Copy from Aircraft Profile
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  sim.set("airframe", fromFrameStudio());
+                  notify("success", "Copied from Frame Studio", "Battery capacity is estimated from the pack's weight. Correct it if you know it.");
+                }}
+              >
+                Copy from Frame Studio design
+              </button>
+            </div>
+            <Num label="Weight ready to fly" unit="kg" value={af.massKg} step={0.05} min={0.1} max={30} onChange={(v) => setAf({ massKg: v })} />
+            <Num label="Motor-to-motor diagonal" unit="mm" value={Math.round(af.diagonalM * 1000)} step={10} min={80} max={1500} onChange={(v) => setAf({ diagonalM: v / 1000 })} />
+            <Num label="Thrust of one motor, full throttle" unit="g" value={Math.round((af.motorMaxThrustN / G) * 1000)} step={50} min={50} max={20000} onChange={(v) => setAf({ motorMaxThrustN: (v / 1000) * G })} hint="From the motor's thrust table, with your propeller." />
+            <Num label="Propeller diameter" unit="inches" value={Math.round((af.propDiaM / 0.0254) * 10) / 10} step={0.5} min={2} max={30} onChange={(v) => setAf({ propDiaM: v * 0.0254 })} />
+            <Num label="Battery cells" unit="S" value={af.cells} min={1} max={14} onChange={(v) => setAf({ cells: Math.round(v) })} />
+            <Num label="Battery capacity" unit="mAh" value={af.capacityMah} step={100} min={100} max={60000} onChange={(v) => setAf({ capacityMah: v })} />
+          </div>
+          <dl className="readouts sim-derived">
+            <div className="readout">
+              <dt>Thrust to weight</dt>
+              <dd className={flyable ? undefined : "bad"}>{d.thrustToWeight.toFixed(1)}<small>: 1</small></dd>
+            </div>
+            <div className="readout">
+              <dt>Hover throttle</dt>
+              <dd>{Math.round(d.hoverThrottle * 100)}<small>%</small></dd>
+            </div>
+            <div className="readout">
+              <dt>Hover power</dt>
+              <dd>{Math.round(hoverW)}<small>W</small></dd>
+            </div>
+            <div className="readout">
+              <dt>Hover time to 20%</dt>
+              <dd>{hoverMin.toFixed(0)}<small>min</small></dd>
+            </div>
+          </dl>
+          {!flyable && (
+            <div className="callout danger" style={{ margin: "0 var(--s5) var(--s5)" }}>
+              <TriangleAlert />
+              <span>These motors cannot lift this weight with anything to spare. The simulator will fly it, and it will not leave the ground.</span>
+            </div>
+          )}
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h3>Where and how it starts</h3>
+          </div>
+          <div className="panel-body form-grid">
+            <Num label="Home latitude" unit="°" value={sim.home.lat} step={0.0001} min={-85} max={85} onChange={(v) => sim.set("home", { ...sim.home, lat: v })} />
+            <Num label="Home longitude" unit="°" value={sim.home.lon} step={0.0001} min={-180} max={180} onChange={(v) => sim.set("home", { ...sim.home, lon: v })} />
+            <Num label="Home height above sea level" unit="m" value={sim.home.altMsl} min={-400} max={6000} onChange={(v) => sim.set("home", { ...sim.home, altMsl: v })} />
+            <Num label="Battery at the start" unit="%" value={Math.round(sim.soc * 100)} min={5} max={100} step={5} onChange={(v) => sim.set("soc", v / 100)} />
+            <label className="sim-check span2">
+              <input type="checkbox" checked={sim.useAircraftParams && applied > 0} disabled={applied === 0} onChange={(e) => sim.set("useAircraftParams", e.target.checked)} />
+              <span>
+                <strong>Use the settings from my real aircraft</strong>
+                <small>
+                  {remembered && applied > 0
+                    ? `${applied} of the ${PARAM_DEFS.length} parameters the simulator models were read from your aircraft on ${new Date(remembered.at).toLocaleDateString()}. The rest start at ArduCopter's defaults.`
+                    : "None saved yet. Connect your aircraft once and let the parameter download finish; its failsafe, speed and tuning settings are then used here."}
+                </small>
+              </span>
+            </label>
+          </div>
+          <div className="form-foot">
+            <button className="btn btn-primary btn-lg" onClick={start}>
+              <Play /> Start the virtual aircraft
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div className="stack">
+        <section className="panel">
+          <div className="panel-head">
+            <h3>What this simulates</h3>
+          </div>
+          <div className="panel-body sim-notes">
+            <p>
+              A virtual flight controller with real flight physics. It speaks MAVLink exactly as a Pixhawk does, so once it is started every page in
+              the app works against it: Preflight Check, Flight Data, Parameters, Keyboard Flight, Drone Doctor and Mission Planning.
+            </p>
+            <ul>
+              <li><strong>Physics.</strong> Weight, thrust, motor lag, drag, wind and gusts, and a battery that sags and runs down.</li>
+              <li><strong>Flight controller.</strong> ArduCopter's control loops, flight modes, arming checks and failsafes, driven by {PARAM_DEFS.length} of its parameters under their real names.</li>
+              <li><strong>Failures.</strong> Lose a motor, the GPS, the radio or the link in mid-flight and watch what the settings make it do.</li>
+            </ul>
+            <div className="callout info">
+              <Info />
+              <span>
+                It is a model of ArduCopter written from its documentation, not the firmware itself, and it has no terrain, obstacles or sensor
+                noise. Treat a prediction as a strong hint about your settings, and still make the first real flight a cautious one.
+              </span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------- control room */
+
+interface Snap {
+  n: number;
+  e: number;
+  alt: number;
+  yawDeg: number;
+  speed: number;
+  climb: number;
+  volts: number;
+  amps: number;
+  soc: number;
+  throttle: number;
+  mode: number;
+  armed: boolean;
+  crashed: boolean;
+  t: number;
+  motors: number[];
+  gpsOk: boolean;
+  rcOk: boolean;
+  fence: number | null;
+  failsafes: string[];
+}
+
+function useSnap(): { snap: Snap | null; track: MapPoint[]; clearTrack: () => void } {
+  const [snap, setSnap] = useState<Snap | null>(null);
+  const track = useRef<MapPoint[]>([]);
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const v = linkManager.sim;
+      if (!v) {
+        setSnap(null);
+        return;
+      }
+      const s = v.phys.s;
+      const last = track.current[track.current.length - 1];
+      if (!last || Math.hypot(last.n - s.pos[0], last.e - s.pos[1]) > 0.5) {
+        track.current.push({ n: s.pos[0], e: s.pos[1] });
+        if (track.current.length > 4000) track.current.splice(0, 1000);
+      }
+      setSnap({
+        n: s.pos[0],
+        e: s.pos[1],
+        alt: -s.pos[2],
+        yawDeg: (euler(s.q).yaw * 180) / Math.PI,
+        speed: Math.hypot(s.vel[0], s.vel[1]),
+        climb: -s.vel[2],
+        volts: s.volts,
+        amps: s.amps,
+        soc: v.phys.soc,
+        throttle: v.ap.throttleOut,
+        mode: v.ap.mode,
+        armed: v.ap.armed,
+        crashed: s.crashed,
+        t: s.t,
+        motors: [...v.phys.faults.motor],
+        gpsOk: v.gpsOk,
+        rcOk: v.rcOk,
+        fence: v.ap.params.FENCE_ENABLE ? v.ap.params.FENCE_RADIUS : null,
+        failsafes: [...v.ap.failsafes],
+      });
+    }, 150);
+    return () => clearInterval(id);
+  }, []);
+  return {
+    snap,
+    track: track.current,
+    clearTrack: () => {
+      track.current = [];
+      bump((n) => n + 1);
+    },
+  };
+}
+
+function ControlRoom() {
+  const sim = useSim();
+  const events = useLink((s) => s.events);
+  const status = useLink((s) => s.status);
+  const { snap, track, clearTrack } = useSnap();
+  const [wind, setWind] = useState({ windSpeed: 0, windFromDeg: 270, gust: 0.3 });
+  const [speed, setSpeed] = useState(1);
+  const [takeoffAlt, setTakeoffAlt] = useState(15);
+  const [gcsCut, setGcsCut] = useState(false);
+  const ready = status === "connected";
+
+  useEffect(() => {
+    const v = linkManager.sim;
+    if (v) v.phys.env = { ...wind };
+  }, [wind, snap === null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const route = sim.points.map((p, i) => ({ n: p.n, e: p.e, label: String(i + 1) }));
+  const flying = !!snap?.armed;
+
+  const takeOff = () =>
+    order("Take-off", async () => {
+      await commandLink.setMode(COPTER_MODE.GUIDED);
+      const a = await commandLink.arm(true);
+      if (a !== 0) return a;
+      return commandLink.guidedTakeoff(takeoffAlt);
+    });
+
+  const flyMission = () =>
+    order("Fly the mission", async () => {
+      if (sim.points.length === 0) throw new Error("There is no mission yet. Plan one in Mission Planning.");
+      await commandLink.uploadMission(planToMission(sim.home, sim.takeoffAlt, sim.points, sim.ending));
+      if (!flying) {
+        await commandLink.setMode(COPTER_MODE.GUIDED);
+        const a = await commandLink.arm(true);
+        if (a !== 0) return a;
+      }
+      const m = await commandLink.setMode(COPTER_MODE.AUTO);
+      if (m !== 0) return m;
+      return flying ? 0 : commandLink.startMission();
+    });
+
+  const setMotor = (i: number) => {
+    const v = linkManager.sim;
+    if (!v) return;
+    const now = v.phys.faults.motor[i];
+    v.phys.faults.motor[i] = now === 1 ? 0.6 : now === 0.6 ? 0 : 1;
+    v.ap.log("warn", `Injected: motor ${i + 1} at ${Math.round(v.phys.faults.motor[i] * 100)}% thrust`);
+  };
+
+  if (!snap) return null;
+  return (
+    <div className="sim-room">
+      <div className="stack">
+        <section className="panel">
+          <div className="panel-head">
+            <h3>Fly it</h3>
+            <span className={`pill ${snap.crashed ? "danger" : snap.armed ? "warn" : "idle"} plain`}>{snap.crashed ? "Crashed" : snap.armed ? "Armed" : "Disarmed"}</span>
+          </div>
+          <div className="panel-body sim-actions">
+            <div className="sim-takeoff">
+              <button className="btn btn-primary" disabled={!ready || flying || snap.crashed} onClick={takeOff}>
+                <PlaneTakeoff /> Take off to
+              </button>
+              <input className="input" type="number" min={2} max={120} value={takeoffAlt} onChange={(e) => setTakeoffAlt(Math.max(2, Math.min(120, Number(e.target.value) || 2)))} aria-label="Take-off height in metres" />
+              <span className="muted">m</span>
+            </div>
+            <button className="btn" disabled={!ready || snap.crashed} onClick={flyMission}>
+              <Route /> Fly the mission{sim.points.length ? ` (${sim.points.length} waypoints)` : ""}
+            </button>
+            <div className="sim-row">
+              <button className="btn" disabled={!flying} onClick={() => order("Hold", () => commandLink.setMode(COPTER_MODE.BRAKE))}>
+                <CircleStop /> Hold
+              </button>
+              <button className="btn" disabled={!flying} onClick={() => order("Return home", () => commandLink.setMode(COPTER_MODE.RTL))}>
+                <HomeIcon /> Return
+              </button>
+              <button className="btn" disabled={!flying} onClick={() => order("Land", () => commandLink.setMode(COPTER_MODE.LAND))}>
+                <PlaneLanding /> Land
+              </button>
+            </div>
+            <p className="sim-hint">
+              These send the same MAVLink commands a real aircraft gets. <Link to="/keyboard-flight">Keyboard Flight</Link> and{" "}
+              <Link to="/missions">Mission Planning</Link> work on it too.
+            </p>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h3>Make something go wrong</h3>
+          </div>
+          <div className="panel-body sim-faults">
+            <div>
+              <span className="sim-label">Motors</span>
+              <div className="sim-row">
+                {snap.motors.map((m, i) => (
+                  <button key={i} className={`btn sim-motor${m < 1 ? (m === 0 ? " dead" : " weak") : ""}`} onClick={() => setMotor(i)} title="Click to step through 100%, 60% and 0% thrust">
+                    {i + 1}
+                    <small>{Math.round(m * 100)}%</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="sim-row">
+              <button className={`btn${snap.gpsOk ? "" : " sim-on"}`} onClick={() => linkManager.sim && (linkManager.sim.gpsOk = !snap.gpsOk)}>
+                <Satellite /> {snap.gpsOk ? "Lose GPS" : "GPS lost"}
+              </button>
+              <button className={`btn${snap.rcOk ? "" : " sim-on"}`} onClick={() => linkManager.sim && (linkManager.sim.rcOk = !snap.rcOk)}>
+                <Unplug /> {snap.rcOk ? "Lose radio" : "Radio lost"}
+              </button>
+            </div>
+            <div className="sim-row">
+              <button
+                className={`btn${gcsCut ? " sim-on" : ""}`}
+                onClick={() => {
+                  if (gcsCut) commandLink.startHeartbeat();
+                  else commandLink.stopHeartbeat();
+                  setGcsCut(!gcsCut);
+                }}
+                title="Stops this app's heartbeat, which is what the ground-station failsafe watches for"
+              >
+                <Unplug /> {gcsCut ? "Link silent" : "Silence the link"}
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  const v = linkManager.sim;
+                  if (v) v.phys.s.usedMah = Math.max(v.phys.s.usedMah, 0.85 * v.phys.af.capacityMah);
+                }}
+              >
+                <BatteryWarning /> Battery to 15%
+              </button>
+            </div>
+            <div>
+              <span className="sim-label">
+                <Wind size={14} /> Wind {wind.windSpeed} m/s from {wind.windFromDeg}°, gusting {Math.round(wind.gust * 100)}%
+              </span>
+              <input type="range" min={0} max={20} value={wind.windSpeed} onChange={(e) => setWind({ ...wind, windSpeed: Number(e.target.value) })} aria-label="Wind speed" />
+              <input type="range" min={0} max={359} step={5} value={wind.windFromDeg} onChange={(e) => setWind({ ...wind, windFromDeg: Number(e.target.value) })} aria-label="Wind direction" />
+              <input type="range" min={0} max={1} step={0.1} value={wind.gust} onChange={(e) => setWind({ ...wind, gust: Number(e.target.value) })} aria-label="Gust strength" />
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="stack">
+        <section className="panel sim-map-panel">
+          <div className="panel-head">
+            <h3>Where it is</h3>
+            <div className="segmented" role="group" aria-label="Simulation speed">
+              {[1, 2, 5, 10].map((x) => (
+                <button
+                  key={x}
+                  aria-pressed={speed === x}
+                  onClick={() => {
+                    linkManager.simSpeed = x;
+                    setSpeed(x);
+                  }}
+                >
+                  {x}×
+                </button>
+              ))}
+            </div>
+          </div>
+          <FlightMap
+            route={route}
+            closeRoute={sim.ending === "rtl"}
+            track={track}
+            aircraft={{ n: snap.n, e: snap.e, yawDeg: snap.yawDeg }}
+            fenceRadius={snap.fence}
+            wind={{ speed: wind.windSpeed, fromDeg: wind.windFromDeg }}
+          />
+        </section>
+      </div>
+
+      <div className="stack">
+        <section className="panel">
+          <div className="panel-head">
+            <h3>{MODE_NAME[snap.mode] ?? "Mode"}</h3>
+            <span className="num muted">{Math.floor(snap.t / 60)}:{String(Math.floor(snap.t % 60)).padStart(2, "0")}</span>
+          </div>
+          <dl className="readouts" style={{ margin: 0, borderRadius: 0 }}>
+            <div className="readout"><dt>Height</dt><dd>{snap.alt.toFixed(1)}<small>m</small></dd></div>
+            <div className="readout"><dt>Speed</dt><dd>{snap.speed.toFixed(1)}<small>m/s</small></dd></div>
+            <div className="readout"><dt>From home</dt><dd>{Math.hypot(snap.n, snap.e).toFixed(0)}<small>m</small></dd></div>
+            <div className="readout"><dt>Throttle</dt><dd className={snap.throttle > 0.9 ? "bad" : undefined}>{Math.round(snap.throttle * 100)}<small>%</small></dd></div>
+            <div className="readout"><dt>Battery</dt><dd className={snap.soc < 0.2 ? "bad" : undefined}>{Math.max(0, Math.round(snap.soc * 100))}<small>%</small></dd></div>
+            <div className="readout"><dt>Voltage</dt><dd>{snap.volts.toFixed(1)}<small>V</small></dd></div>
+            <div className="readout"><dt>Current</dt><dd>{snap.amps.toFixed(0)}<small>A</small></dd></div>
+            <div className="readout"><dt>Climb</dt><dd>{snap.climb.toFixed(1)}<small>m/s</small></dd></div>
+          </dl>
+          {snap.failsafes.length > 0 && (
+            <div className="callout warn" style={{ margin: "var(--s4)" }}>
+              <TriangleAlert />
+              <span>Failsafe active: {snap.failsafes.join(", ")}.</span>
+            </div>
+          )}
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h3>What the aircraft says</h3>
+          </div>
+          <ul className="sim-events">
+            {events.slice(0, 14).map((ev) => (
+              <li key={ev.id} className={ev.level}>
+                <span className="num">{clockTime(ev.at)}</span>
+                {ev.text}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <div className="sim-row">
+          <button
+            className="btn"
+            onClick={() => {
+              linkManager.sim?.reset(sim.soc);
+              clearTrack();
+              if (gcsCut) {
+                commandLink.startHeartbeat();
+                setGcsCut(false);
+              }
+            }}
+          >
+            <RotateCcw /> Put it back at home
+          </button>
+          <button className="btn btn-danger" onClick={() => void linkManager.disconnect("Virtual aircraft stopped.")}>
+            <Power /> Stop the simulator
+          </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ page */
+
+export function SimulatorPage() {
+  const [tab, setTab] = useState<"virtual" | "valley">("virtual");
+  const status = useLink((s) => s.status);
+  const virtual = useLink((s) => s.virtual);
+  const open = isPortOpen(status);
+
+  if (tab === "valley") {
+    return (
+      <div className="sim-page with-bar">
+        <div className="sim-bar">
+          <button className="btn btn-sm" onClick={() => setTab("virtual")}>
+            Back to the simulator
+          </button>
+          <span className="muted">A scenic demo flight. It is not physics-based and not connected to the rest of the app.</span>
+        </div>
+        <ValleyDemo />
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-pad">
+      <header className="page-head">
+        <div>
+          <h1>Flight Simulator</h1>
+          <p>
+            A virtual aircraft with real flight physics and a flight controller that speaks MAVLink. Fly it, plan missions for it, and break things
+            on purpose to see what your settings would do.
+          </p>
+        </div>
+        <div className="actions">
+          {open && virtual && <span className="pill virtual live">Virtual aircraft running</span>}
+          <button className="btn btn-ghost" onClick={() => setTab("valley")}>
+            3D valley demo
+          </button>
+        </div>
+      </header>
+      {open && !virtual ? (
+        <div className="callout warn">
+          <TriangleAlert />
+          <span>
+            A real aircraft is linked. Disconnect it in <Link to="/connection">Connection</Link> before starting the virtual one: the app talks to one
+            aircraft at a time.
+          </span>
+        </div>
+      ) : open && virtual ? (
+        <ControlRoom />
       ) : (
-        <iframe key={frameKey} ref={iframeRef} className="sim-frame" src={SIM_URL} title="AERONEX flight simulator" allow="fullscreen; gamepad; accelerometer" />
+        <Setup />
       )}
     </div>
   );

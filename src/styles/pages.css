@@ -1277,6 +1277,25 @@ input[type="range"]::-moz-range-thumb {
   overflow: hidden;
 }
 
+.sim-page.with-bar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sim-page.with-bar > .sim-page {
+  height: auto;
+  min-height: 0;
+}
+
+.sim-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--t-sm);
+}
+
 .sim-stage {
   position: relative;
   width: 100%;
@@ -2999,4 +3018,554 @@ input[type="range"]::-moz-range-thumb {
 .stage-link:focus-visible .stage-go {
   opacity: 1;
   transform: none;
+}
+
+/* =========================================================
+   Flight Simulator and Mission Planning
+   ========================================================= */
+.readout dd.bad {
+  color: var(--danger);
+}
+
+.sim-fill,
+.sim-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.sim-row > .btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sim-derived {
+  margin: 0 var(--s5) var(--s5);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .sim-derived {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sim-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  cursor: pointer;
+}
+
+.sim-check input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.sim-check strong {
+  display: block;
+  font-size: var(--t-base);
+}
+
+.sim-check small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+
+.sim-notes {
+  display: grid;
+  gap: var(--s4);
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.sim-notes ul {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: var(--s2);
+}
+
+.sim-notes strong {
+  color: var(--ink);
+}
+
+/* The control room: commands, the map, what it reports. */
+.sim-room {
+  display: grid;
+  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: var(--s5);
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .sim-room {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .sim-room > :nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .sim-room {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sim-actions,
+.sim-faults {
+  display: grid;
+  gap: var(--s3);
+}
+
+.sim-takeoff {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px auto;
+  gap: var(--s2);
+  align-items: center;
+}
+
+.sim-hint {
+  font-size: var(--t-sm);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.sim-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.sim-faults input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.sim-motor {
+  flex-direction: column;
+  gap: 0;
+  height: 46px;
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+}
+
+.sim-motor small {
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+
+.sim-motor.weak,
+.btn.sim-on {
+  border-color: rgba(224, 123, 51, 0.5);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.sim-motor.dead {
+  border-color: rgba(214, 87, 63, 0.5);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.sim-events {
+  list-style: none;
+  margin: 0;
+  padding: var(--s2) var(--s4) var(--s4);
+  display: grid;
+  gap: 6px;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.sim-events li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: var(--s2);
+  line-height: 1.4;
+}
+
+.sim-events .num {
+  color: var(--faint);
+}
+
+.sim-events li.error {
+  color: var(--danger);
+}
+
+.sim-events li.warn {
+  color: var(--warn);
+}
+
+/* The plan-view map. */
+.fmap {
+  position: relative;
+  background: var(--midnight-deep);
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  overflow: hidden;
+}
+
+.fmap svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: min(72vh, 760px);
+}
+
+.fmap.pickable svg {
+  cursor: crosshair;
+}
+
+.fmap-grid line {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.fmap-grid line.axis {
+  stroke: var(--line);
+}
+
+.fmap-route,
+.fmap-track,
+.fmap-ghost,
+.fmap-fence {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.fmap-route {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+}
+
+.fmap-track {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.fmap-ghost {
+  stroke: var(--virtual);
+  stroke-width: 2;
+}
+
+.fmap-fence {
+  stroke: var(--danger);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 4;
+}
+
+.fmap-home circle {
+  fill: var(--slate);
+  stroke: var(--ink-2);
+  vector-effect: non-scaling-stroke;
+}
+
+.fmap-wp circle {
+  fill: var(--accent);
+}
+
+.fmap-home text,
+.fmap-wp text {
+  font-family: var(--font-display);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.fmap-home text {
+  fill: var(--ink);
+}
+
+.fmap-wp text {
+  fill: var(--accent-ink);
+}
+
+.fmap-ac path {
+  fill: var(--ink);
+  stroke: var(--midnight-deep);
+}
+
+.fmap-mark path {
+  fill: none;
+  stroke: var(--ok);
+}
+
+.fmap-mark text {
+  fill: var(--ok);
+  font-weight: 600;
+}
+
+.fmap-mark.bad path {
+  stroke: var(--danger);
+}
+
+.fmap-mark.bad text {
+  fill: var(--danger);
+}
+
+.fmap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  padding: var(--s2) var(--s4);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.fmap-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fmap-north,
+.fmap-wind {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 9px solid var(--ink-2);
+}
+
+.fmap-hint {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* Mission Planning. */
+.mp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: var(--s5);
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .mp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mp-plan,
+.mp-predict {
+  display: grid;
+  gap: var(--s4);
+}
+
+.mp-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+
+.mp-step {
+  font-weight: 600;
+  min-width: 84px;
+}
+
+.mp-num {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--s2);
+}
+
+.mp-line .mp-num {
+  width: 84px;
+}
+
+.mp-empty {
+  padding: var(--s4);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-ctl);
+  color: var(--muted);
+}
+
+.mp-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.mp-table th {
+  padding: 0 4px 6px;
+  text-align: left;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.mp-table td {
+  padding: 3px 4px;
+}
+
+.mp-table th:first-child,
+.mp-table td:first-child {
+  width: 26px;
+  color: var(--accent);
+}
+
+.mp-table th:last-child,
+.mp-table td:last-child {
+  width: 38px;
+}
+
+.mp-source {
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.mp-fields,
+.mp-fault {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
+  gap: var(--s3);
+}
+
+.mp-run {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.mp-result {
+  margin-top: var(--s5);
+  border-left: 3px solid var(--ok);
+}
+
+.mp-result.warn {
+  border-left-color: var(--warn);
+}
+
+.mp-result.bad {
+  border-left-color: var(--danger);
+}
+
+.mp-verdict {
+  display: flex;
+  gap: var(--s4);
+  padding: var(--s5);
+}
+
+.mp-verdict > svg {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  color: var(--ok);
+}
+
+.mp-result.warn .mp-verdict > svg {
+  color: var(--warn);
+}
+
+.mp-result.bad .mp-verdict > svg {
+  color: var(--danger);
+}
+
+.mp-verdict h3 {
+  font-size: var(--t-xl);
+  line-height: 1.2;
+}
+
+.mp-verdict p {
+  margin-top: 4px;
+  font-size: var(--t-md);
+  color: var(--ink-2);
+  max-width: 80ch;
+}
+
+.mp-stats {
+  margin: 0 var(--s5);
+}
+
+.mp-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: var(--s6);
+  padding: var(--s5);
+}
+
+@media (max-width: 900px) {
+  .mp-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mp-cols h4 {
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: var(--s3);
+}
+
+.mp-findings,
+.mp-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.mp-findings li {
+  padding: var(--s3);
+  border-radius: var(--r-ctl);
+  border-left: 3px solid var(--ok);
+  background: var(--midnight-deep);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.mp-findings li.warn {
+  border-left-color: var(--warn);
+}
+
+.mp-findings li.bad {
+  border-left-color: var(--danger);
+  color: var(--ink);
+}
+
+.mp-timeline li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: var(--s2);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+
+.mp-timeline .num {
+  color: var(--faint);
+}
+
+.mp-timeline li.error {
+  color: var(--danger);
+}
+
+.mp-timeline li.warn {
+  color: var(--warn);
+}
+
+.mp-caveat {
+  padding: 0 var(--s5) var(--s5);
+  font-size: var(--t-sm);
+  color: var(--muted);
+  max-width: 100ch;
 }

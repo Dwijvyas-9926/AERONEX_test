@@ -136,7 +136,7 @@ function Checklist() {
     },
     { title: "Prepare the digital twin", detail: "Import your assembly, set its nose and top, and test-fly it.", state: "now", to: "/digital-twin", icon: Box },
     { title: "Calibrate sensors and radio", detail: "Accel, compass, radio, flight modes and ESC — guided, firmware-aware workflows.", state: "now", to: "/calibration", icon: Crosshair },
-    { title: "Rehearse in the simulator", detail: "Fly the valley with the keyboard or auto-patrol, with five cameras and a HUD.", state: "now", to: "/simulator", icon: Gamepad2 },
+    { title: "Rehearse in the simulator", detail: "Fly a virtual aircraft with real physics, and predict a mission before you fly it.", state: "now", to: "/simulator", icon: Gamepad2 },
   ];
   return (
     <section className="panel">
@@ -204,8 +204,8 @@ function ModePanels() {
         </div>
         <h3>Virtual aircraft</h3>
         <p className="muted">
-          Fly {profile ? profile.name : "your aircraft"} over a 3D valley with a river, forest and bridge — its own flight model, five cameras and a
-          HUD. Never linked to real hardware.
+          A simulated {profile ? profile.name : "aircraft"} with real flight physics and a flight controller that speaks MAVLink. Every page works
+          against it, and you can fail a motor or lose GPS to see what your settings do.
         </p>
         <Link className="btn" to="/simulator">
           Launch simulator
@@ -304,7 +304,7 @@ function StageMap() {
           <h2 id="stage-map-title">How AERONEX works</h2>
           <p>
             Four stages, in the order you would do them. Start anywhere: every page works without the ones before it, and only the pages marked{" "}
-            <span className="needs-link">needs a link</span> wait for a flight controller.
+            <span className="needs-link">needs a link</span> wait for a flight controller, real or the simulator&rsquo;s virtual one.
           </p>
         </div>
         <button className="btn" onClick={() => openHelp("help")}>
@@ -355,6 +355,7 @@ function StageMap() {
 
 /** Pages that have nothing to show until a flight controller is linked. */
 const NEEDS_LINK = new Set(["/calibration", "/pid", "/params", "/preflight", "/flight-data", "/keyboard-flight", "/doctor", "/telemetry"]);
+// "A link" is a real flight controller or the simulator's virtual aircraft.
 
 export function OverviewPage() {
   return (

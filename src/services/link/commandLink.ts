@@ -19,6 +19,20 @@ import { notify } from "../../state/notifyStore";
 // MAVProxy/Mission Planner identify as system 255, component 190 (GCS).
 const GCS = { sysid: 255, compid: 190 };
 
+/** One mission item as MISSION_ITEM_INT carries it: x and y are degrees × 1e7. */
+export interface MissionWire {
+  seq: number;
+  frame: number;
+  command: number;
+  p1: number;
+  p2: number;
+  p3: number;
+  p4: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
 // MAV_CMD ids used here.
 export const CMD = {
   PREFLIGHT_CALIBRATION: 241,
@@ -31,12 +45,14 @@ export const CMD = {
   COMPONENT_ARM_DISARM: 400,
   DO_SET_MODE: 176,
   NAV_TAKEOFF: 22,
+  MISSION_START: 300,
 } as const;
 
 // ArduCopter flight-mode numbers (custom_mode).
 export const COPTER_MODE = {
   STABILIZE: 0,
   ALT_HOLD: 2,
+  AUTO: 3,
   GUIDED: 4,
   LOITER: 5,
   RTL: 6,
@@ -481,7 +497,124 @@ class CommandLink {
 
   // ---- inbound routing (called by the link manager for each decoded frame) ----
 
+  // ---- missions ----
+
+  /**
+   * Send a mission to the vehicle with the MAVLink mission protocol: announce
+   * the count, then answer each request for an item until the vehicle
+   * acknowledges the set. The same exchange a Pixhawk expects.
+   */
+  uploadMission(items: MissionWire[]): Promise<void> {
+    const t = this.target();
+    this.missionUp?.reject(new Error("Superseded by a newer upload"));
+    return new Promise<void>((resolve, reject) => {
+      let tries = 0;
+      const announce = () => {
+        void this.write("MISSION_COUNT", { target_system: t.sysid, target_component: t.compid, count: items.length, mission_type: 0 }).catch(reject);
+      };
+      const arm = () =>
+        setTimeout(() => {
+          if (!this.missionUp) return;
+          if (++tries > 4) {
+            this.missionUp = null;
+            reject(new Error("The aircraft stopped answering during the mission upload."));
+            return;
+          }
+          if (this.missionUp.sent === 0) announce();
+          this.missionUp.timer = arm();
+        }, 1500);
+      this.missionUp = {
+        items,
+        sent: 0,
+        timer: arm(),
+        resolve: () => {
+          clearTimeout(this.missionUp?.timer);
+          this.missionUp = null;
+          resolve();
+        },
+        reject: (e) => {
+          clearTimeout(this.missionUp?.timer);
+          this.missionUp = null;
+          reject(e);
+        },
+        touch: () => {
+          tries = 0;
+        },
+      };
+      announce();
+    });
+  }
+
+  /** Read the mission the vehicle holds. */
+  downloadMission(): Promise<MissionWire[]> {
+    const t = this.target();
+    this.missionDown?.reject(new Error("Superseded by a newer download"));
+    return new Promise<MissionWire[]>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.missionDown = null;
+        reject(new Error("The aircraft did not send its mission."));
+      }, 8000);
+      this.missionDown = {
+        count: -1,
+        items: [],
+        resolve: (m) => {
+          clearTimeout(timer);
+          this.missionDown = null;
+          resolve(m);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          this.missionDown = null;
+          reject(e);
+        },
+      };
+      void this.write("MISSION_REQUEST_LIST", { target_system: t.sysid, target_component: t.compid, mission_type: 0 }).catch(reject);
+    });
+  }
+
+  async startMission(): Promise<number> {
+    return this.sendCommand(CMD.MISSION_START, {});
+  }
+
+  private missionUp: { items: MissionWire[]; sent: number; timer: ReturnType<typeof setTimeout>; resolve: () => void; reject: (e: Error) => void; touch: () => void } | null = null;
+  private missionDown: { count: number; items: MissionWire[]; resolve: (m: MissionWire[]) => void; reject: (e: Error) => void } | null = null;
+
+  private onMission(name: string, d: Decoded) {
+    const t = this.target();
+    if ((name === "MISSION_REQUEST_INT" || name === "MISSION_REQUEST") && this.missionUp) {
+      const it = this.missionUp.items[d.seq as number];
+      if (!it) return;
+      this.missionUp.sent = Math.max(this.missionUp.sent, (d.seq as number) + 1);
+      this.missionUp.touch();
+      void this.write("MISSION_ITEM_INT", {
+        target_system: t.sysid, target_component: t.compid, seq: it.seq, frame: it.frame, command: it.command, current: 0, autocontinue: 1,
+        param1: it.p1, param2: it.p2, param3: it.p3, param4: it.p4, x: it.x, y: it.y, z: it.z, mission_type: 0,
+      }).catch(() => {});
+    } else if (name === "MISSION_ACK" && this.missionUp) {
+      const type = d.type as number;
+      if (type === 0) this.missionUp.resolve();
+      else this.missionUp.reject(new Error(`The aircraft rejected the mission (MAV_MISSION result ${type}).`));
+    } else if (name === "MISSION_COUNT" && this.missionDown) {
+      const count = d.count as number;
+      this.missionDown.count = count;
+      if (count === 0) this.missionDown.resolve([]);
+      else void this.write("MISSION_REQUEST_INT", { target_system: t.sysid, target_component: t.compid, seq: 0, mission_type: 0 }).catch(() => {});
+    } else if (name === "MISSION_ITEM_INT" && this.missionDown) {
+      const m = this.missionDown;
+      if ((d.seq as number) !== m.items.length) return;
+      m.items.push({ seq: d.seq as number, frame: d.frame as number, command: d.command as number, p1: d.param1 as number, p2: d.param2 as number, p3: d.param3 as number, p4: d.param4 as number, x: d.x as number, y: d.y as number, z: d.z as number });
+      if (m.items.length >= m.count) {
+        void this.write("MISSION_ACK", { target_system: t.sysid, target_component: t.compid, type: 0, mission_type: 0 }).catch(() => {});
+        m.resolve(m.items);
+      } else void this.write("MISSION_REQUEST_INT", { target_system: t.sysid, target_component: t.compid, seq: m.items.length, mission_type: 0 }).catch(() => {});
+    }
+  }
+
   handle(name: string, d: Decoded) {
+    if (name.startsWith("MISSION_")) {
+      this.onMission(name, d);
+      return;
+    }
     switch (name) {
       case "COMMAND_ACK": {
         const cmd = d.command as number;

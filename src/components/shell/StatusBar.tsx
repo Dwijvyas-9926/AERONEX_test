@@ -116,6 +116,7 @@ function Notifications() {
 
 export function StatusBar() {
   const status = useLink((s) => s.status);
+  const virtual = useLink((s) => s.virtual);
   const vehicle = useLink((s) => s.vehicle);
   const tel = useLink((s) => s.telemetry);
   const now = useNow(1000);
@@ -136,15 +137,15 @@ export function StatusBar() {
       <div className="sb-sep sb-hide-xs" />
       <div className="sb-group sb-hide-xs">
         {open && (
-          <span className="pill accent plain" title="Operating mode">
-            Physical aircraft
+          <span className={`pill ${virtual ? "virtual" : "accent"} plain`} title={virtual ? "Every reading is simulated" : "A real flight controller"}>
+            {virtual ? "Virtual aircraft" : "Physical aircraft"}
           </span>
         )}
         <button
           className={`pill ${view.tone}${view.live ? " live" : ""}`}
           style={{ border: 0, cursor: "pointer" }}
-          onClick={() => nav("/connection")}
-          title="Open Connection"
+          onClick={() => nav(virtual ? "/simulator" : "/connection")}
+          title={virtual ? "Open the Flight Simulator" : "Open Connection"}
         >
           {view.label}
         </button>

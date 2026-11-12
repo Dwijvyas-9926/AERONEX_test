@@ -53,8 +53,8 @@ export const ROUTES: RouteDef[] = [
   { path: "/preflight", label: "Preflight Check", icon: ShieldCheck, group: "Fly", status: { kind: "partial", note: "Live health" }, blurb: "One go or no-go verdict before you arm.", find: "safety arm checklist gps battery ekf ready" },
   { path: "/flight-data", label: "Flight Data", icon: Plane, group: "Fly", status: { kind: "partial", note: "Live PFD" }, blurb: "Live instruments: attitude, heading, speed and height.", find: "hud instruments horizon pfd altitude live" },
   { path: "/keyboard-flight", label: "Keyboard Flight", icon: Keyboard, group: "Fly", status: { kind: "partial", note: "Live guided control" }, blurb: "Fly a short test hop from the keyboard, with no radio transmitter.", find: "takeoff land guided wasd control hop" },
-  { path: "/simulator", label: "Flight Simulator", icon: Gamepad2, group: "Fly", status: { kind: "ready" }, blurb: "Practise in a 3D valley. No hardware needed.", find: "sim practice virtual game rehearse" },
-  { path: "/missions", label: "Mission Planning", icon: Route, group: "Fly", status: { kind: "planned", phase: 7 }, blurb: "Waypoints, survey grids and delivery missions.", find: "waypoints route survey map auto" },
+  { path: "/simulator", label: "Flight Simulator", icon: Gamepad2, group: "Fly", status: { kind: "ready" }, blurb: "A virtual aircraft with real physics that every page can talk to. No hardware needed.", find: "sim practice virtual sitl physics failure wind motor rehearse test" },
+  { path: "/missions", label: "Mission Planning", icon: Route, group: "Fly", status: { kind: "partial", note: "Waypoints + prediction" }, blurb: "Plan a route, then predict the flight: wind, battery and failures included.", find: "waypoints route auto predict failsafe plan upload" },
 
   // Review — diagnose and look back.
   { path: "/doctor", label: "Drone Doctor", icon: Stethoscope, group: "Review", status: { kind: "partial", note: "Live diagnosis" }, blurb: "A health scan that says what is wrong and how to fix it.", find: "diagnose fault problem vibration health fix ai" },

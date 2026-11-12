@@ -4,6 +4,7 @@ import { VehicleSession } from "./vehicleSession";
 import { commandLink } from "./commandLink";
 import { useParams } from "../../state/paramStore";
 import { useCalibration } from "../../state/calibrationStore";
+import { VirtualVehicle, type VehicleOptions } from "../../sim/vehicle";
 
 /*
   Owns the physical serial connection. Reads are always safe; writes are used
@@ -27,6 +28,70 @@ class LinkManager {
   private dirty = false;
   /** Settles when the read loop has let go of the port. */
   private readDone: Promise<void> = Promise.resolve();
+  /** The simulator's aircraft, when that is what the link leads to. */
+  private virtual: VirtualVehicle | null = null;
+  /** Simulated seconds per real second. */
+  simSpeed = 1;
+
+  /** The virtual aircraft on the link, for the simulator's own controls. */
+  get sim(): VirtualVehicle | null {
+    return this.virtual;
+  }
+
+  /**
+   * Put the virtual aircraft on the link in place of a serial port.
+   *
+   * Everything downstream is the same as for hardware: its MAVLink bytes go
+   * through the same session and parser, and commands reach it as the bytes
+   * they would be on a cable. Only the transport differs.
+   */
+  connectVirtual(options: VehicleOptions) {
+    const { status } = useLink.getState();
+    if (["selecting", "opening", "listening", "no-heartbeat", "connected", "stale"].includes(status)) return;
+    const vehicle = new VirtualVehicle(options);
+    this.virtual = vehicle;
+    this.closing = false;
+    this.simSpeed = 1;
+    useParams.getState().reset();
+    useCalibration.getState().reset();
+    this.session = new VehicleSession(undefined, (name, d) => commandLink.handle(name, d));
+    commandLink.attach(async (bytes) => {
+      vehicle.receive(bytes);
+    });
+    this.session.log("info", `Virtual aircraft started: ${options.airframe.name}. It speaks MAVLink like a flight controller, but nothing here is hardware.`);
+    useLink.setState({
+      status: "listening",
+      virtual: true,
+      error: null,
+      portLabel: "Virtual aircraft",
+      openedAt: Date.now(),
+      connectedAt: null,
+      lastHeartbeatAt: null,
+      vehicle: null,
+      telemetry: {},
+      stats: emptyStats(),
+      events: this.session.events,
+      recentFrames: [],
+    });
+    let last = performance.now();
+    this.timers.push(
+      window.setInterval(() => {
+        const now = performance.now();
+        // A background tab runs timers rarely; do not leap the aircraft forward.
+        const wall = Math.min(0.25, (now - last) / 1000);
+        last = now;
+        vehicle.advance(wall * this.simSpeed, wall);
+        const out = vehicle.drain();
+        if (out.length && this.session) {
+          if (this.session.ingest(out)) this.flush(true);
+          this.dirty = true;
+        }
+      }, 20),
+    );
+    this.timers.push(window.setInterval(() => this.flush(), FLUSH_MS));
+    this.timers.push(window.setInterval(() => this.watchdog(), 500));
+    this.timers.push(window.setInterval(() => this.session?.tickRates(), 1000));
+  }
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -69,7 +134,7 @@ class LinkManager {
     }
 
     const { baud } = useLink.getState();
-    useLink.setState({ status: "opening", error: null, portLabel: describeUsbDevice(chosen.getInfo()) });
+    useLink.setState({ status: "opening", virtual: false, error: null, portLabel: describeUsbDevice(chosen.getInfo()) });
     try {
       await chosen.open({ baudRate: baud, bufferSize: 16384 });
     } catch (e) {
@@ -113,13 +178,13 @@ class LinkManager {
   }
 
   async disconnect(reason = "Disconnected by user.") {
-    if (!this.port) {
+    if (!this.port && !this.virtual) {
       if (useLink.getState().status !== "idle") useLink.setState({ status: "idle" });
       return;
     }
     this.session?.log("info", reason);
     await this.teardown();
-    useLink.setState({ status: "idle", vehicle: null, connectedAt: null, openedAt: null, portLabel: null, events: this.session?.events ?? [] });
+    useLink.setState({ status: "idle", virtual: false, vehicle: null, connectedAt: null, openedAt: null, portLabel: null, events: this.session?.events ?? [] });
   }
 
   private async readLoop() {
@@ -223,6 +288,9 @@ class LinkManager {
     this.closing = true;
     this.timers.forEach((t) => clearInterval(t));
     this.timers = [];
+    // Keep what a real aircraft told us, so the simulator can fly on its settings.
+    if (!this.virtual) rememberParams();
+    this.virtual = null;
     commandLink.detach();
     try {
       await this.reader?.cancel();
@@ -263,6 +331,29 @@ class LinkManager {
 
   private setError(error: LinkError) {
     useLink.setState({ status: "error", error });
+  }
+}
+
+const PARAMS_KEY = "aeronex.lastAircraftParams.v1";
+
+/** Save a complete parameter download from a real aircraft in this browser. */
+function rememberParams() {
+  const p = useParams.getState();
+  if (!p.count || p.received < p.count) return;
+  try {
+    localStorage.setItem(PARAMS_KEY, JSON.stringify({ at: Date.now(), values: p.values }));
+  } catch {
+    /* storage full or blocked: the simulator falls back to its own defaults */
+  }
+}
+
+/** The last complete parameter set read from a real aircraft, if there is one. */
+export function rememberedParams(): { at: number; values: Record<string, number> } | null {
+  try {
+    const raw = localStorage.getItem(PARAMS_KEY);
+    return raw ? (JSON.parse(raw) as { at: number; values: Record<string, number> }) : null;
+  } catch {
+    return null;
   }
 }
 
