@@ -171,7 +171,8 @@ function rgb(hex: string): string {
 /**
  * Builds a multi-page PDF.
  *
- * Pages are the same size throughout, which is all the check sheet needs.
+ * Each page carries its own size, so a long part can have a landscape sheet
+ * among portrait ones.
  * Coordinates arrive in millimetres with y running down the page, matching
  * SVG and the rest of the drawing code; the flip to PDF's y-up happens here
  * so no caller has to think about it.
@@ -180,16 +181,32 @@ export class PdfDoc {
   private pages: string[] = [];
   private ops: string[] = [];
 
-  private readonly widthMm: number;
-  private readonly heightMm: number;
+  private widthMm: number;
+  private heightMm: number;
+  private sizes: Array<[number, number]> = [];
 
   constructor(widthMm: number, heightMm: number) {
     this.widthMm = widthMm;
     this.heightMm = heightMm;
   }
 
+  /** Set the size of the page about to be drawn. */
+  beginPage(widthMm: number, heightMm: number): void {
+    this.widthMm = widthMm;
+    this.heightMm = heightMm;
+  }
+
+  clip(x0: number, y0: number, x1: number, y1: number): void {
+    this.ops.push(`q ${this.x(x0)} ${this.y(y1)} ${n((x1 - x0) * MM_TO_PT)} ${n((y1 - y0) * MM_TO_PT)} re W n`);
+  }
+
+  unclip(): void {
+    this.ops.push("Q");
+  }
+
   /** Finish the current page and start a new one. */
   endPage(): void {
+    this.sizes.push([this.widthMm, this.heightMm]);
     this.pages.push(this.ops.join("\n"));
     this.ops = [];
   }
@@ -271,7 +288,7 @@ export class PdfDoc {
       const id = pageIds[i];
       objects[id] =
         `<< /Type /Page /Parent 2 0 R ` +
-        `/MediaBox [0 0 ${n(this.widthMm * MM_TO_PT)} ${n(this.heightMm * MM_TO_PT)}] ` +
+        `/MediaBox [0 0 ${n(this.sizes[i][0] * MM_TO_PT)} ${n(this.sizes[i][1] * MM_TO_PT)}] ` +
         `/Resources << /Font << /F1 ${fontId} 0 R /F2 ${fontId + 1} 0 R >> >> ` +
         `/Contents ${id + 1} 0 R >>`;
       objects[id + 1] = `<< /Length ${enc.encode(content).length} >>\nstream\n${content}\nendstream`;

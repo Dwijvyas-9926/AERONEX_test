@@ -41,6 +41,10 @@ class Recorder implements Sheet {
   polys: { pts: Pt[]; pen: Pen; close: boolean }[] = [];
   circles: { c: Pt; r: number; pen: Pen }[] = [];
   texts: { at: Pt; s: string; style: TextStyle }[] = [];
+  clips: number[][] = [];
+  open = 0;
+  clip(x0: number, y0: number, x1: number, y1: number) { this.clips.push([x0, y0, x1, y1]); this.open++; }
+  unclip() { this.open--; }
   poly(pts: Pt[], pen: Pen, close = true) { this.polys.push({ pts, pen, close }); }
   circle(c: Pt, r: number, pen: Pen) { this.circles.push({ c, r, pen }); }
   text(at: Pt, s: string, style: TextStyle) { this.texts.push({ at, s, style }); }
@@ -303,6 +307,64 @@ describe("the dimensions", () => {
   });
 });
 
+describe("a long arm", () => {
+  /*
+    The report: a 7" arm, 201.6 mm long, came out across two sheets with the
+    dimensions table printed through the middle of it. A portrait page has
+    213 mm for a drawing once the table and ruler are taken off, the arm wants
+    216 mm with its border, and the planner split it rather than turn the
+    paper.
+  */
+  const long = spec({ propIn: 10, wheelbaseMm: 440 });
+
+  it("goes on one landscape sheet instead of two portrait ones", () => {
+    for (const page of PAGE_SIZES) {
+      for (const [propIn, wheelbaseMm] of [[5, null], [7, null], [10, null], [10, 440], [10, 520]] as const) {
+        const d = designFrame(spec({ propIn, wheelbaseMm }));
+        const arms = planPrint(d, page).pages.filter((p) => p.profile.cantileverMm !== undefined);
+        for (const pg of arms) {
+          const span = (i: 0 | 1) => Math.max(...pg.profile.outline.map((q) => q[i])) - Math.min(...pg.profile.outline.map((q) => q[i]));
+          const length = Math.max(span(0), span(1));
+          if (length + 14 > Math.max(page.widthMm, page.heightMm) - 2 * PAGE_MARGIN_MM) continue;
+          expect(pg.of, `${propIn}" arm, ${length.toFixed(1)} mm, on ${page.name}`).toBe(1);
+        }
+      }
+    }
+    const pages = record(long).filter((p) => p.pg.profile.cantileverMm !== undefined);
+    expect(pages.length).toBeGreaterThan(0);
+    for (const { pg } of pages) {
+      expect(pg.of).toBe(1);
+      expect(pg.page.widthMm).toBeGreaterThan(pg.page.heightMm);
+    }
+  });
+
+  it("keeps the drawing clear of the table on every page of every size", () => {
+    for (const propIn of [3, 5, 7, 8, 10]) {
+      for (const { r, pg } of record(spec({ propIn }))) {
+        if (pg.of > 1) continue;
+        const b = drawnBounds(r);
+        const table = Math.min(...r.texts.filter((t) => t.s === "DIMENSIONS").map((t) => t.at[1]));
+        expect(b.maxY, `${propIn}" ${pg.profile.id}`).toBeLessThan(table - 3);
+        expect(b.maxX).toBeLessThanOrEqual(pg.page.widthMm - PAGE_MARGIN_MM);
+        expect(b.minX).toBeGreaterThanOrEqual(PAGE_MARGIN_MM);
+      }
+    }
+  });
+
+  it("confines a part that is split to its own area of each sheet", () => {
+    const d = designFrame(spec());
+    const plan = planPrint(d, { id: "slip", name: "Slip", widthMm: 90, heightMm: 120 });
+    for (const pg of plan.pages) {
+      const r = new Recorder();
+      drawPage(r, d, plan, pg, "Avion");
+      expect(r.clips).toHaveLength(1);
+      expect(r.open).toBe(0);
+      const table = Math.min(...r.texts.filter((t) => t.s === "DIMENSIONS").map((t) => t.at[1]));
+      expect(r.clips[0][3]).toBeLessThan(table - 3);
+    }
+  });
+});
+
 describe("tiling, when a part really is too big", () => {
   const sheetOfPaper = { id: "slip", name: "Slip", widthMm: 90, heightMm: 120 };
 
@@ -340,8 +402,10 @@ describe("tiling, when a part really is too big", () => {
   it("never asks for a tile larger than the printable area", () => {
     for (const page of [...PAGE_SIZES, sheetOfPaper]) {
       for (const pg of planPrint(designFrame(spec()), page).pages) {
-        expect(pg.tile.widthMm).toBeLessThanOrEqual(page.widthMm - 2 * PAGE_MARGIN_MM + 1e-9);
-        expect(pg.tile.heightMm).toBeLessThanOrEqual(page.heightMm - 2 * PAGE_MARGIN_MM + 1e-9);
+        expect(pg.tile.widthMm).toBeLessThanOrEqual(pg.page.widthMm - 2 * PAGE_MARGIN_MM + 1e-9);
+        expect(pg.tile.heightMm).toBeLessThanOrEqual(pg.page.heightMm - 2 * PAGE_MARGIN_MM + 1e-9);
+        // The paper is the size asked for, whichever way round it is used.
+        expect([pg.page.widthMm, pg.page.heightMm].sort()).toEqual([page.widthMm, page.heightMm].sort());
       }
     }
   });

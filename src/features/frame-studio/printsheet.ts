@@ -294,6 +294,8 @@ export interface Tile {
 
 export interface PartPage {
   profile: Profile;
+  /** The paper this page is printed on, already turned if it is landscape. */
+  page: PageSize;
   tile: Tile;
   /** Which sheet of this part, 1-based, and how many it takes. */
   index: number;
@@ -333,38 +335,50 @@ function drawingBounds(p: PartDrawing) {
 export function planPrint(d: FrameDesign, page: PageSize): PrintPlan {
   const pages: PartPage[] = [];
 
+  const landscape: PageSize = { ...page, widthMm: page.heightMm, heightMm: page.widthMm };
+
   for (const profile of d.profiles) {
     const specs = partSpecs(d, profile);
-    const L = layout(page, specs.length);
-    const areaW = L.x1 - L.x0;
-    const areaH = L.y1 - L.y0;
 
     /*
-      Upright first, then turned. An arm is long and thin, and on a portrait
-      page the difference between the two is whether it needs one sheet or
-      four.
-    */
-    let turned = false;
-    let draw = partDrawing(d, profile, false);
-    let b = drawingBounds(draw);
-    const fits = (x: ReturnType<typeof drawingBounds>) =>
-      x.w + 2 * PART_PAD <= areaW && x.l + 2 * PART_PAD <= areaH;
-    if (!fits(b)) {
-      const alt = partDrawing(d, profile, true);
-      const altB = drawingBounds(alt);
-      if (fits(altB) || altB.w / altB.l < b.w / b.l) {
-        turned = true;
-        draw = alt;
-        b = altB;
-      }
-    }
+      Four ways to put a part on a sheet: upright or a quarter turn round, on
+      paper that is portrait or landscape. The first that takes the whole part
+      is used, in that order, so an ordinary plate stays upright on a portrait
+      page and only a part that needs it gets anything else.
 
-    const totalW = b.w + 2 * PART_PAD;
-    const totalH = b.l + 2 * PART_PAD;
-    const stepW = areaW - TILE_OVERLAP_MM;
-    const stepH = areaH - TILE_OVERLAP_MM;
-    const cols = totalW <= areaW ? 1 : Math.ceil((totalW - areaW) / stepW) + 1;
-    const rows = totalH <= areaH ? 1 : Math.ceil((totalH - areaH) / stepH) + 1;
+      Landscape is what a long arm wants. The table and the ruler take about
+      70 mm off the height of a portrait page, which leaves 213 mm for a
+      drawing — and an arm for a 7" frame is 216 mm with its border. It was
+      being cut across two sheets for the sake of 3 mm, when the same sheet
+      turned on its side has 277 mm for it.
+    */
+    const upright = partDrawing(d, profile, false);
+    const turnedDraw = partDrawing(d, profile, true);
+    const options = [
+      { page, turned: false, draw: upright },
+      { page, turned: true, draw: turnedDraw },
+      { page: landscape, turned: true, draw: turnedDraw },
+      { page: landscape, turned: false, draw: upright },
+    ].map((o) => {
+      const L = layout(o.page, specs.length);
+      const b = drawingBounds(o.draw);
+      const areaW = L.x1 - L.x0;
+      const areaH = L.y1 - L.y0;
+      const stepW = areaW - TILE_OVERLAP_MM;
+      const stepH = areaH - TILE_OVERLAP_MM;
+      const totalW = b.w + 2 * PART_PAD;
+      const totalH = b.l + 2 * PART_PAD;
+      const cols = totalW <= areaW ? 1 : Math.ceil((totalW - areaW) / stepW) + 1;
+      const rows = totalH <= areaH ? 1 : Math.ceil((totalH - areaH) / stepH) + 1;
+      return { ...o, b, areaW, areaH, stepW, stepH, cols, rows };
+    });
+    // Fewest sheets wins; on a tie the earlier, plainer arrangement does.
+    // An arrangement whose drawing area is too small to tile into is no
+    // arrangement: on small paper the table leaves a landscape page nothing.
+    const usable = options.filter((o) => o.stepW >= 20 && o.stepH >= 20);
+    const pool = usable.length > 0 ? usable : [options[0]];
+    const pick = pool.reduce((best, o) => (o.cols * o.rows < best.cols * best.rows ? o : best), pool[0]);
+    const { b, areaW, areaH, stepW, stepH, cols, rows, turned } = pick;
 
     /*
       Centre the part in the paper it gets. On one page that is the drawing
@@ -381,6 +395,7 @@ export function planPrint(d: FrameDesign, page: PageSize): PrintPlan {
         index++;
         pages.push({
           profile,
+          page: pick.page,
           turned,
           specs,
           index,
@@ -418,6 +433,9 @@ export function planPrint(d: FrameDesign, page: PageSize): PrintPlan {
   and the way the tiles are planned. The PDF backend flips it.
 */
 export interface Sheet {
+  /** Confine what follows to a rectangle, until `unclip`. */
+  clip(x0: number, y0: number, x1: number, y1: number): void;
+  unclip(): void;
   poly(pts: Pt[], pen: Pen, close?: boolean): void;
   circle(c: Pt, r: number, pen: Pen): void;
   text(at: Pt, s: string, style: TextStyle): void;
@@ -479,10 +497,11 @@ function dimension(sheet: Sheet, from: Pt, to: Pt, off: number, label: string, v
 
 /** Draw one page of the check sheet. */
 export function drawPage(sheet: Sheet, d: FrameDesign, plan: PrintPlan, pg: PartPage, vehicleName: string): void {
-  const { page } = plan;
+  const { page } = pg;
   const L = layout(page, pg.specs.length);
   const draw = partDrawing(d, pg.profile, pg.turned);
   const { tile } = pg;
+  void plan;
 
   /*
     Model space to page space. The part is drawn with +y forward, as a
@@ -491,6 +510,12 @@ export function drawPage(sheet: Sheet, d: FrameDesign, plan: PrintPlan, pg: Part
   */
   const toPage = ([x, y]: Pt): Pt => [L.x0 - tile.x + x, L.y0 + tile.y + tile.heightMm - y];
 
+  /*
+    Nothing of the part may be drawn outside its own area. On a part split
+    across sheets the rest of it lies beyond this page's edge, and without
+    this it ran straight on through the table and the ruler underneath.
+  */
+  sheet.clip(L.x0, L.y0, L.x1, L.y1);
   for (const g of draw.guides) sheet.poly(g.shape.map(toPage), GUIDE);
   sheet.poly(draw.outline.map(toPage), CUT);
   for (const s of draw.slots) sheet.poly(s.map(toPage), CUT);
@@ -502,6 +527,7 @@ export function drawPage(sheet: Sheet, d: FrameDesign, plan: PrintPlan, pg: Part
     sheet.poly([[c[0] - h.r - 1, c[1]], [c[0] + h.r + 1, c[1]]], CENTRE, false);
     sheet.poly([[c[0], c[1] - h.r - 1], [c[0], c[1] + h.r + 1]], CENTRE, false);
   }
+  sheet.unclip();
 
   // Footprint labels sit just above their own outline, not at its centre:
   // the battery and the stack share a centre and printed on top of each other.
@@ -638,6 +664,19 @@ const esc = (s: string) =>
 /** An SVG backend, for looking at a page in a browser. */
 class SvgSheet implements Sheet {
   readonly parts: string[] = [];
+  private clips = 0;
+
+  clip(x0: number, y0: number, x1: number, y1: number): void {
+    const id = `clip${++this.clips}`;
+    this.parts.push(
+      `<clipPath id="${id}"><rect x="${f(x0)}" y="${f(y0)}" width="${f(x1 - x0)}" height="${f(y1 - y0)}"/></clipPath>`,
+      `<g clip-path="url(#${id})">`,
+    );
+  }
+
+  unclip(): void {
+    this.parts.push(`</g>`);
+  }
 
   private attrs(pen: Pen): string {
     const out = [`fill="${pen.fill ?? "none"}"`, `stroke="${pen.stroke ?? "none"}"`, `stroke-width="${f(pen.width ?? 0.2)}"`];
@@ -675,7 +714,7 @@ class SvgSheet implements Sheet {
 export function toPrintSVG(d: FrameDesign, plan: PrintPlan, pg: PartPage, vehicleName: string): string {
   const sheet = new SvgSheet();
   drawPage(sheet, d, plan, pg, vehicleName);
-  const { page } = plan;
+  const { page } = pg;
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${f(page.widthMm)}mm" height="${f(page.heightMm)}mm" viewBox="0 0 ${f(page.widthMm)} ${f(page.heightMm)}">`,
@@ -699,6 +738,7 @@ export function toPrintSVG(d: FrameDesign, plan: PrintPlan, pg: PartPage, vehicl
 export function toPrintPDF(d: FrameDesign, plan: PrintPlan, vehicleName: string): Uint8Array {
   const doc = new PdfDoc(plan.page.widthMm, plan.page.heightMm);
   for (const pg of plan.pages) {
+    doc.beginPage(pg.page.widthMm, pg.page.heightMm);
     drawPage(doc, d, plan, pg, vehicleName);
     doc.endPage();
   }
