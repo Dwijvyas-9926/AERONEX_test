@@ -2,6 +2,7 @@ import { Cable, Gamepad2, Hand, OctagonX, PlaneLanding, RotateCcw, ShieldCheck, 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pfd } from "../flightdata/Pfd";
+import { notify } from "../../state/notifyStore";
 import { commandLink } from "../../services/link/commandLink";
 import { useLink } from "../../state/linkStore";
 import { FlightController, type FlightDeps, type FlightState, type KeyState, type LogLevel } from "./flightController";
@@ -84,7 +85,11 @@ export function KeyboardFlightPage() {
         const s = useLink.getState();
         const t = s.telemetry;
         const alt = t.position?.value.relAlt ?? t.hud?.value.alt ?? null;
-        return { armed: s.vehicle?.armed ?? false, relAlt: alt, mode: null, connected: !!s.vehicle && s.status === "connected" };
+        // The mode number is what lets the controller see that a landing it
+        // asked for has actually begun — or that someone has taken over on
+        // the radio. It was passed as null, so the controller flew blind to
+        // both.
+        return { armed: s.vehicle?.armed ?? false, relAlt: alt, mode: s.vehicle?.customMode ?? null, connected: !!s.vehicle && s.status === "connected" };
       },
       now: () => Date.now(),
       log: pushLog,
@@ -93,7 +98,29 @@ export function KeyboardFlightPage() {
     const fc = new FlightController(deps);
     fcRef.current = fc;
     fc.start();
-    return () => { fc.stop(); fcRef.current = null; };
+    return () => {
+      fcRef.current = null;
+      /*
+        Leaving this page with the aircraft in the air used to stop the
+        controller and nothing else: the vehicle stayed in a GUIDED hover
+        with no keys bound to it, and — because the app's heartbeat carries
+        on from every other page — no failsafe to bring it down. It is told
+        to land instead, and the controller is kept alive just long enough to
+        see that through, re-sending if the command does not take.
+      */
+      if (fc.phase === "flying" || fc.phase === "takeoff") {
+        void fc.requestLand();
+        notify("warn", "Landing the aircraft", "You left Keyboard Flight with the aircraft in the air, so it has been told to land where it is.");
+        const watch = setInterval(() => {
+          if (fc.phase === "idle" || fc.phase === "emergency") {
+            clearInterval(watch);
+            fc.stop();
+          }
+        }, 500);
+      } else {
+        fc.stop();
+      }
+    };
   }, [pushLog]);
 
   // --- tutorial shows every time the tab opens ---
@@ -111,6 +138,15 @@ export function KeyboardFlightPage() {
     const down = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       if (!["w", "a", "s", "d", "q", "e", "t", "l", " "].includes(k)) return;
+      /*
+        A browser shortcut is not a flight command. Ctrl+T opens a tab and
+        Ctrl+L goes to the address bar; without this check the first also
+        took off and the second also landed. Typing in a field is likewise
+        typing, not flying.
+      */
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))) return;
       e.preventDefault();
       // Never trigger flight commands while the tutorial/controls modal is open.
       if (modalRef.current) return;

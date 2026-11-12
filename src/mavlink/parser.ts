@@ -18,6 +18,8 @@ const V2_HEADER = 10;
 const CRC_LEN = 2;
 const SIG_LEN = 13;
 const IFLAG_SIGNED = 0x01;
+/** Most bytes ever held waiting for a frame to complete. */
+const MAX_BACKLOG = 1 << 20;
 
 const DEFS = new Map<number, MessageDef>();
 const BY_NAME = new Map<string, number>();
@@ -66,6 +68,21 @@ export class MavlinkParser {
   /** Append bytes and return all complete, CRC-valid frames. */
   push(chunk: Uint8Array): MavFrame[] {
     this.stats.bytes += chunk.length;
+    /*
+      A read larger than the whole backlog allowance cannot be a healthy
+      stream — it is a stalled tab catching up, or something that is not
+      MAVLink at all. Keep its tail, which is where any current frame is, and
+      drop the rest. This used to clear the backlog and then copy the entire
+      read into a buffer it had declined to grow, which threw and took the
+      link's read loop down with it.
+    */
+    if (chunk.length > MAX_BACKLOG / 2) {
+      chunk = chunk.subarray(chunk.length - MAX_BACKLOG / 2);
+      this.len = 0;
+    }
+    // Bound memory: a healthy stream never needs more than a few frames of
+    // backlog, so one that has built up this far is stale and is dropped.
+    if (this.len + chunk.length > MAX_BACKLOG) this.len = 0;
     this.ensure(this.len + chunk.length);
     this.buf.set(chunk, this.len);
     this.len += chunk.length;
@@ -142,11 +159,6 @@ export class MavlinkParser {
 
   private ensure(n: number) {
     if (n <= this.buf.length) return;
-    // Bound memory: a healthy stream never needs more than a few frames of backlog.
-    if (n > 1 << 20) {
-      this.len = 0;
-      return;
-    }
     const next = new Uint8Array(Math.max(n, this.buf.length * 2));
     next.set(this.buf.subarray(0, this.len));
     this.buf = next;

@@ -76,3 +76,68 @@ describe("parameter echo", () => {
     expect(useParams.getState().pending["MOT_SPIN_ARM"]).toBeTruthy();
   });
 });
+
+describe("when the link goes away or drops packets", () => {
+  const vehicle = { sysid: 1, compid: 1 } as never;
+
+  it("settles a command that was in flight, instead of leaving it waiting for ever", async () => {
+    const { useLink } = await import("../../../state/linkStore");
+    useLink.setState({ vehicle });
+    commandLink.attach(async () => {});
+    const pending = commandLink.sendCommand(400, { p1: 1 }, 0, 60_000);
+    commandLink.detach();
+    await expect(pending).rejects.toThrow(/Link closed/);
+    useLink.setState({ vehicle: null });
+  });
+
+  it("does not throw out of the velocity timer once the vehicle is gone", async () => {
+    const { useLink } = await import("../../../state/linkStore");
+    useLink.setState({ vehicle: null });
+    commandLink.attach(async () => {});
+    expect(() => commandLink.setVelocityBody(1, 0, 0, 0)).not.toThrow();
+    commandLink.detach();
+  });
+
+  it("clears a pending write when a large value comes back as the float it was stored as", () => {
+    // 16777217 is not representable in a float32; the vehicle echoes 16777216.
+    useParams.getState().markPending("BIG_VALUE", 16777217);
+    commandLink.handle("PARAM_VALUE", { param_id: "BIG_VALUE", param_value: Math.fround(16777217), param_count: 10, param_index: 65535 });
+    expect(useParams.getState().pending.BIG_VALUE).toBeUndefined();
+  });
+
+  it("asks again for parameters the list download lost", async () => {
+    const { vi } = await import("vitest");
+    const { useLink } = await import("../../../state/linkStore");
+    const { MavlinkParser, decode } = await import("../../../mavlink/parser");
+    vi.useFakeTimers();
+    try {
+      useLink.setState({ vehicle });
+      const sent: { name: string; index: number }[] = [];
+      const parser = new MavlinkParser();
+      commandLink.attach(async (bytes) => {
+        for (const f of parser.push(bytes)) sent.push({ name: f.name, index: (decode(f)?.param_index as number) ?? -1 });
+      });
+      await commandLink.requestAllParams();
+      // Ten parameters; numbers 3 and 7 never arrive.
+      for (let i = 0; i < 10; i++) {
+        if (i === 3 || i === 7) continue;
+        commandLink.handle("PARAM_VALUE", { param_id: `P_${i}`, param_value: i, param_count: 10, param_index: i });
+      }
+      expect(useParams.getState().received).toBe(8);
+      await vi.advanceTimersByTimeAsync(3500);
+      const asked = sent.filter((s) => s.name === "PARAM_REQUEST_READ").map((s) => s.index);
+      expect(new Set(asked)).toEqual(new Set([3, 7]));
+      // Once they arrive, it stops asking.
+      commandLink.handle("PARAM_VALUE", { param_id: "P_3", param_value: 3, param_count: 10, param_index: 3 });
+      commandLink.handle("PARAM_VALUE", { param_id: "P_7", param_value: 7, param_count: 10, param_index: 7 });
+      const before = sent.length;
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(sent.length).toBe(before);
+      expect(useParams.getState().received).toBe(10);
+    } finally {
+      commandLink.detach();
+      useLink.setState({ vehicle: null });
+      vi.useRealTimers();
+    }
+  });
+});

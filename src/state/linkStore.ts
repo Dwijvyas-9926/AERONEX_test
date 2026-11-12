@@ -30,6 +30,8 @@ export interface VehicleIdentity {
   firmwareLabel: string;
   armed: boolean;
   mode: string | null;
+  /** The autopilot's own mode number, as sent in the heartbeat. */
+  customMode: number | null;
   systemStatus: string;
   mavlinkVersion: number;
   protocol: 1 | 2;

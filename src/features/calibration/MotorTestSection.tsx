@@ -91,11 +91,17 @@ export function MotorTestSection({ canSend }: { canSend: boolean }) {
 
   const toggle = (i: number) => {
     if (seqRunning) return;
+    const on = !spinningRef.current[i];
+    // Stopping is always allowed; starting is checked here as well as on the
+    // button, so the gate does not depend on a disabled attribute alone.
+    if (on && blockedRef.current) return;
+    // The command goes out here rather than inside the state updater, which
+    // React is free to run more than once.
+    if (on) void commandLink.motorTest(i + 1, throttleRef.current[i], cmdTimeout());
+    else void commandLink.stopMotor(i + 1);
     setSpinning((prev) => {
       const next = [...prev];
-      next[i] = !prev[i];
-      if (next[i]) void commandLink.motorTest(i + 1, throttleRef.current[i], cmdTimeout());
-      else void commandLink.stopMotor(i + 1);
+      next[i] = on;
       return next;
     });
   };

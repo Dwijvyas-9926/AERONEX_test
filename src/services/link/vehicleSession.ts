@@ -292,6 +292,7 @@ export class VehicleSession {
       firmwareLabel: firmwareLabel(fam),
       armed,
       mode,
+      customMode: Number.isFinite(hb.custom_mode) ? hb.custom_mode : null,
       systemStatus: systemStatusLabel(hb.system_status),
       mavlinkVersion: hb.mavlink_version,
       protocol: f.version,

@@ -1,7 +1,7 @@
 import { encode } from "../../mavlink/encode";
 import type { Decoded } from "../../mavlink/parser";
 import { useLink } from "../../state/linkStore";
-import { useParams } from "../../state/paramStore";
+import { sameParam, useParams } from "../../state/paramStore";
 import { useCalibration, magCalOk } from "../../state/calibrationStore";
 import { notify } from "../../state/notifyStore";
 
@@ -68,10 +68,18 @@ export const MAV_RESULT: Record<number, string> = {
 };
 const MAV_PARAM_TYPE_REAL32 = 9;
 
+/** How long the parameter stream must be quiet before gaps are chased, ms. */
+const PARAM_QUIET_MS = 1500;
+/** Missing parameters asked for per second. */
+const FILL_BATCH = 24;
+/** Rounds of chasing after which the vehicle is taken to have stopped answering. */
+const MAX_FILL_ROUNDS = 40;
+
 type SendFn = (bytes: Uint8Array) => Promise<void> | void;
 
 interface PendingCmd {
   resolve: (result: number) => void;
+  reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -80,6 +88,10 @@ class CommandLink {
   private pendingCmds = new Map<number, PendingCmd>();
   private pendingParams = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** Which parameter indices have arrived in the current list download. */
+  private seenIndices = new Set<number>();
+  private fillTimer: ReturnType<typeof setInterval> | null = null;
+  private fillRounds = 0;
 
   /** Called by the link manager when the port's writer is ready / gone. */
   attach(send: SendFn) {
@@ -88,7 +100,19 @@ class CommandLink {
   detach() {
     this.send = null;
     this.stopHeartbeat();
-    for (const p of this.pendingCmds.values()) clearTimeout(p.timer);
+    if (this.fillTimer) clearInterval(this.fillTimer);
+    this.fillTimer = null;
+    this.seenIndices.clear();
+    /*
+      Settle what was waiting. The timers used to be cleared and the promises
+      simply dropped, so a command in flight when the cable came out never
+      resolved or rejected: whatever was awaiting it — a calibration step, a
+      mode change — stayed "working" on screen until the page was reloaded.
+    */
+    for (const p of this.pendingCmds.values()) {
+      clearTimeout(p.timer);
+      p.reject(new Error("Link closed"));
+    }
     for (const p of this.pendingParams.values()) {
       clearTimeout(p.timer);
       p.reject(new Error("Link closed"));
@@ -140,7 +164,7 @@ class CommandLink {
         this.pendingCmds.delete(command);
         reject(new Error("No acknowledgement from the vehicle (timed out)."));
       }, timeoutMs);
-      this.pendingCmds.set(command, { resolve, timer });
+      this.pendingCmds.set(command, { resolve, reject, timer });
       this.write("COMMAND_LONG", fields).catch((e) => {
         clearTimeout(timer);
         this.pendingCmds.delete(command);
@@ -191,7 +215,51 @@ class CommandLink {
 
   async requestAllParams() {
     const t = this.target();
+    this.seenIndices.clear();
+    this.fillRounds = 0;
     await this.write("PARAM_REQUEST_LIST", { target_system: t.sysid, target_component: t.compid });
+    this.watchParamList();
+  }
+
+  /**
+   * Fill the gaps in a parameter download.
+   *
+   * The vehicle answers a list request with one message per parameter and
+   * does not resend any that are lost — and on a telemetry radio some always
+   * are. The download then sat at "1,187 of 1,204" indefinitely, with the
+   * missing ones simply absent from the list. Once the stream goes quiet,
+   * whatever indices have not been seen are asked for by number, a batch at a
+   * time, until the list is whole or the vehicle has plainly stopped
+   * answering.
+   */
+  private watchParamList() {
+    if (this.fillTimer) clearInterval(this.fillTimer);
+    this.fillTimer = setInterval(() => {
+      const { count, lastUpdateAt } = useParams.getState();
+      const done = count != null && this.seenIndices.size >= count;
+      if (!this.canSend || done || this.fillRounds >= MAX_FILL_ROUNDS) {
+        if (this.fillTimer) clearInterval(this.fillTimer);
+        this.fillTimer = null;
+        return;
+      }
+      if (count == null) {
+        // Nothing at all came back: the list request itself was lost.
+        if (++this.fillRounds % 3 === 0) {
+          const t = this.target();
+          void this.write("PARAM_REQUEST_LIST", { target_system: t.sysid, target_component: t.compid }).catch(() => {});
+        }
+        return;
+      }
+      if (lastUpdateAt != null && Date.now() - lastUpdateAt < PARAM_QUIET_MS) return;
+      this.fillRounds++;
+      const t = this.target();
+      let asked = 0;
+      for (let i = 0; i < count && asked < FILL_BATCH; i++) {
+        if (this.seenIndices.has(i)) continue;
+        asked++;
+        void this.write("PARAM_REQUEST_READ", { target_system: t.sysid, target_component: t.compid, param_id: "", param_index: i }).catch(() => {});
+      }
+    }, 1000);
   }
 
   /** Ask for a message to be streamed at a given rate (Hz) via SET_MESSAGE_INTERVAL. */
@@ -248,6 +316,9 @@ class CommandLink {
    * The vehicle brakes to a stop by itself ~3 s after the last one (dead-man hold).
    */
   setVelocityBody(vx: number, vy: number, vz: number, yawRate: number) {
+    // Called from a timer at several hertz. If the vehicle has gone there is
+    // nothing to send to, and throwing out of a timer helps nobody.
+    if (!this.canSend) return;
     const t = this.target();
     void this.write("SET_POSITION_TARGET_LOCAL_NED", {
       time_boot_ms: 0,
@@ -437,12 +508,16 @@ class CommandLink {
         const id = (d.param_id as string) ?? "";
         const value = d.param_value as number;
         const count = (d.param_count as number) ?? 0;
+        // 65535 is "not part of a list" — the reply to a write, or to a read
+        // by name — and is not a position in the download.
+        const index = d.param_index as number;
+        if (Number.isInteger(index) && index >= 0 && index < 65535) this.seenIndices.add(index);
         useParams.getState().onParamValue(id, value, count);
         const pend = this.pendingParams.get(id);
         // The vehicle echoes a float32; compare against the float32-rounded target
         // with a relative epsilon so large non-integer params still match.
         const target = useParams.getState().pending[id]?.target ?? value;
-        if (pend && Math.abs(Math.fround(target) - value) <= Math.max(1e-4, 1e-4 * Math.abs(target))) {
+        if (pend && sameParam(target, value)) {
           clearTimeout(pend.timer);
           this.pendingParams.delete(id);
           pend.resolve();

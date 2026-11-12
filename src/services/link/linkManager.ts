@@ -25,6 +25,8 @@ class LinkManager {
   private timers: number[] = [];
   private closing = false;
   private dirty = false;
+  /** Settles when the read loop has let go of the port. */
+  private readDone: Promise<void> = Promise.resolve();
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -107,7 +109,7 @@ class LinkManager {
     // Keep the standard data streams flowing (survives a vehicle reboot or a
     // dropped request). ArduPilot sends little beyond the heartbeat otherwise.
     this.timers.push(window.setInterval(() => this.streamKeepalive(), 5000));
-    void this.readLoop();
+    this.readDone = this.readLoop().catch(() => undefined);
   }
 
   async disconnect(reason = "Disconnected by user.") {
@@ -227,10 +229,27 @@ class LinkManager {
     } catch {
       /* ignore */
     }
+    /*
+      Wait for the read loop to release its lock before closing. Cancelling
+      the reader only asks it to stop; the lock is released a tick later, in
+      the loop's own `finally`. Closing straight away raced that and failed
+      with the stream still locked — silently, because the error was
+      swallowed — which left the port open underneath, so the next attempt
+      to connect was told another program was using it. Bounded, so a loop
+      that never settles cannot hang a disconnect.
+    */
+    await Promise.race([this.readDone, new Promise<void>((r) => setTimeout(r, 1500))]);
+    try {
+      // Abort rather than release: a write still in flight keeps the stream
+      // locked, and a locked stream cannot be closed either.
+      await this.writer?.abort();
+    } catch {
+      /* already errored or closed */
+    }
     try {
       this.writer?.releaseLock();
     } catch {
-      /* a write may be in flight; the close below still releases it */
+      /* released by the abort */
     }
     this.writer = null;
     try {

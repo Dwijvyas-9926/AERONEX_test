@@ -8,6 +8,11 @@ import { create } from "zustand";
   I/O and calls these setters.
 */
 
+/** Is `echoed` the float32 the vehicle would store for `target`? */
+export function sameParam(target: number, echoed: number): boolean {
+  return Math.abs(Math.fround(target) - echoed) <= Math.max(1e-4, 1e-4 * Math.abs(target));
+}
+
 export type ParamWriteState = "ok" | "writing" | "failed";
 
 export interface PendingWrite {
@@ -40,7 +45,11 @@ export const useParams = create<ParamStoreState>((set, get) => ({
     const wasKnown = id in s.values;
     const pending = { ...s.pending };
     // A matching pending write is now confirmed by the vehicle's echo.
-    if (pending[id] && Math.abs(pending[id].target - value) < 1e-4) delete pending[id];
+    // The vehicle stores and echoes a 32-bit float, so compare against the
+    // target as a float32 and allow for its size: an absolute 1e-4 never
+    // matched a large value, whose nearest float is further off than that,
+    // and the row then showed "writing" for ever after a write that worked.
+    if (pending[id] && sameParam(pending[id].target, value)) delete pending[id];
     set({
       values: { ...s.values, [id]: value },
       pending,

@@ -86,6 +86,10 @@ export interface FlightState {
 
 const MODE = { GUIDED: 4, RTL: 6, LAND: 9 } as const;
 const MAV_RESULT_ACCEPTED = 0;
+/** How long to wait for a mode change to show in telemetry before re-sending, ms. */
+const RESEND_MS = 1500;
+/** Attempts after which the pilot is told the aircraft is not listening. */
+const GIVE_UP_AFTER = 4;
 
 const approach = (cur: number, target: number, maxStep: number) => {
   if (cur < target) return Math.min(cur + maxStep, target);
@@ -102,6 +106,8 @@ export class FlightController {
   private phaseV: FlightPhase = "idle";
   private timer: ReturnType<typeof setInterval> | null = null;
   private busy = false; // a command sequence is in flight
+  /** The mode a descent was asked for in, and when it was last asked. */
+  private descent: { mode: number; sentAt: number; tries: number } | null = null;
   private deps: FlightDeps;
   config: FlightConfig;
 
@@ -174,21 +180,39 @@ export class FlightController {
     }
   }
 
+  /**
+   * Ask the autopilot to come down, and keep asking until it has.
+   *
+   * A mode change is one packet over a radio link, and its reply is another.
+   * This used to send it once: if either was lost, or the autopilot refused,
+   * the screen said "Landing" while the aircraft sat in a hover with the
+   * keys disabled — the one state in which the pilot believes something is
+   * happening that is not. The control loop now watches the reported mode
+   * and re-sends until the vehicle is actually in it.
+   */
+  private async descend(mode: number, what: string): Promise<void> {
+    this.neutralize();
+    this.descent = { mode, sentAt: this.deps.now(), tries: 1 };
+    this.setPhase("landing");
+    try {
+      const r = await this.deps.setMode(mode);
+      if (r !== MAV_RESULT_ACCEPTED) this.deps.log("error", `${what} was not accepted — sending it again.`);
+    } catch {
+      this.deps.log("error", `${what} got no reply — sending it again.`);
+    }
+  }
+
   /** L: land gradually at the current position; the vehicle auto-disarms on the ground. */
   async requestLand(): Promise<void> {
-    if (this.phaseV === "idle" || this.phaseV === "landing") return;
-    this.neutralize();
-    this.setPhase("landing");
+    if (this.phaseV === "idle" || (this.phaseV === "landing" && this.descent?.mode === MODE.LAND)) return;
     this.deps.log("action", "Landing — descending gently and will disarm on the ground.");
-    await this.deps.setMode(MODE.LAND).catch(() => this.deps.log("error", "Land command failed — retrying."));
+    await this.descend(MODE.LAND, "The land command");
   }
 
   /** Emergency: Return-To-Launch (climbs to RTL alt, flies home, lands). */
   async emergencyRTL(): Promise<void> {
-    this.neutralize();
-    this.setPhase("landing");
     this.deps.log("warn", "RETURN TO HOME commanded.");
-    await this.deps.setMode(MODE.RTL).catch(() => this.deps.log("error", "RTL command failed."));
+    await this.descend(MODE.RTL, "Return-to-home");
   }
 
   /** Emergency stop in place: brake to a hover (does not land). */
@@ -206,8 +230,7 @@ export class FlightController {
 
   private async safeLand() {
     if (this.deps.getTelemetry().armed) {
-      this.setPhase("landing");
-      await this.deps.setMode(MODE.LAND).catch(() => {});
+      await this.descend(MODE.LAND, "The land command");
     } else {
       this.setPhase("idle");
     }
@@ -246,6 +269,31 @@ export class FlightController {
         break;
       }
       case "flying": {
+        /*
+          Keyboard control only means anything while the aircraft is armed
+          and in GUIDED. If it has disarmed — a crash, or the autopilot's own
+          landing detector — or someone has switched mode on the radio, the
+          velocity targets below are ignored by the vehicle while the screen
+          goes on showing them as commanded. Say what happened and let go.
+        */
+        if (!t.armed) {
+          this.deps.log("warn", "The aircraft disarmed.");
+          this.vx = this.vy = this.vz = this.yawRate = 0;
+          this.setPhase("idle");
+          break;
+        }
+        if (t.mode !== null && t.mode !== MODE.GUIDED) {
+          this.vx = this.vy = this.vz = this.yawRate = 0;
+          if (t.mode === MODE.LAND || t.mode === MODE.RTL) {
+            this.deps.log("warn", "The aircraft was switched to a landing mode — keyboard control released.");
+            this.descent = { mode: t.mode, sentAt: this.deps.now(), tries: 1 };
+            this.setPhase("landing");
+          } else {
+            this.deps.log("warn", "Flight mode was changed from the radio — keyboard control released.");
+            this.setPhase("emergency");
+          }
+          break;
+        }
         // Targets from keys.
         const vxT = (this.keys.fwd ? this.config.maxHoriz : 0) + (this.keys.back ? -this.config.maxHoriz : 0);
         const vyT = (this.keys.right ? this.config.maxHoriz : 0) + (this.keys.left ? -this.config.maxHoriz : 0);
@@ -272,14 +320,26 @@ export class FlightController {
       case "landing": {
         if (!t.armed) {
           this.deps.log("info", "Landed and disarmed. ✔");
+          this.descent = null;
           this.setPhase("idle");
+          break;
+        }
+        // Still up, and not in the mode that was asked for: ask again.
+        const d = this.descent;
+        if (d && t.connected && t.mode !== null && t.mode !== d.mode && this.deps.now() - d.sentAt >= RESEND_MS) {
+          d.sentAt = this.deps.now();
+          d.tries++;
+          if (d.tries === GIVE_UP_AFTER) {
+            this.deps.log("error", "The aircraft is not accepting the command. Take over on the radio if you have one.");
+          }
+          void this.deps.setMode(d.mode).catch(() => {});
         }
         break;
       }
       case "emergency": {
-        // Recover once the link is back and the vehicle is safely disarmed.
+        // Recover once the vehicle is reachable and safely disarmed.
         if (t.connected && !t.armed) {
-          this.deps.log("info", "Link restored and vehicle disarmed — ready again.");
+          this.deps.log("info", "Vehicle is disarmed — ready again.");
           this.setPhase("idle");
         }
         break;

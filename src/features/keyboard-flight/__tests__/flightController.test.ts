@@ -208,3 +208,101 @@ describe("FlightController — failure handling", () => {
     expect(ap.setVelocity).not.toHaveBeenCalled();
   });
 });
+
+describe("FlightController — a descent that does not take", () => {
+  /** A controller on a clock the test owns, so re-send timing is exact. */
+  function flying() {
+    const ap = new MockAutopilot();
+    let now = 0;
+    const logs: string[] = [];
+    const fc = new FlightController(
+      {
+        arm: ap.arm, setMode: ap.setMode, takeoff: ap.takeoff, setVelocity: ap.setVelocity,
+        getTelemetry: ap.telemetry, now: () => now, log: (_l, m) => logs.push(m), onChange: () => {},
+      },
+      { ...DEFAULT_CONFIG },
+    );
+    const step = (ticks: number) => {
+      for (let i = 0; i < ticks; i++) { now += DEFAULT_CONFIG.tickMs; fc.tick(); ap.tickSim(DEFAULT_CONFIG.tickMs / 1000); }
+    };
+    return { ap, fc, logs, step };
+  }
+
+  it("re-sends LAND until the aircraft is actually in it", async () => {
+    const { ap, fc, step } = flying();
+    await fc.requestTakeoff();
+    step(20);
+    expect(fc.phase).toBe("flying");
+    // The autopilot refuses, as it would with the packet lost or a bad state.
+    ap.rejectMode = true;
+    await fc.requestLand();
+    expect(fc.phase).toBe("landing");
+    expect(ap.mode).toBe(MODE.GUIDED);
+    const sent = () => ap.setMode.mock.calls.filter((c) => c[0] === MODE.LAND).length;
+    expect(sent()).toBe(1);
+    step(20); // two seconds on, still hovering in GUIDED
+    expect(sent()).toBeGreaterThan(1);
+    // Once it gets through, the aircraft lands and the controller goes idle.
+    ap.rejectMode = false;
+    step(20);
+    expect(ap.mode).toBe(MODE.LAND);
+    const settled = sent();
+    step(100);
+    expect(sent()).toBe(settled); // and it stops asking
+    expect(ap.armed).toBe(false);
+    expect(fc.phase).toBe("idle");
+  });
+
+  it("tells the pilot when the aircraft will not take the command", async () => {
+    const { ap, fc, logs, step } = flying();
+    await fc.requestTakeoff();
+    step(20);
+    ap.rejectMode = true;
+    await fc.requestLand();
+    step(80);
+    expect(logs.join("\n")).toMatch(/not accepting the command/);
+  });
+
+  it("lets go when the aircraft disarms on its own", async () => {
+    const { ap, fc, step } = flying();
+    await fc.requestTakeoff();
+    step(20);
+    fc.setKeys({ fwd: true });
+    step(5);
+    ap.armed = false;
+    ap.setVelocity.mockClear();
+    step(3);
+    expect(fc.phase).toBe("idle");
+    expect(ap.setVelocity).not.toHaveBeenCalled();
+  });
+
+  it("lets go when the mode is changed from the radio", async () => {
+    const { ap, fc, logs, step } = flying();
+    await fc.requestTakeoff();
+    step(20);
+    ap.mode = 5; // LOITER, from the transmitter
+    ap.setVelocity.mockClear();
+    step(3);
+    expect(fc.phase).toBe("emergency");
+    expect(ap.setVelocity).not.toHaveBeenCalled();
+    expect(logs.join("\n")).toMatch(/changed from the radio/);
+    // A landing mode from the radio is followed rather than fought.
+    const second = flying();
+    await second.fc.requestTakeoff();
+    second.step(20);
+    second.ap.mode = MODE.LAND;
+    second.step(2);
+    expect(second.fc.phase).toBe("landing");
+    expect(second.ap.setMode.mock.calls.filter((c) => c[0] === MODE.LAND)).toHaveLength(0);
+  });
+
+  it("can switch a landing to return-to-home, and re-sends that too", async () => {
+    const { ap, fc, step } = flying();
+    await fc.requestTakeoff();
+    step(20);
+    await fc.requestLand();
+    await fc.emergencyRTL();
+    expect(ap.mode).toBe(MODE.RTL);
+    expect(fc.phase).toBe("landing");
+  });
+});
