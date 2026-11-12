@@ -1,5 +1,5 @@
-import { BatteryMedium, Cable, Compass, Gauge, MountainSnow, Navigation, Radio, Satellite, TrendingUp, Zap } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
+import { BatteryMedium, Compass, Gauge, MountainSnow, Navigation, Radio, Satellite, TrendingUp, Zap } from "lucide-react";
 import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { useSettings } from "../../state/settingsStore";
@@ -25,9 +25,18 @@ export function FlightDataPage() {
             <h1>Flight Data</h1>
             <p>A full primary flight display driven by live telemetry — attitude, heading, speed and altitude at a glance.</p>
           </div>
-          <Link className="btn btn-primary" to="/connection"><Cable /> Connect a vehicle</Link>
         </header>
-        <div className="callout"><span>Connect a flight controller to bring the flight display live. Nothing here is simulated — every needle moves only on real telemetry.</span></div>
+        <ConnectPrompt
+          title="Connect an aircraft to bring the display live"
+          items={[
+            { icon: Navigation, title: "Attitude and heading", detail: "An artificial horizon with roll, pitch and a compass tape." },
+            { icon: Gauge, title: "Speed and height", detail: "Ground speed, climb rate and height above the take-off point." },
+            { icon: Satellite, title: "GPS and battery", detail: "Fix, satellites, voltage and charge, with stale readings marked." },
+          ]}
+        >
+          A primary flight display, drawn from telemetry as it arrives. Every needle moves on what the aircraft
+          reports and nothing else, so the display stays blank until there is an aircraft to report.
+        </ConnectPrompt>
       </div>
     );
   }

@@ -1,4 +1,6 @@
-import { Activity, ArrowRight, Cable, CheckCircle2, ChevronDown, HelpCircle, Info, RefreshCw, ShieldX, Stethoscope, TriangleAlert } from "lucide-react";
+import { BatteryMedium, Compass, Radar, Vibrate } from "lucide-react";
+import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
+import { Activity, ArrowRight, CheckCircle2, ChevronDown, HelpCircle, Info, RefreshCw, ShieldX, Stethoscope, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLink } from "../../state/linkStore";
@@ -90,9 +92,19 @@ export function DoctorPage() {
             <h1>Drone Doctor</h1>
             <p>A full health scan of your aircraft — it reads the autopilot's own signals and tells you, in plain words, what's wrong and how to fix it.</p>
           </div>
-          <Link className="btn btn-primary" to="/connection"><Cable /> Connect a vehicle</Link>
         </header>
-        <div className="callout"><span>Connect a flight controller and the Doctor diagnoses vibration, compass interference, GPS and estimator health, power, sensors and configuration — each with a specific fix. Nothing here is simulated.</span></div>
+        <ConnectPrompt
+          title="Connect an aircraft to run a health scan"
+          items={[
+            { icon: Vibrate, title: "Vibration and clipping", detail: "Whether the airframe is shaking the sensors, and on which axis." },
+            { icon: Compass, title: "Compass and GPS", detail: "Interference, fix quality and how many satellites are in use." },
+            { icon: Radar, title: "Position estimate", detail: "How far the autopilot trusts its own idea of where it is." },
+            { icon: BatteryMedium, title: "Power", detail: "Voltage, current and sag — each finding with the fix for it." },
+          ]}
+        >
+          The Doctor reads the autopilot's own signals and says, in plain words, what is wrong and how to fix it. It
+          only ever reports what a real aircraft sends, so there is nothing to diagnose until one is linked.
+        </ConnectPrompt>
       </div>
     );
   }

@@ -1,5 +1,5 @@
-import { Activity, BatteryMedium, Cable, CircleCheck, Compass, Radio, Satellite, ShieldAlert, ShieldCheck, Waves } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
+import { Activity, BatteryMedium, Radar, CircleCheck, Compass, Radio, Satellite, ShieldAlert, ShieldCheck, Waves } from "lucide-react";
 import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { batteryHealth, GPS_FIX_LABEL, gpsHealth, type Health, SENSOR_BITS, sensorHealth, varianceHealth, vibeHealth, worst } from "./health";
@@ -35,11 +35,19 @@ export function PreflightPage() {
             <h1>Preflight Check</h1>
             <p>A go / no-go readout of everything the autopilot reports about its own health, before you arm.</p>
           </div>
-          <Link className="btn btn-primary" to="/connection">
-            <Cable /> Connect a vehicle
-          </Link>
         </header>
-        <div className="callout"><span>Connect a flight controller to see live pre-arm, EKF, GPS, vibration and battery health. Nothing here is simulated.</span></div>
+        <ConnectPrompt
+          title="Connect an aircraft for a go / no-go"
+          items={[
+            { icon: ShieldAlert, title: "Pre-arm checks", detail: "The autopilot's own reasons for refusing to arm, as it gives them." },
+            { icon: Radar, title: "Sensors and estimator", detail: "Which sensors are present and healthy, and whether the estimate has settled." },
+            { icon: Satellite, title: "GPS", detail: "Fix type, satellites in use and horizontal accuracy." },
+            { icon: BatteryMedium, title: "Battery and vibration", detail: "Voltage against the pack's limits, and vibration on the bench." },
+          ]}
+        >
+          One verdict before you arm, built from what the autopilot says about its own health. It is read live from
+          the aircraft, so there is nothing to check until one is linked.
+        </ConnectPrompt>
       </div>
     );
   }

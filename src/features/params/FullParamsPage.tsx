@@ -1,6 +1,7 @@
-import { Cable, ChevronRight, Download, Loader2, RotateCcw, Search, TriangleAlert, Upload } from "lucide-react";
+import { FileDown, ListTree, PencilLine } from "lucide-react";
+import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
+import { ChevronRight, Download, Loader2, RotateCcw, Search, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { commandLink } from "../../services/link/commandLink";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
@@ -79,9 +80,19 @@ export function FullParamsPage() {
             <h1>Full Parameters</h1>
             <p>Every ArduPilot parameter on the vehicle, searchable and editable — change advanced settings directly.</p>
           </div>
-          <Link className="btn btn-primary" to="/connection"><Cable /> Connect a vehicle</Link>
         </header>
-        <div className="callout"><span>Connect a flight controller to download its parameters. They're read live; changes upload only when you press the button.</span></div>
+        <ConnectPrompt
+          title="Connect an aircraft to read its parameters"
+          simulator={false}
+          items={[
+            { icon: ListTree, title: "Every parameter, grouped", detail: "The full list from the autopilot, searchable by name." },
+            { icon: PencilLine, title: "Staged edits", detail: "Change values freely; nothing is written until you press Upload." },
+            { icon: FileDown, title: "A file you can keep", detail: "Save the whole set as a .param file other ground stations can open." },
+          ]}
+        >
+          The parameter list lives on the flight controller and is downloaded when it connects. Lost messages are
+          asked for again, so the list arrives whole even over a telemetry radio.
+        </ConnectPrompt>
       </div>
     );
   }

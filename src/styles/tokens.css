@@ -19,8 +19,15 @@
 
   --ink: #f2e8d6;           /* warm beige */
   --ink-2: #cfc0a5;
-  --muted: #9b8c72;
-  --faint: #6d5f4c;
+  /*
+    Secondary text, checked against every surface it sits on. The previous
+    pair measured 5.2:1 and 2.4:1 on a raised panel — the second well under
+    the 4.5:1 that small text needs, on an app meant to be read outdoors on a
+    laptop in daylight. Both now clear it: 6.2:1 and 4.5:1 on a panel, more
+    on the page background.
+  */
+  --muted: #a99a7f;
+  --faint: #908168;
 
   --accent: #d8a648;        /* burnished brass */
   --accent-ink: #241704;
@@ -31,7 +38,7 @@
   --ok-soft: rgba(156, 178, 87, 0.14);
   --warn: #e07b33;          /* burnt orange — distinct from brass */
   --warn-soft: rgba(224, 123, 51, 0.14);
-  --danger: #d6573f;        /* rust red */
+  --danger: #de6149;        /* rust red — 4.8:1 as text on a panel */
   --danger-soft: rgba(214, 87, 63, 0.14);
   --virtual: #c49ad0;       /* dusty lilac — cool pop for simulated vehicles */
   --virtual-soft: rgba(196, 154, 208, 0.14);

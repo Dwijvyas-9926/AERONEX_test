@@ -1,6 +1,6 @@
-import { Cable, Gamepad2, Hand, OctagonX, PlaneLanding, RotateCcw, ShieldCheck, TriangleAlert, X } from "lucide-react";
+import { Gamepad2, Gauge, Hand, Keyboard, OctagonX, PlaneLanding, RotateCcw, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
 import { Pfd } from "../flightdata/Pfd";
 import { notify } from "../../state/notifyStore";
 import { commandLink } from "../../services/link/commandLink";
@@ -247,9 +247,20 @@ export function KeyboardFlightPage() {
             <h1>Keyboard Flight</h1>
             <p>Fly your drone for a test hop with no RC transmitter — arm, take off, move and land from the keyboard, all gentle and autopilot-stabilised.</p>
           </div>
-          <Link className="btn btn-primary" to="/connection"><Cable /> Connect a vehicle</Link>
         </header>
-        <div className="callout warn"><TriangleAlert /><span>This commands a <strong>real drone to fly</strong>. Connect a vehicle outdoors with a clear GPS view, props on, in an open area clear of people, and read the safety briefing before use.</span></div>
+        <div className="callout warn" style={{ marginBottom: "var(--s4)" }}><TriangleAlert /><span>This commands a <strong>real drone to fly</strong>. Connect a vehicle outdoors with a clear GPS view, props on, in an open area clear of people, and read the safety briefing before use.</span></div>
+        <ConnectPrompt
+          title="Connect an aircraft to fly it from the keyboard"
+          items={[
+            { icon: Keyboard, title: "Take off, move and land", detail: "T to take off, W A S D to move, Q and E to turn, L to land." },
+            { icon: Gauge, title: "Gentle, capped motion", detail: "Walking pace at most, every change of speed ramped rather than sudden." },
+            { icon: Hand, title: "Hold and return home", detail: "Space stops it in a hover; a lost link lands it where it is." },
+          ]}
+        >
+          A first hop without a radio transmitter. The autopilot does the flying in its guided mode and the keys only
+          ask it for a direction, so it holds position by itself the moment they are released. Rehearse in the
+          simulator first.
+        </ConnectPrompt>
       </div>
     );
   }

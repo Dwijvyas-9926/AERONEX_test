@@ -209,6 +209,9 @@ textarea {
 /* Segmented control */
 .segmented {
   display: inline-flex;
+  /* Wrap rather than run off the side when there is not room for a row. */
+  flex-wrap: wrap;
+  max-width: 100%;
   padding: 3px;
   gap: 2px;
   border-radius: 8px;
@@ -352,7 +355,7 @@ textarea {
 /* Key/value readout grid */
 .readouts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
   gap: 1px;
   background: var(--line-soft);
   border-radius: var(--r-ctl);
@@ -445,4 +448,126 @@ textarea {
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
+}
+
+/* ---------------------------------------------------------------- connect prompt
+   The empty state of every page that reads from a live aircraft. */
+.connect-prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--graphite);
+  overflow: hidden;
+}
+
+.connect-prompt-main {
+  padding: var(--s8) var(--s8) var(--s8);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.connect-trace {
+  width: min(320px, 100%);
+  height: 40px;
+  overflow: visible;
+}
+
+.connect-trace path {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.connect-trace circle {
+  fill: var(--muted);
+}
+
+.connect-trace-label {
+  margin: var(--s1) 0 var(--s6);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.connect-prompt h2 {
+  margin: 0 0 var(--s3);
+  font-family: var(--font-display);
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
+  max-width: 22ch;
+}
+
+.connect-prompt-body {
+  margin: 0 0 var(--s6);
+  max-width: 52ch;
+  font-size: var(--t-base);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.connect-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: auto;
+}
+
+.connect-prompt-list {
+  padding: var(--s8);
+  background: var(--midnight);
+  border-left: 1px solid var(--line);
+}
+
+.connect-prompt-list h3 {
+  margin: 0 0 var(--s5);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.connect-prompt-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s5);
+}
+
+.connect-prompt-list li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+}
+
+.connect-prompt-list svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.connect-prompt-list strong {
+  display: block;
+  font-size: var(--t-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.connect-prompt-list span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .connect-prompt { grid-template-columns: minmax(0, 1fr); }
+  .connect-prompt-main, .connect-prompt-list { padding: var(--s6) var(--s5); }
+  .connect-prompt-list { border-left: 0; border-top: 1px solid var(--line); }
 }
