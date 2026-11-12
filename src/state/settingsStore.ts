@@ -16,7 +16,10 @@ interface SettingsState {
   set: <K extends keyof Omit<SettingsState, "set">>(k: K, v: SettingsState[K]) => void;
 }
 
-export const DEFAULT_AI_MODEL = "claude-3-5-sonnet-latest";
+export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
+
+/** Models offered in Settings; any other id the account has can be typed in. */
+export const AI_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"];
 
 export const useSettings = create<SettingsState>()(
   persist(
@@ -29,7 +32,23 @@ export const useSettings = create<SettingsState>()(
       aiModel: DEFAULT_AI_MODEL,
       set: (k, v) => set({ [k]: v } as Partial<SettingsState>),
     }),
-    { name: "avion.settings.v1", storage: createJSONStorage(() => localStorage), version: 1 },
+    {
+      name: "avion.settings.v1",
+      storage: createJSONStorage(() => localStorage),
+      version: 2,
+      /*
+        The first default was a model that has since been retired, so anyone
+        who never touched the setting was left with a chat that answered every
+        question with "model not available". A saved value that is still one
+        of the old defaults moves to the current one; a model the user typed
+        in themselves is theirs and is kept.
+      */
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<SettingsState>;
+        if (!p.aiModel || /^claude-3-/.test(p.aiModel)) p.aiModel = DEFAULT_AI_MODEL;
+        return p as SettingsState;
+      },
+    },
   ),
 );
 

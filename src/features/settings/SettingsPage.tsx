@@ -1,5 +1,5 @@
 import { confirmAction, notify } from "../../state/notifyStore";
-import { GRAPHICS, useSettings, type GraphicsPreset, type MotionPref, type Units } from "../../state/settingsStore";
+import { AI_MODELS, GRAPHICS, useSettings, type GraphicsPreset, type MotionPref, type Units } from "../../state/settingsStore";
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
   return (
@@ -90,15 +90,12 @@ export function SettingsPage() {
           <div className="setting">
             <div>
               <strong>Model</strong>
-              <p>Which Claude model answers. If you get a “model not available” error, try <code>claude-3-5-sonnet-latest</code>, or a newer model your account has access to.</p>
+              <p>Which Claude model answers. If you get a “model not available” error, pick another from the list, or type the id of any model your account has access to.</p>
             </div>
             <>
               <input className="input" list="ai-models" value={s.aiModel} onChange={(e) => s.set("aiModel", e.target.value)} style={{ maxWidth: 280 }} aria-label="AI model" />
               <datalist id="ai-models">
-                <option value="claude-3-5-sonnet-latest" />
-                <option value="claude-3-5-haiku-latest" />
-                <option value="claude-sonnet-4-5" />
-                <option value="claude-opus-4-1" />
+                {AI_MODELS.map((m) => <option key={m} value={m} />)}
               </datalist>
             </>
           </div>

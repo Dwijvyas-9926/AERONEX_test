@@ -84,7 +84,16 @@ export function KeyboardFlightPage() {
       getTelemetry: () => {
         const s = useLink.getState();
         const t = s.telemetry;
-        const alt = t.position?.value.relAlt ?? t.hud?.value.alt ?? null;
+        /*
+          Height above the take-off point, and only that. This fell back to
+          the HUD altitude when no position had arrived, and the HUD altitude
+          is above sea level: at a field 400 m up, the controller saw a
+          take-off that had "reached" two metres before the motors spun, and
+          a ceiling it was already far beyond. A reading that has stopped
+          updating is no reading either.
+        */
+        const fresh = t.position && Date.now() - t.position.at < 3000;
+        const alt = fresh ? t.position!.value.relAlt : null;
         // The mode number is what lets the controller see that a landing it
         // asked for has actually begun — or that someone has taken over on
         // the radio. It was passed as null, so the controller flew blind to

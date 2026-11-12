@@ -124,7 +124,7 @@ export async function askDoctor(opts: AskOptions): Promise<string> {
       const body = await res.json();
       const detail = body?.error?.message as string | undefined;
       if (res.status === 401) msg = "Your API key was rejected (401). Check it in Settings.";
-      else if (res.status === 404 && detail?.toLowerCase().includes("model")) msg = `Model "${opts.model}" isn't available on your account. Try a different model in Settings (e.g. claude-3-5-sonnet-latest).`;
+      else if (res.status === 404 && detail?.toLowerCase().includes("model")) msg = `Model "${opts.model}" isn't available on your account. Choose a different model in Settings.`;
       else if (res.status === 429) msg = "Rate limited by Anthropic (429). Wait a moment and try again.";
       else if (detail) msg = detail;
     } catch {

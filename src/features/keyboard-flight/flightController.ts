@@ -108,6 +108,7 @@ export class FlightController {
   private busy = false; // a command sequence is in flight
   /** The mode a descent was asked for in, and when it was last asked. */
   private descent: { mode: number; sentAt: number; tries: number } | null = null;
+  private warnedNoAlt = false;
   private deps: FlightDeps;
   config: FlightConfig;
 
@@ -160,6 +161,7 @@ export class FlightController {
     if (!t.connected) return this.deps.log("error", "Not connected — can't take off.");
     if (t.armed) return this.deps.log("error", "Vehicle is already armed. Land/disarm first.");
     this.busy = true;
+    this.warnedNoAlt = false;
     this.setPhase("arming");
     try {
       this.deps.log("action", "Switching to GUIDED…");
@@ -265,6 +267,12 @@ export class FlightController {
         } else if (!t.armed) {
           this.deps.log("error", "Disarmed during takeoff.");
           this.setPhase("idle");
+        } else if (t.relAlt == null && !this.warnedNoAlt) {
+          // Without a height there is no knowing when the climb is done, so
+          // control is never handed over. Say why, once, rather than sit
+          // silent in "taking off".
+          this.warnedNoAlt = true;
+          this.deps.log("warn", "No height reading from the aircraft yet — waiting for position data. Press L to land.");
         }
         break;
       }
