@@ -2754,3 +2754,32 @@ input[type="range"]::-moz-range-thumb {
 .fs-sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
 .fs-section-wit line { stroke: var(--muted); stroke-width: 1; }
 .fs-section-note { fill: var(--muted); font-size: 4.6px; font-family: var(--font-ui); }
+
+/* A notice offering the typical parts for a propeller class. */
+.fs-kit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: var(--r-ctl);
+  background: var(--warn-soft);
+}
+.fs-kit p { margin: 0; font-size: var(--t-sm); line-height: 1.45; color: var(--ink-2); }
+.fs-kit .btn { flex: none; white-space: nowrap; }
+
+/* What the frame carries, on the plan: the pack and the camera. */
+.fs-carried rect {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 0.8;
+  stroke-dasharray: 3 2.5;
+  opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+.fs-carried .fs-carried-solid {
+  fill: #6fae7a;
+  stroke: none;
+  opacity: 0.85;
+}

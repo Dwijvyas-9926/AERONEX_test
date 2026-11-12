@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { DEFAULT_WALL_MM, motorById, stackHeightFor } from "./catalog";
+import { DEFAULT_WALL_MM, STACK_PATTERNS, kitFor, motorById, stackHeightFor } from "./catalog";
 import { type FrameSpec, type Layout } from "./geometry";
 
 export type StepId = "aircraft" | "components" | "material" | "review" | "export";
@@ -65,6 +65,36 @@ export const DEFAULT_SPEC: FrameSpec = {
   styleId: "freestyle",
   safetyFactor: 2,
 };
+
+/** The component fields a class kit fills in, as a patch for the spec. */
+export function kitPatch(propIn: number): Partial<FrameSpec> {
+  const kit = kitFor(propIn);
+  const stack = STACK_PATTERNS.find((p) => p.pattern === kit.stackPattern) ?? STACK_PATTERNS[STACK_PATTERNS.length - 1];
+  return {
+    motorId: kit.motorId,
+    motorThrustG: motorById(kit.motorId).thrustG,
+    stackPattern: stack.pattern,
+    stackBolt: stack.bolt,
+    stackHeightMm: stack.heightMm,
+    battery: { ...kit.battery },
+    electronicsMassG: kit.electronicsMassG,
+    cameraId: kit.cameraId,
+  };
+}
+
+/** Is this spec still carrying the untouched kit for its propeller size? */
+export function carriesKit(spec: FrameSpec): boolean {
+  const kit = kitPatch(spec.propIn);
+  return (
+    spec.motorId === kit.motorId
+    && spec.motorThrustG === kit.motorThrustG
+    && spec.stackPattern === kit.stackPattern
+    && spec.stackHeightMm === kit.stackHeightMm
+    && spec.electronicsMassG === kit.electronicsMassG
+    && spec.cameraId === kit.cameraId
+    && (["l", "w", "h", "massG"] as const).every((k) => spec.battery[k] === kit.battery![k])
+  );
+}
 
 export const useStudio = create<StudioState>()(
   persist(

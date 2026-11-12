@@ -4,7 +4,7 @@ import { buildBOM } from "../bom";
 import { planSheets, toDXF } from "../exporters";
 import { designFrame, LAYOUTS, pointInPolygon, sanitizeSpec, type FrameSpec } from "../geometry";
 import { pageSizeById, planPrint, toPrintPDF } from "../printsheet";
-import { DEFAULT_SPEC } from "../store";
+import { DEFAULT_SPEC, carriesKit, kitPatch } from "../store";
 import { validateDesign } from "../validate";
 
 /*
@@ -127,4 +127,34 @@ describe("every combination a user can pick", () => {
       }
     }
   }, 120000);
+});
+
+describe("class kits", () => {
+  it("give every propeller size a build that raises no errors, on any layout", () => {
+    for (const propIn of PROP_SIZES) {
+      const kit = { ...DEFAULT_SPEC, ...kitPatch(propIn), propIn };
+      expect(carriesKit(kit), `${propIn}" kit recognised`).toBe(true);
+      for (const layout of LAYOUTS) {
+        for (const construction of ["bolted", "unibody"] as const) {
+          for (const batteryMount of ["top", "bottom"] as const) {
+            const d = designFrame({ ...kit, layout: layout.id, construction, batteryMount });
+            const name = `${propIn}" ${layout.id} ${construction} ${batteryMount}`;
+            const f = validateDesign(d);
+            expect(f.filter((x) => x.severity === "error").map((x) => x.id), name).toEqual([]);
+            // The only thing a suggested build may be warned about is a small
+            // bolted frame being as small as its clamp bolts allow.
+            expect(f.filter((x) => x.id !== "wheelbase-crowded").map((x) => x.id), name).toEqual([]);
+            expect(d.thrustToWeight, name).toBeGreaterThan(3);
+          }
+        }
+      }
+    }
+  }, 120000);
+
+  it("is the default build for a 5 inch", () => {
+    expect(carriesKit(DEFAULT_SPEC)).toBe(true);
+    expect({ ...DEFAULT_SPEC, ...kitPatch(5) }).toEqual(DEFAULT_SPEC);
+    // And an edited build is recognised as the user's own.
+    expect(carriesKit({ ...DEFAULT_SPEC, electronicsMassG: 121 })).toBe(false);
+  });
 });

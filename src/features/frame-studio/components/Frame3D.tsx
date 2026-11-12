@@ -150,6 +150,37 @@ function ToneMap() {
   return null;
 }
 
+/**
+ * Stand the camera far enough back that the whole aircraft is in frame.
+ *
+ * The field of view is fixed vertically, so on a canvas taller than it is
+ * wide — which the preview column is, on every screen narrower than a
+ * desktop monitor — a distance worked out from the vertical angle alone
+ * leaves the arms hanging out of both sides. The distance is taken from
+ * whichever of the two angles is the tighter, and re-taken when the canvas
+ * changes shape or the frame changes size.
+ */
+function FitCamera({ reach, height }: { reach: number; height: number }) {
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
+  const controls = useThree((s) => s.controls) as { update?: () => void } | null;
+  useEffect(() => {
+    const aspect = size.width / Math.max(1, size.height);
+    const vHalf = (38 / 2) * (Math.PI / 180);
+    const hHalf = Math.atan(Math.tan(vHalf) * aspect);
+    const radius = Math.hypot(reach, height) * 1.08;
+    const dist = radius / Math.sin(Math.min(vHalf, hHalf));
+    // Keep whatever direction the user has turned the model to.
+    const dir = camera.position.clone().normalize();
+    camera.position.copy(dir.multiplyScalar(dist));
+    camera.near = Math.max(1, dist / 100);
+    camera.far = dist * 10;
+    camera.updateProjectionMatrix();
+    controls?.update?.();
+  }, [camera, controls, size.width, size.height, reach, height]);
+  return null;
+}
+
 export function Frame3D({ design: d, exploded }: Props) {
   const graphics = useSettings((s) => s.graphics);
   const preset = GRAPHICS[graphics];
@@ -276,6 +307,7 @@ export function Frame3D({ design: d, exploded }: Props) {
       <directionalLight position={[reach, reach * 1.5, reach * 0.8]} intensity={1.35} color="#fffaf0" castShadow={preset.shadows} />
       <directionalLight position={[-reach * 0.8, reach * 0.5, -reach]} intensity={0.5} color="#cfd8e4" />
       <ToneMap />
+      <FitCamera reach={reach} height={(zDeck ?? zTop) + (d.cameraMount?.heightMm ?? 0)} />
       <ContactShadows position={[0, -1, 0]} scale={reach * 3} blur={2.6} opacity={0.3} far={reach} />
 
       <group>
@@ -325,7 +357,8 @@ export function Frame3D({ design: d, exploded }: Props) {
       <OrbitControls
         enablePan={false}
         minDistance={reach * 0.6}
-        maxDistance={reach * 4}
+        maxDistance={reach * 12}
+        makeDefault
         autoRotate={!exploded}
         autoRotateSpeed={0.5}
         target={[0, (zDeck ?? zTop) * 0.4, 0]}

@@ -460,3 +460,50 @@ export const CAMERA_SIDE_CLEARANCE_MM = 0.6;
 export const BOLT_HEAD_DIA: Record<number, number> = { 2: 3.8, 2.5: 4.5, 3: 5.5, 4: 7 };
 /** Minimum material between a hole edge and the part edge, as a multiple of hole diameter. */
 export const EDGE_DISTANCE_FACTOR = 1.5;
+
+
+/* ------------------------------------------------------------ class kits */
+
+/** The parts a typical build of one propeller class carries. */
+export interface ClassKit {
+  motorId: string;
+  stackPattern: number;
+  battery: { l: number; w: number; h: number; massG: number };
+  electronicsMassG: number;
+  cameraId: string;
+}
+
+/*
+  What a typical build of each size is made of.
+
+  Propeller size is the first thing the studio asks, and until this table
+  existed it was the only thing that changed when you answered: pick 3" and
+  the frame was drawn around the 5" build's 2207 motors, full-size stack and
+  105 mm pack, and the first thing a newcomer saw was a list of errors about
+  parts they had never chosen. Changing the size now brings the rest of the
+  class with it, as a starting point to edit rather than a prescription.
+
+  Packs are the common one for the class — a 1S–2S whoop pack at 2", 4S 650
+  at 3", 4S 1300–1500 at 5", 6S from 6" up — and "everything else" is a
+  stack, receiver, VTX, camera and wiring of the matching scale.
+*/
+export const CLASS_KITS: Record<number, ClassKit> = {
+  2: { motorId: "1103", stackPattern: 16, battery: { l: 45, w: 17, h: 13, massG: 18 }, electronicsMassG: 18, cameraId: "nano" },
+  2.5: { motorId: "1103", stackPattern: 16, battery: { l: 52, w: 18, h: 16, massG: 28 }, electronicsMassG: 22, cameraId: "nano" },
+  3: { motorId: "1404", stackPattern: 20, battery: { l: 60, w: 30, h: 26, massG: 78 }, electronicsMassG: 42, cameraId: "nano" },
+  3.5: { motorId: "1404", stackPattern: 20, battery: { l: 72, w: 34, h: 24, massG: 98 }, electronicsMassG: 50, cameraId: "micro" },
+  4: { motorId: "1806", stackPattern: 20, battery: { l: 72, w: 34, h: 24, massG: 98 }, electronicsMassG: 60, cameraId: "micro" },
+  5: { motorId: "2207", stackPattern: 30.5, battery: { l: 105, w: 35, h: 30, massG: 180 }, electronicsMassG: 120, cameraId: "micro" },
+  6: { motorId: "2407", stackPattern: 30.5, battery: { l: 80, w: 40, h: 40, massG: 215 }, electronicsMassG: 130, cameraId: "micro" },
+  7: { motorId: "2806", stackPattern: 30.5, battery: { l: 135, w: 42, h: 45, massG: 330 }, electronicsMassG: 150, cameraId: "micro" },
+  8: { motorId: "2806", stackPattern: 30.5, battery: { l: 140, w: 45, h: 50, massG: 480 }, electronicsMassG: 170, cameraId: "micro" },
+  9: { motorId: "3110", stackPattern: 30.5, battery: { l: 150, w: 48, h: 50, massG: 600 }, electronicsMassG: 190, cameraId: "micro" },
+  10: { motorId: "3110", stackPattern: 30.5, battery: { l: 160, w: 50, h: 55, massG: 720 }, electronicsMassG: 210, cameraId: "micro" },
+};
+
+/** The kit for a propeller size, or the nearest class when it is an odd one. */
+export function kitFor(propIn: number): ClassKit {
+  const sizes = Object.keys(CLASS_KITS).map(Number);
+  const nearest = sizes.reduce((best, s) => (Math.abs(s - propIn) < Math.abs(best - propIn) ? s : best), sizes[0]);
+  return CLASS_KITS[nearest];
+}

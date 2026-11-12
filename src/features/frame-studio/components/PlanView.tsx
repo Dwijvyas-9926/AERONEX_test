@@ -42,6 +42,7 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
   const armParts = d.profiles.filter((p) => p.cantileverMm !== undefined);
   const bottom = d.profiles.find((p) => p.id === "bottom-plate" || p.id === "chassis")!;
   const top = d.profiles.find((p) => p.id === "top-plate")!;
+  const cameraPlate = d.profiles.find((p) => p.id === "camera-plate");
 
   // Arms are drawn from the same profile the exporter writes, placed by the
   // same root radius the solver used — not a separate decorative shape.
@@ -163,6 +164,48 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
           <path d={toPath(top.outline)} />
         </g>
 
+        {/*
+          What the frame carries, dashed so it reads as "this sits here"
+          rather than as something to cut. The plan used to stop at the
+          plates, which left the two questions a plan answers best — does the
+          pack overhang, and where does the camera stand — to be worked out
+          from the numbers.
+        */}
+        <g className="fs-carried">
+          <rect
+            x={-d.spec.battery.w / 2}
+            y={-d.spec.battery.l / 2}
+            width={d.spec.battery.w}
+            height={d.spec.battery.l}
+            rx={2}
+          >
+            <title>{`Battery, ${d.spec.battery.l} × ${d.spec.battery.w} mm, ${d.spec.batteryMount === "top" ? "on top" : "underneath"}`}</title>
+          </rect>
+          {d.cameraMount && cameraPlate && (() => {
+            const xs = cameraPlate.outline.map((q) => q[0]);
+            const len = Math.max(...xs) - Math.min(...xs);
+            const { spacingMm, centreYMm } = d.cameraMount;
+            const t = cameraPlate.thicknessMm;
+            return (
+              <>
+                {[-1, 1].map((side) => (
+                  <rect
+                    key={side}
+                    className="fs-carried-solid"
+                    x={(side * spacingMm) / 2 - t / 2}
+                    y={centreYMm - len / 2}
+                    width={t}
+                    height={len}
+                  />
+                ))}
+                <rect x={-(spacingMm - t) / 2} y={centreYMm - (spacingMm - t) / 2} width={spacingMm - t} height={spacingMm - t} rx={1.5}>
+                  <title>Camera</title>
+                </rect>
+              </>
+            );
+          })()}
+        </g>
+
         {/* Motor centres, so the wheelbase reads against something real. */}
         <g className="fs-motors">
           {d.motors.map((m, i) => (
@@ -180,8 +223,11 @@ export function PlanView({ design: d, focus, onFocus, showProps, showDims, showS
         <g>
           {dim(d.motors[0], d.motors[2], `${fmt(d.wheelbaseMm)} mm wheelbase`, 0.93, pad * 0.3)}
           {(() => {
-            // Exposed arm length, measured along one arm's own bearing.
-            const m = d.motors[1];
+            // Exposed arm length, measured along one arm's own bearing — a
+            // forward arm, so the label stays clear of the plate's own
+            // dimension, which sits under the rear edge and used to be
+            // printed straight through.
+            const m = d.motors[0];
             const a = Math.atan2(m[1], m[0]);
             const root: Pt = [d.rootRadiusMm * Math.cos(a), d.rootRadiusMm * Math.sin(a)];
             return dim(root, m, `arm ${fmt(d.armLengthMm)} mm`, 0.5, d.section.padWidthMm / 2 + pad * 0.3);

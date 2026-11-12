@@ -6,7 +6,7 @@ import { PlanView } from "./components/PlanView";
 import { SheetView } from "./components/SheetView";
 import { BATTERY_MOUNTS, CONSTRUCTIONS, LAYOUTS, designFrame, type Layout } from "./geometry";
 import { lookForPart } from "./parts";
-import { LAYOUT_HINT, STEPS, defaultFixedDim, stackHeightFor, useStudio } from "./store";
+import { LAYOUT_HINT, STEPS, carriesKit, defaultFixedDim, kitPatch, stackHeightFor, useStudio } from "./store";
 import { validateDesign, worstSeverity, type Finding } from "./validate";
 
 /* The solid view pulls in three.js, which is far too heavy to load for a user
@@ -171,6 +171,12 @@ export function FrameStudioPage() {
   // the exports, so none of them can disagree with the others.
   const design = useMemo(() => designFrame(spec), [spec]);
   const findings = useMemo(() => validateDesign(design), [design]);
+  // The same frame with the pack on the other side, so the choice can be
+  // shown as a comparison rather than described from one side only.
+  const otherMount = useMemo(
+    () => designFrame({ ...spec, batteryMount: spec.batteryMount === "top" ? "bottom" : "top" }),
+    [spec],
+  );
 
   /*
     One legend row per colour, not per part. A dead cat has "arm-long" and
@@ -251,7 +257,18 @@ export function FrameStudioPage() {
                   <select
                     className="select"
                     value={spec.propIn}
-                    onChange={(e) => setSpec("propIn", Number(e.target.value))}
+                    onChange={(e) => {
+                      /*
+                        Bring the rest of the class along when the parts are
+                        still the ones the studio suggested. A frame drawn
+                        for 3" propellers around a 5" build's motors, stack
+                        and pack opens on a list of errors about parts nobody
+                        chose; but parts the user has entered are theirs, and
+                        are left alone — the note below offers the swap.
+                      */
+                      const propIn = Number(e.target.value);
+                      patchSpec(carriesKit(spec) ? { propIn, wheelbaseMm: null, ...kitPatch(propIn) } : { propIn });
+                    }}
                   >
                     {PROP_SIZES.map((p) => (
                       <option key={p} value={p}>
@@ -264,6 +281,16 @@ export function FrameStudioPage() {
                     {" "}Your {motor.size} motors are built for {motor.props.map((p) => `${p}"`).join(" or ")}.
                   </small>
                 </label>
+                {!carriesKit(spec) && propFit(motor, spec.propIn).fit !== "ideal" && (
+                  <div className="fs-kit">
+                    <p>
+                      The motors, stack and battery entered are not a usual match for {spec.propIn}" propellers.
+                    </p>
+                    <button className="btn btn-ghost btn-sm" onClick={() => patchSpec({ wheelbaseMm: null, ...kitPatch(spec.propIn) })}>
+                      Use typical {spec.propIn}" parts
+                    </button>
+                  </div>
+                )}
 
                 <div className="field">
                   <span id="fs-layout-label">Layout</span>
@@ -416,9 +443,9 @@ export function FrameStudioPage() {
 
                 <h4 className="fs-group">Battery</h4>
                 <div className="fs-row3">
-                  <Num label="Battery length" value={spec.battery.l} onChange={(v) => setSpec("battery", { ...spec.battery, l: v })} suffix="mm" min={20} />
-                  <Num label="Width" value={spec.battery.w} onChange={(v) => setSpec("battery", { ...spec.battery, w: v })} suffix="mm" min={10} />
-                  <Num label="Height" value={spec.battery.h} onChange={(v) => setSpec("battery", { ...spec.battery, h: v })} suffix="mm" min={5} />
+                  <Num label="Battery length" value={spec.battery.l} onChange={(v) => setSpec("battery", { ...spec.battery, l: v })} suffix="mm" min={20} max={300} />
+                  <Num label="Width" value={spec.battery.w} onChange={(v) => setSpec("battery", { ...spec.battery, w: v })} suffix="mm" min={10} max={150} />
+                  <Num label="Height" value={spec.battery.h} onChange={(v) => setSpec("battery", { ...spec.battery, h: v })} suffix="mm" min={5} max={120} />
                 </div>
 
                 <div className="field">
@@ -439,8 +466,15 @@ export function FrameStudioPage() {
                     ))}
                   </div>
                   <small>
-                    The strap slots are cut in whichever plate the pack sits against. On top the mass sits{" "}
-                    {n1(design.cg.belowThrustMm)} mm below the propellers; underneath it would hang further.
+                    {spec.batteryMount === "top"
+                      ? design.stackUp.deckZMm !== null
+                        ? `The pack straps to a deck on ${n1(design.stackUp.deckStandoffMm)} mm standoffs, clear of the stack and the propellers.`
+                        : `The pack straps to the top plate, which stands on ${n1(design.stackUp.topStandoffMm)} mm standoffs.`
+                      : "The pack straps under the frame, through slots in the bottom plate."}
+                    {" "}The centre of mass sits {n1(Math.abs(design.cg.belowThrustMm))} mm{" "}
+                    {design.cg.belowThrustMm >= 0 ? "below" : "above"} the propellers this way, against{" "}
+                    {n1(Math.abs(otherMount.cg.belowThrustMm))} mm {otherMount.cg.belowThrustMm >= 0 ? "below" : "above"}{" "}
+                    {spec.batteryMount === "top" ? "underneath" : "on top"}.
                   </small>
                 </div>
 
@@ -461,13 +495,14 @@ export function FrameStudioPage() {
                 </label>
 
                 <div className="fs-row2">
-                  <Num label="Battery mass" value={spec.battery.massG} onChange={(v) => setSpec("battery", { ...spec.battery, massG: v })} suffix="g" min={10} step={5} />
+                  <Num label="Battery mass" value={spec.battery.massG} onChange={(v) => setSpec("battery", { ...spec.battery, massG: v })} suffix="g" min={5} max={5000} step={5} />
                   <Num
                     label="Everything else"
                     value={spec.electronicsMassG}
                     onChange={(v) => setSpec("electronicsMassG", v)}
                     suffix="g"
                     min={0}
+                    max={5000}
                     step={5}
                     hint="Stack, receiver, camera, VTX, wiring."
                   />
@@ -824,9 +859,21 @@ export function FrameStudioPage() {
                 <dd>{spec.batteryMount === "top" ? "On top" : "Underneath"}</dd>
               </div>
               <div>
-                <dt>Mass below the discs</dt>
-                <dd>{n1(design.cg.belowThrustMm)} mm</dd>
+                <dt>{design.cg.belowThrustMm >= 0 ? "Mass below the discs" : "Mass above the discs"}</dt>
+                <dd>{n1(Math.abs(design.cg.belowThrustMm))} mm</dd>
               </div>
+              {design.stackUp.deckZMm !== null && (
+                <div>
+                  <dt>Deck standoffs</dt>
+                  <dd>{n1(design.stackUp.deckStandoffMm)} mm</dd>
+                </div>
+              )}
+              {design.stackUp.topStandoffMm > 0 && (
+                <div>
+                  <dt>Top plate standoffs</dt>
+                  <dd>{n1(design.stackUp.topStandoffMm)} mm</dd>
+                </div>
+              )}
               {design.lightening.count > 0 && (
                 <div>
                   <dt>Lightening</dt>

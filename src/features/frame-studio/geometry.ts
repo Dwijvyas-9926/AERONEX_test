@@ -1022,8 +1022,12 @@ export function designFrame(inputSpec: FrameSpec): FrameDesign {
     ten grams less ironmongery than the bolted equivalent.
   */
   // A battery deck adds four standoffs and four more screws.
-  const hardwareG = (spec.construction === "unibody" ? 15 : 25)
-    + (spec.batteryMount === "top" && spec.construction === "bolted" ? 8 : 0);
+  // M2 hardware weighs well under half what M3 does, which matters most on
+  // exactly the frames it is used on: 25 g of bolts was a seventh of a 2"
+  // build's whole weight.
+  const hardwareScale = ROOT_BOLT <= 2 ? 0.4 : 1;
+  const hardwareG = round(hardwareScale * ((spec.construction === "unibody" ? 15 : 25)
+    + (spec.batteryMount === "top" && spec.construction === "bolted" ? 8 : 0)), 1);
   // The camera is carried mass like any other, so it belongs in the figure
   // the arms are sized against, not bolted on after the solve.
   const fixedMass = motor.massG * 4 + spec.battery.massG + spec.electronicsMassG + hardwareG + camera.massG;
