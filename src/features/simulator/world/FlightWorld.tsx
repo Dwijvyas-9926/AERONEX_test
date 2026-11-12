@@ -937,25 +937,28 @@ export default function FlightWorld(props: FlightWorldProps) {
   const [env, setEnv] = useState<THREE.Texture | null>(null);
   const onEnv = useCallback((t: THREE.Texture) => setEnv(t), []);
   const size = props.airframe.diagonalM + props.airframe.propDiaM;
-  const trees = props.graphics === "low" ? 1500 : props.graphics === "medium" ? 3500 : 7000;
+  // Still struggling at the lowest resolution: drop shadows and thin the woods.
+  const [lite, setLite] = useState(false);
+  const shadows = g.shadows && !lite;
+  const trees = lite || props.graphics === "low" ? 1500 : props.graphics === "medium" ? 3500 : 7000;
   // If the computer cannot keep up, give up sharpness before smoothness: a
   // slow 3D view makes the whole app, and the simulation behind it, sluggish.
   const [dpr, setDpr] = useState(g.dpr[1]);
   return (
     <Canvas shadows={g.shadows} dpr={dpr} camera={{ fov: 55, near: 0.06, far: 40000, position: [4, 3, 6] }} gl={{ logarithmicDepthBuffer: true, antialias: true }}>
-      <PerformanceMonitor bounds={() => [28, 55]} onChange={({ factor }) => setDpr(Math.round((0.5 + (g.dpr[1] - 0.5) * factor) * 20) / 20)} />
+      <PerformanceMonitor bounds={() => [28, 55]} onChange={({ factor }) => setDpr(Math.round((0.5 + (g.dpr[1] - 0.5) * factor) * 20) / 20)} onDecline={({ factor }) => factor <= 0.05 && setLite(true)} />
       <Sky distance={300000} sunPosition={SUN} turbidity={3.2} rayleigh={1.05} mieCoefficient={0.005} mieDirectionalG={0.82} />
       {/* Haze the colour of the sky at the horizon: distance fades to it, as it does outdoors. */}
       <fog attach="fog" args={["#c2cfd8", 260, 8200]} />
       <Atmosphere onEnv={onEnv} />
       <hemisphereLight args={["#cfdcec", "#6b6a4a", 0.8]} />
-      <Ground terrain={props.terrain} shadows={g.shadows} />
-      <Trees terrain={props.terrain} shadows={g.shadows} max={trees} />
+      <Ground terrain={props.terrain} shadows={shadows} />
+      <Trees terrain={props.terrain} shadows={shadows} max={trees} />
       <Clouds wind={props.wind} />
       <HomeBase wind={props.wind} />
       <Route terrain={props.terrain} route={props.route} takeoffAlt={props.takeoffAlt} ending={props.ending} pose={pose} fenceRadius={props.fenceRadius} />
       <WindStreaks wind={props.wind} pose={pose} />
-      <Flight {...props} pose={pose} env={env} shadows={g.shadows} />
+      <Flight {...props} pose={pose} env={env} shadows={shadows} />
       <CrashEffects pose={pose} terrain={props.terrain} wind={props.wind} size={size} />
       <CameraRig view={props.view} pose={pose} terrain={props.terrain} size={size} />
     </Canvas>
