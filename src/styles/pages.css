@@ -4894,3 +4894,292 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--s5);
 }
+
+/* ------------------------------------------------------------------------
+   Simulator console: the view on the left, everything flown with on the right.
+   ------------------------------------------------------------------------ */
+.sim-live .page-head {
+  margin-bottom: var(--s4);
+}
+
+.sim-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s3) var(--s5);
+  margin-bottom: var(--s4);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-panel);
+  background: var(--graphite);
+}
+
+.sim-top-id {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sim-top-id strong {
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+}
+
+.sim-top-id span {
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+
+.sim-top-acts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.sim-top-gap {
+  width: 1px;
+  height: 20px;
+  margin: 0 var(--s2);
+  background: var(--line);
+}
+
+.sim-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: var(--s4);
+  align-items: start;
+}
+
+/* The view takes the height of the window, so the whole console is one screen. */
+.sim-stage .world {
+  height: clamp(440px, calc(100vh - 322px), 900px);
+  min-height: 0;
+}
+
+.sim-stage .fmap > svg,
+.sim-stage .rmap-canvas {
+  aspect-ratio: auto;
+  height: clamp(402px, calc(100vh - 360px), 862px);
+  max-height: none;
+}
+
+.sim-speed {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.sim-speed .sim-label {
+  margin: 0;
+}
+
+.sim-rail {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.sim-state-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s4) var(--s4) var(--s3);
+}
+
+.sim-state-head .sim-label {
+  margin: 0 0 2px;
+}
+
+.sim-state-head h3 {
+  font-size: var(--t-xl);
+  line-height: 1.1;
+}
+
+.sim-state-side {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-note {
+  margin: 0 var(--s4) var(--s3);
+}
+
+.sim-gauges {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--line-soft);
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  overflow: hidden;
+}
+
+.sim-gauges > div {
+  display: grid;
+  gap: 1px;
+  padding: var(--s3) var(--s3);
+  background: var(--graphite);
+  min-width: 0;
+}
+
+.sim-gauges dt {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sim-gauges dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-md);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sim-gauges dd small {
+  margin-left: 3px;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.sim-gauges dd.bad {
+  color: var(--danger);
+}
+
+.sim-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.sim-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: 600 var(--t-sm) var(--font-ui);
+  cursor: pointer;
+}
+
+.sim-tabs button:hover {
+  color: var(--ink);
+}
+
+.sim-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.sim-count {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--warn);
+  color: #1b1410;
+  font-size: 0.6875rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.sim-book .sim-events {
+  max-height: 260px;
+  padding-top: var(--s3);
+}
+
+.sim-fault-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+}
+
+.sim-wind {
+  display: grid;
+  gap: var(--s2);
+}
+
+.sim-wind label {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: var(--s3);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.sim-wind output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.sim-wind input[type="range"] {
+  margin: 0;
+}
+
+.sim-foot {
+  margin-top: var(--s4);
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+
+@media (max-width: 1180px) {
+  .sim-console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sim-stage .world,
+  .sim-stage .fmap > svg,
+  .sim-stage .rmap-canvas {
+    height: min(58vh, 560px);
+  }
+}
+
+@media (max-width: 520px) {
+  .sim-gauges {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sim-top-gap {
+    display: none;
+  }
+}
+
+/* Setting up: the way to start stays in reach however long the form is. */
+.sim-setup-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * var(--s1));
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--graphite) 94%, transparent);
+  backdrop-filter: blur(6px);
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+}
+
+.sim-stage .world-hud.strip {
+  right: auto;
+  flex-wrap: nowrap;
+}
+
+.sim-state-head .sim-label,
+.sim-speed .sim-label {
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--muted);
+}

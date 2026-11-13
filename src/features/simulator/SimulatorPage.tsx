@@ -44,6 +44,7 @@ export function showEvents() {
   if (window.location.hash !== want) window.location.hash = want;
   let tries = 0;
   const find = () => {
+    window.dispatchEvent(new Event("aeronex:events"));
     const el = document.querySelector<HTMLElement>("[data-events]");
     if (!el) {
       // The page is still arriving.
@@ -281,7 +282,7 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
               </span>
             </label>
           </div>
-          <div className="form-foot">
+          <div className="form-foot sim-setup-foot">
             {running && (
               <button className="btn btn-lg" onClick={onDone}>
                 Back to the flight, unchanged
@@ -416,6 +417,13 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
   const [gcsCut, setGcsCut] = useState(false);
   const [show, setShow] = useState<"world" | "map">("world");
   const [view, setView] = useState<WorldView>("orbit");
+  const [book, setBook] = useState<"events" | "faults">("events");
+  // A message that points at the events list must find it showing.
+  useEffect(() => {
+    const show = () => setBook("events");
+    window.addEventListener("aeronex:events", show);
+    return () => window.removeEventListener("aeronex:events", show);
+  }, []);
   const graphics = useSettings((s) => s.graphics);
   const profile = useActiveProfile();
   const object = useModel((s) => s.object);
@@ -471,120 +479,50 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
 
   if (!snap) return null;
   const af = sim.airframe;
+  const state = snap.crashed ? "Crashed" : snap.armed ? "Armed" : "Disarmed";
+  const stateTone = snap.crashed ? "danger" : snap.armed ? "warn" : "idle";
+  const faultsOn = snap.motors.filter((m) => m < 1).length + (snap.gpsOk ? 0 : 1) + (snap.rcOk ? 0 : 1) + (gcsCut ? 1 : 0);
+  const reset = () => {
+    linkManager.sim?.reset(sim.soc);
+    clearTrack();
+    if (gcsCut) {
+      commandLink.startHeartbeat();
+      setGcsCut(false);
+    }
+  };
   return (
     <>
-      <div className="sim-aircraft">
-        <div>
+      {/* Which aircraft this is, and the things done to the simulator as a whole. */}
+      <div className="sim-top">
+        <div className="sim-top-id">
           <strong>{af.name}</strong>
           <span>
             {af.massKg} kg, {Math.round(af.diagonalM * 1000)} mm, {Math.round((af.motorMaxThrustN / G) * 1000)} g thrust per motor, {af.cells}S {af.capacityMah} mAh
           </span>
         </div>
-        <div className="sim-row">
+        <div className="sim-top-acts">
           <Link className="btn btn-sm" to="/params">
             <SlidersHorizontal /> Flight settings
           </Link>
           <button className="btn btn-sm" onClick={onEdit}>
             <Pencil /> Change the aircraft
           </button>
+          <span className="sim-top-gap" aria-hidden />
+          <button className="btn btn-sm" onClick={reset} title="Puts the aircraft back on the pad with a fresh battery and clears every fault">
+            <RotateCcw /> Put it back at home
+          </button>
+          <button className="btn btn-sm btn-danger" onClick={() => void linkManager.disconnect("Virtual aircraft stopped.")}>
+            <Power /> Stop
+          </button>
         </div>
       </div>
-      <div className="sim-room">
-      <div className="stack">
-        <section className="panel">
-          <div className="panel-head">
-            <h3>Fly it</h3>
-            <span className={`pill ${snap.crashed ? "danger" : snap.armed ? "warn" : "idle"} plain`}>{snap.crashed ? "Crashed" : snap.armed ? "Armed" : "Disarmed"}</span>
-          </div>
-          <div className="panel-body sim-actions">
-            <div className="sim-takeoff">
-              <button className="btn btn-primary" disabled={!ready || flying || snap.crashed} onClick={takeOff}>
-                <PlaneTakeoff /> Take off to
-              </button>
-              <NumInput className="input" min={2} max={120} value={takeoffAlt} onChange={setTakeoffAlt} aria-label="Take-off height in metres" />
-              <span className="muted">m</span>
-            </div>
-            <button className="btn" disabled={!ready || snap.crashed} onClick={flyMission}>
-              <Route /> Fly the mission{sim.points.length ? ` (${sim.points.length} waypoints)` : ""}
-            </button>
-            <div className="sim-row">
-              <button className="btn" disabled={!flying} onClick={() => order("Hold", () => commandLink.setMode(COPTER_MODE.BRAKE))}>
-                <CircleStop /> Hold
-              </button>
-              <button className="btn" disabled={!flying} onClick={() => order("Return home", () => commandLink.setMode(COPTER_MODE.RTL))}>
-                <HomeIcon /> Return
-              </button>
-              <button className="btn" disabled={!flying} onClick={() => order("Land", () => commandLink.setMode(COPTER_MODE.LAND))}>
-                <PlaneLanding /> Land
-              </button>
-            </div>
-            <p className="sim-hint">
-              These send the same MAVLink commands a real aircraft gets. <Link to="/keyboard-flight">Keyboard Flight</Link> and{" "}
-              <Link to="/missions">Mission Planning</Link> work on it too.
-            </p>
-          </div>
-        </section>
 
-        <section className="panel">
-          <div className="panel-head">
-            <h3>Make something go wrong</h3>
-          </div>
-          <div className="panel-body sim-faults">
-            <div>
-              <span className="sim-label">Motors</span>
-              <div className="sim-row">
-                {snap.motors.map((m, i) => (
-                  <button key={i} className={`btn sim-motor${m < 1 ? (m === 0 ? " dead" : " weak") : ""}`} onClick={() => setMotor(i)} title="Click to step through 100%, 60% and 0% thrust">
-                    {i + 1}
-                    <small>{Math.round(m * 100)}%</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="sim-row">
-              <button className={`btn${snap.gpsOk ? "" : " sim-on"}`} onClick={() => linkManager.sim && (linkManager.sim.gpsOk = !snap.gpsOk)}>
-                <Satellite /> {snap.gpsOk ? "Lose GPS" : "GPS lost"}
-              </button>
-              <button className={`btn${snap.rcOk ? "" : " sim-on"}`} onClick={() => linkManager.sim && (linkManager.sim.rcOk = !snap.rcOk)}>
-                <Unplug /> {snap.rcOk ? "Lose radio" : "Radio lost"}
-              </button>
-            </div>
-            <div className="sim-row">
-              <button
-                className={`btn${gcsCut ? " sim-on" : ""}`}
-                onClick={() => {
-                  if (gcsCut) commandLink.startHeartbeat();
-                  else commandLink.stopHeartbeat();
-                  setGcsCut(!gcsCut);
-                }}
-                title="Stops this app's heartbeat, which is what the ground-station failsafe watches for"
-              >
-                <Unplug /> {gcsCut ? "Link silent" : "Silence the link"}
-              </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  const v = linkManager.sim;
-                  if (v) v.phys.s.usedMah = Math.max(v.phys.s.usedMah, 0.85 * v.phys.af.capacityMah);
-                }}
-              >
-                <BatteryWarning /> Battery to 15%
-              </button>
-            </div>
-            <div>
-              <span className="sim-label">
-                <Wind size={14} /> Wind {wind.windSpeed} m/s from {wind.windFromDeg}°, gusting {Math.round(wind.gust * 100)}%
-              </span>
-              <input type="range" min={0} max={20} value={wind.windSpeed} onChange={(e) => setWind({ ...wind, windSpeed: Number(e.target.value) })} aria-label="Wind speed" />
-              <input type="range" min={0} max={359} step={5} value={wind.windFromDeg} onChange={(e) => setWind({ ...wind, windFromDeg: Number(e.target.value) })} aria-label="Wind direction" />
-              <input type="range" min={0} max={1} step={0.1} value={wind.gust} onChange={(e) => setWind({ ...wind, gust: Number(e.target.value) })} aria-label="Gust strength" />
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="stack">
-        <section className="panel sim-map-panel">
+      {/*
+        The view on the left and everything needed to fly on the right, in one
+        screen: nothing that is pressed during a flight is below the fold.
+      */}
+      <div className="sim-console">
+        <section className="panel sim-stage sim-map-panel">
           <div className="panel-head">
             <div className="segmented" role="group" aria-label="View">
               <button aria-pressed={show === "world"} onClick={() => setShow("world")}>
@@ -594,21 +532,24 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
                 Map
               </button>
             </div>
-            <div className="segmented" role="group" aria-label="Simulation speed">
-              {[0, 1, 2, 5, 10].map((x) => (
-                <button
-                  key={x}
-                  aria-pressed={speed === x}
-                  aria-label={x === 0 ? "Pause" : `${x} times speed`}
-                  title={x === 0 ? "Freeze the flight where it is. The link stays up." : undefined}
-                  onClick={() => {
-                    linkManager.simSpeed = x;
-                    setSpeed(x);
-                  }}
-                >
-                  {x === 0 ? <Pause /> : `${x}×`}
-                </button>
-              ))}
+            <div className="sim-speed">
+              <span className="sim-label">Time</span>
+              <div className="segmented" role="group" aria-label="Simulation speed">
+                {[0, 1, 2, 5, 10].map((x) => (
+                  <button
+                    key={x}
+                    aria-pressed={speed === x}
+                    aria-label={x === 0 ? "Pause" : `${x} times speed`}
+                    title={x === 0 ? "Freeze the flight where it is. The link stays up." : undefined}
+                    onClick={() => {
+                      linkManager.simSpeed = x;
+                      setSpeed(x);
+                    }}
+                  >
+                    {x === 0 ? <Pause /> : `${x}×`}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           {show === "world" ? (
@@ -633,6 +574,7 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
               <div className="world-hud top">
                 <span className={`world-chip ${snap.crashed ? "bad" : snap.armed ? "on" : ""}`}>{snap.crashed ? "Crashed" : (MODE_NAME[snap.mode] ?? "Mode")}</span>
                 <span className="world-chip">{imported && modelStatus === "ready" ? imported.filename : imported ? "Loading your model…" : "Standard quadcopter"}</span>
+                {speed === 0 && <span className="world-chip on">Paused</span>}
               </div>
               <div className="world-hud views" role="group" aria-label="Camera">
                 {VIEWS.map(([k, label, tip]) => (
@@ -642,12 +584,8 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
                 ))}
               </div>
               <dl className="world-hud strip">
-                <div><dt>Height</dt><dd>{snap.alt.toFixed(1)} m</dd></div>
                 <div><dt>Above ground</dt><dd>{Math.max(0, snap.alt - terrain.surface(snap.n, snap.e)).toFixed(1)} m</dd></div>
-                <div><dt>Speed</dt><dd>{snap.speed.toFixed(1)} m/s</dd></div>
                 <div><dt>Heading</dt><dd>{String(Math.round((snap.yawDeg + 360) % 360)).padStart(3, "0")}°</dd></div>
-                <div><dt>Home</dt><dd>{Math.hypot(snap.n, snap.e).toFixed(0)} m</dd></div>
-                <div><dt>Battery</dt><dd className={snap.soc < 0.2 ? "bad" : undefined}>{Math.max(0, Math.round(snap.soc * 100))}%</dd></div>
                 <div><dt>Wind</dt><dd>{wind.windSpeed} m/s</dd></div>
               </dl>
             </div>
@@ -667,78 +605,168 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
             />
           )}
         </section>
-      </div>
 
-      <div className="stack">
-        <section className="panel">
-          <div className="panel-head">
-            <h3>{MODE_NAME[snap.mode] ?? "Mode"}</h3>
-            <span className="num muted">{Math.floor(snap.t / 60)}:{String(Math.floor(snap.t % 60)).padStart(2, "0")}</span>
-          </div>
-          <dl className="readouts" style={{ margin: 0, borderRadius: 0 }}>
-            <div className="readout"><dt>Height</dt><dd>{snap.alt.toFixed(1)}<small>m</small></dd></div>
-            <div className="readout"><dt>Speed</dt><dd>{snap.speed.toFixed(1)}<small>m/s</small></dd></div>
-            <div className="readout"><dt>From home</dt><dd>{Math.hypot(snap.n, snap.e).toFixed(0)}<small>m</small></dd></div>
-            <div className="readout"><dt>Throttle</dt><dd className={snap.throttle > 0.9 ? "bad" : undefined}>{Math.round(snap.throttle * 100)}<small>%</small></dd></div>
-            <div className="readout"><dt>Battery</dt><dd className={snap.soc < 0.2 ? "bad" : undefined}>{Math.max(0, Math.round(snap.soc * 100))}<small>%</small></dd></div>
-            <div className="readout"><dt>Voltage</dt><dd>{snap.volts.toFixed(1)}<small>V</small></dd></div>
-            <div className="readout"><dt>Current</dt><dd>{snap.amps.toFixed(0)}<small>A</small></dd></div>
-            <div className="readout"><dt>Climb</dt><dd>{snap.climb.toFixed(1)}<small>m/s</small></dd></div>
-          </dl>
-          {speed === 0 && (
-            <div className="callout info" style={{ margin: "var(--s4)" }}>
-              <Pause />
-              <span>Paused. The aircraft is frozen where it is; press a speed to carry on.</span>
+        <aside className="sim-rail" aria-label="Flight controls and readings">
+          {/* What it is doing now. */}
+          <section className="panel sim-state">
+            <div className="sim-state-head">
+              <div>
+                <span className="sim-label">Flight mode</span>
+                <h3>{MODE_NAME[snap.mode] ?? "Mode"}</h3>
+              </div>
+              <div className="sim-state-side">
+                <span className={`pill ${stateTone} plain`}>{state}</span>
+                <span className="num muted" title="Flight clock">
+                  {Math.floor(snap.t / 60)}:{String(Math.floor(snap.t % 60)).padStart(2, "0")}
+                </span>
+              </div>
             </div>
-          )}
-          {snap.mode === MODE.AUTO && snap.missionLen > 1 && (
-            <p className="sim-progress">
-              <Route aria-hidden /> Command {Math.min(snap.missionSeq, snap.missionLen - 1)} of {snap.missionLen - 1}
-              {snap.toGo !== null ? `, ${snap.toGo >= 1000 ? `${(snap.toGo / 1000).toFixed(1)} km` : `${Math.round(snap.toGo)} m`} to go` : ""}
-            </p>
-          )}
-          {snap.failsafes.length > 0 && (
-            <div className="callout warn" style={{ margin: "var(--s4)" }}>
-              <TriangleAlert />
-              <span>Failsafe active: {snap.failsafes.join(", ")}.</span>
+            {snap.mode === MODE.AUTO && snap.missionLen > 1 && (
+              <p className="sim-progress">
+                <Route aria-hidden /> Command {Math.min(snap.missionSeq, snap.missionLen - 1)} of {snap.missionLen - 1}
+                {snap.toGo !== null ? `, ${snap.toGo >= 1000 ? `${(snap.toGo / 1000).toFixed(1)} km` : `${Math.round(snap.toGo)} m`} to go` : ""}
+              </p>
+            )}
+            {snap.failsafes.length > 0 && (
+              <div className="callout warn sim-note">
+                <TriangleAlert />
+                <span>Failsafe active: {snap.failsafes.join(", ")}.</span>
+              </div>
+            )}
+            <dl className="sim-gauges">
+              <div><dt>Height</dt><dd>{snap.alt.toFixed(1)}<small>m</small></dd></div>
+              <div><dt>Speed</dt><dd>{snap.speed.toFixed(1)}<small>m/s</small></dd></div>
+              <div><dt>Climb</dt><dd>{snap.climb.toFixed(1)}<small>m/s</small></dd></div>
+              <div><dt>From home</dt><dd>{Math.hypot(snap.n, snap.e).toFixed(0)}<small>m</small></dd></div>
+              <div><dt>Battery</dt><dd className={snap.soc < 0.2 ? "bad" : undefined}>{Math.max(0, Math.round(snap.soc * 100))}<small>%</small></dd></div>
+              <div><dt>Voltage</dt><dd>{snap.volts.toFixed(1)}<small>V</small></dd></div>
+              <div><dt>Current</dt><dd>{snap.amps.toFixed(0)}<small>A</small></dd></div>
+              <div><dt>Throttle</dt><dd className={snap.throttle > 0.9 ? "bad" : undefined}>{Math.round(snap.throttle * 100)}<small>%</small></dd></div>
+            </dl>
+          </section>
+
+          {/* What to tell it. */}
+          <section className="panel">
+            <div className="panel-body sim-actions">
+              <div className="sim-takeoff">
+                <button className="btn btn-primary" disabled={!ready || flying || snap.crashed} onClick={takeOff}>
+                  <PlaneTakeoff /> Take off to
+                </button>
+                <NumInput className="input" min={2} max={120} value={takeoffAlt} onChange={setTakeoffAlt} aria-label="Take-off height in metres" />
+                <span className="muted">m</span>
+              </div>
+              <button className="btn" disabled={!ready || snap.crashed} onClick={flyMission} title={sim.points.length ? undefined : "Plan a mission in Mission Planning first"}>
+                <Route /> Fly the mission{sim.points.length ? ` (${sim.points.length} ${sim.points.length === 1 ? "waypoint" : "waypoints"})` : ""}
+              </button>
+              <div className="sim-row">
+                <button className="btn" disabled={!flying} onClick={() => order("Hold", () => commandLink.setMode(COPTER_MODE.BRAKE))} title="Stop and hover where it is">
+                  <CircleStop /> Hold
+                </button>
+                <button className="btn" disabled={!flying} onClick={() => order("Return home", () => commandLink.setMode(COPTER_MODE.RTL))} title="Fly back to home and land">
+                  <HomeIcon /> Return
+                </button>
+                <button className="btn" disabled={!flying} onClick={() => order("Land", () => commandLink.setMode(COPTER_MODE.LAND))} title="Land where it is">
+                  <PlaneLanding /> Land
+                </button>
+              </div>
+              {snap.crashed && (
+                <button className="btn" onClick={reset}>
+                  <RotateCcw /> Put it back at home
+                </button>
+              )}
             </div>
-          )}
-        </section>
+          </section>
 
-        <section className="panel" data-events>
-          <div className="panel-head">
-            <h3>What the aircraft says</h3>
-          </div>
-          <ul className="sim-events">
-            {events.slice(0, 14).map((ev) => (
-              <li key={ev.id} className={ev.level}>
-                <span className="num">{clockTime(ev.at)}</span>
-                {ev.text}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <div className="sim-row">
-          <button
-            className="btn"
-            onClick={() => {
-              linkManager.sim?.reset(sim.soc);
-              clearTrack();
-              if (gcsCut) {
-                commandLink.startHeartbeat();
-                setGcsCut(false);
-              }
-            }}
-          >
-            <RotateCcw /> Put it back at home
-          </button>
-          <button className="btn btn-danger" onClick={() => void linkManager.disconnect("Virtual aircraft stopped.")}>
-            <Power /> Stop the simulator
-          </button>
-        </div>
+          {/* What it says, and what can be done to it. */}
+          <section className="panel sim-book" data-events>
+            <div className="sim-tabs" role="tablist" aria-label="Events or faults">
+              <button role="tab" aria-selected={book === "events"} onClick={() => setBook("events")}>
+                Events
+              </button>
+              <button role="tab" aria-selected={book === "faults"} onClick={() => setBook("faults")}>
+                Faults and wind
+                {faultsOn > 0 && <i className="sim-count">{faultsOn}</i>}
+              </button>
+            </div>
+            {book === "events" ? (
+              <ul className="sim-events">
+                {events.slice(0, 30).map((ev) => (
+                  <li key={ev.id} className={ev.level}>
+                    <span className="num">{clockTime(ev.at)}</span>
+                    {ev.text}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="panel-body sim-faults">
+                <div>
+                  <span className="sim-label">Motors: click to weaken, again to stop</span>
+                  <div className="sim-row">
+                    {snap.motors.map((m, i) => (
+                      <button key={i} className={`btn sim-motor${m < 1 ? (m === 0 ? " dead" : " weak") : ""}`} onClick={() => setMotor(i)} title="Steps through 100%, 60% and 0% thrust">
+                        {i + 1}
+                        <small>{Math.round(m * 100)}%</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="sim-fault-grid">
+                  <button className={`btn${snap.gpsOk ? "" : " sim-on"}`} onClick={() => linkManager.sim && (linkManager.sim.gpsOk = !snap.gpsOk)}>
+                    <Satellite /> {snap.gpsOk ? "Lose GPS" : "GPS lost"}
+                  </button>
+                  <button className={`btn${snap.rcOk ? "" : " sim-on"}`} onClick={() => linkManager.sim && (linkManager.sim.rcOk = !snap.rcOk)}>
+                    <Unplug /> {snap.rcOk ? "Lose radio" : "Radio lost"}
+                  </button>
+                  <button
+                    className={`btn${gcsCut ? " sim-on" : ""}`}
+                    onClick={() => {
+                      if (gcsCut) commandLink.startHeartbeat();
+                      else commandLink.stopHeartbeat();
+                      setGcsCut(!gcsCut);
+                    }}
+                    title="Stops this app's heartbeat, which is what the ground-station failsafe watches for"
+                  >
+                    <Unplug /> {gcsCut ? "Link silent" : "Silence the link"}
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      const v = linkManager.sim;
+                      if (v) v.phys.s.usedMah = Math.max(v.phys.s.usedMah, 0.85 * v.phys.af.capacityMah);
+                    }}
+                  >
+                    <BatteryWarning /> Battery to 15%
+                  </button>
+                </div>
+                <div className="sim-wind">
+                  <span className="sim-label">
+                    <Wind size={14} /> Wind
+                  </span>
+                  <label>
+                    <span>Speed</span>
+                    <input type="range" min={0} max={20} value={wind.windSpeed} onChange={(e) => setWind({ ...wind, windSpeed: Number(e.target.value) })} />
+                    <output>{wind.windSpeed} m/s</output>
+                  </label>
+                  <label>
+                    <span>From</span>
+                    <input type="range" min={0} max={359} step={5} value={wind.windFromDeg} onChange={(e) => setWind({ ...wind, windFromDeg: Number(e.target.value) })} />
+                    <output>{wind.windFromDeg}°</output>
+                  </label>
+                  <label>
+                    <span>Gusts</span>
+                    <input type="range" min={0} max={1} step={0.1} value={wind.gust} onChange={(e) => setWind({ ...wind, gust: Number(e.target.value) })} />
+                    <output>{Math.round(wind.gust * 100)}%</output>
+                  </label>
+                </div>
+              </div>
+            )}
+          </section>
+        </aside>
       </div>
-      </div>
+      <p className="sim-foot">
+        The buttons send the same MAVLink commands a real aircraft gets. <Link to="/keyboard-flight">Keyboard Flight</Link> and <Link to="/missions">Mission Planning</Link> work on this
+        aircraft too.
+      </p>
     </>
   );
 }
@@ -767,19 +795,20 @@ export function SimulatorPage() {
   }
 
   return (
-    <div className="page-pad">
+    <div className={`page-pad${open && virtual && !editing ? " sim-live" : ""}`}>
       <header className="page-head">
         <div>
           <h1>Flight Simulator</h1>
-          <p>
-            A virtual aircraft with real flight physics and a flight controller that speaks MAVLink. Fly it, plan missions for it, and break things
-            on purpose to see what your settings would do.
-          </p>
+          {!(open && virtual && !editing) && (
+            <p>
+              A virtual aircraft with real flight physics and a flight controller that speaks MAVLink. Fly it, plan missions for it, and break things on
+              purpose to see what your settings would do.
+            </p>
+          )}
         </div>
         <div className="actions">
-          {open && virtual && <span className="pill virtual live">Virtual aircraft running</span>}
-          <button className="btn btn-ghost" onClick={() => setTab("valley")}>
-            3D valley demo
+          <button className="btn btn-ghost" onClick={() => setTab("valley")} title="A scenic flight to watch. It is not physics-based.">
+            Scenic demo
           </button>
         </div>
       </header>
