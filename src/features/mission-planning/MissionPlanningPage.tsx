@@ -1,11 +1,11 @@
-import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, Globe, Info, LandPlot, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, SatelliteDish, Globe, Info, LandPlot, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { MODE_NAME } from "../../sim/autopilot";
 import { NumInput } from "../../components/ui/NumInput";
 import { defaultParams, type Params } from "../../sim/params";
 import { predict, type FaultKind, type FaultPlan, type Prediction, type Verdict } from "../../sim/predict";
-import { commandLink, COPTER_MODE } from "../../services/link/commandLink";
+import { commandLink, missionBlock, COPTER_MODE } from "../../services/link/commandLink";
 import { linkManager, rememberedParams } from "../../services/link/linkManager";
 import { useLink } from "../../state/linkStore";
 import { confirmAction, notify } from "../../state/notifyStore";
@@ -83,6 +83,15 @@ export function MissionPlanningPage() {
   const [motor, setMotor] = useState({ n: 1, level: 0 });
   const dem = useDem();
   const homeSource = useHomeSource((h) => h.source);
+  // Looked at a couple of times a second, not at telemetry rate.
+  const [gpsBlock, setGpsBlock] = useState(missionBlock);
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const b = missionBlock();
+      setGpsBlock((was) => (was?.body === b?.body ? was : b));
+    }, 700);
+    return () => window.clearInterval(t);
+  }, []);
   const lastField = useRef<TerrainKind>(sim.terrain === "real" ? "hills" : sim.terrain);
   if (sim.terrain !== "real") lastField.current = sim.terrain;
 
@@ -267,7 +276,7 @@ export function MissionPlanningPage() {
           <button className="btn" disabled={!linked} onClick={read} title={linked ? undefined : "Connect an aircraft first"}>
             <Download /> Read from aircraft
           </button>
-          <button className="btn btn-primary" disabled={!linked || empty} onClick={send} title={linked ? undefined : "Connect an aircraft first"}>
+          <button className="btn btn-primary" disabled={!linked || empty || !!gpsBlock} onClick={send} title={!linked ? "Connect an aircraft first" : gpsBlock ? gpsBlock.title : undefined}>
             <Upload /> Send to {virtual ? "virtual aircraft" : "aircraft"}
           </button>
         </div>
@@ -289,6 +298,14 @@ export function MissionPlanningPage() {
               {empty ? "No waypoints yet" : `${sim.points.length} waypoints, ${length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`}, about ${clock(length / cruise + sim.takeoffAlt / 2.5 + 30)} at ${cruise.toFixed(0)} m/s`}
             </span>
           </div>
+          {gpsBlock && (
+            <div className="callout warn mp-away" role="status">
+              <SatelliteDish />
+              <span>
+                <strong>{gpsBlock.title}.</strong> {gpsBlock.body} You can still plan, predict and fly it in the simulator.
+              </span>
+            </div>
+          )}
           {real ? (
             <Suspense fallback={<div className="rmap rmap-loading">Loading the map…</div>}>
               <RealMap

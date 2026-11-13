@@ -115,3 +115,46 @@ describe("home follows a linked aircraft", () => {
     expect(distanceM(useSim.getState().home, FIELD)).toBeLessThan(0.5);
   });
 });
+
+describe("no mission for a real aircraft without a GPS position", () => {
+  const gps = (fixType: number | null, virtual = false, satellites: number | null = 5) =>
+    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, armed: false } as never, telemetry: (fixType === null ? {} : { gps: { at: 0, value: { fixType, satellites, hdop: 2 } } }) as never });
+  const mission = [{ seq: 0, frame: 0, command: 16, p1: 0, p2: 0, p3: 0, p4: 0, x: 1, y: 1, z: 0 }];
+
+  it("asks for a GPS when none reports, and for patience when it has no fix", async () => {
+    const { missionBlock } = await import("../../services/link/commandLink");
+    gps(null);
+    expect(missionBlock()?.title).toBe("Connect a GPS to fly a mission");
+    gps(0);
+    expect(missionBlock()?.title).toBe("Connect a GPS to fly a mission");
+    gps(1);
+    expect(missionBlock()?.title).toBe("Waiting for a GPS fix");
+    gps(2, false, 1);
+    expect(missionBlock()?.body).toContain("1 satellite so far");
+    gps(3);
+    expect(missionBlock()).toBeNull();
+    gps(6);
+    expect(missionBlock()).toBeNull();
+  });
+
+  it("lets the virtual aircraft fly without one, and says nothing when nothing is linked", async () => {
+    const { missionBlock } = await import("../../services/link/commandLink");
+    gps(0, true);
+    expect(missionBlock()).toBeNull();
+    useLink.setState({ status: "disconnected" as never, virtual: false });
+    expect(missionBlock()).toBeNull();
+  });
+
+  it("refuses to send or start, whichever page asks", async () => {
+    const { commandLink } = await import("../../services/link/commandLink");
+    let wrote = 0;
+    commandLink.attach(async () => void wrote++);
+    gps(1);
+    await expect(commandLink.uploadMission(mission)).rejects.toThrow(/Waiting for a GPS fix/);
+    await expect(commandLink.startMission()).rejects.toThrow(/Waiting for a GPS fix/);
+    gps(null);
+    await expect(commandLink.uploadMission(mission)).rejects.toThrow(/Connect a GPS/);
+    expect(wrote).toBe(0);
+    commandLink.detach();
+  });
+});

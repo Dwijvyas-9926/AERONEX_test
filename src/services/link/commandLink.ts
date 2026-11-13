@@ -19,6 +19,32 @@ import { notify } from "../../state/notifyStore";
 // MAVProxy/Mission Planner identify as system 255, component 190 (GCS).
 const GCS = { sysid: 255, compid: 190 };
 
+/**
+ * Why a mission may not be sent to, or started on, the linked aircraft right
+ * now; null when it may.
+ *
+ * A mission is a list of places. An aircraft whose GPS has no position cannot
+ * know where it is among them, and nothing on the ground can know where it
+ * will count its heights from. So a real aircraft gets no mission until its
+ * GPS has a 3D fix. The virtual aircraft is exempt: losing its GPS is one of
+ * the things it is there to rehearse.
+ */
+export function missionBlock(): { title: string; body: string } | null {
+  const l = useLink.getState();
+  if (l.status !== "connected" || l.virtual) return null;
+  const g = l.telemetry.gps?.value;
+  if (!g || g.fixType <= 0) {
+    return { title: "Connect a GPS to fly a mission", body: "The flight controller is not reporting a GPS. Plug a GPS module into its GPS port, power the aircraft again, and take it outdoors. A mission cannot be sent or started without one." };
+  }
+  if (g.fixType < 3) {
+    return {
+      title: "Waiting for a GPS fix",
+      body: `The GPS is connected but has no position yet${g.satellites !== null ? ` (${g.satellites} ${g.satellites === 1 ? "satellite" : "satellites"} so far)` : ""}. Take the aircraft outdoors with a clear view of the sky and wait: a first fix can take a few minutes. A mission cannot be sent or started until then.`,
+    };
+  }
+  return null;
+}
+
 /** Why an aircraft turns a mission down, as MAV_MISSION_RESULT numbers them. */
 const MISSION_RESULT: Record<number, string> = {
   1: "it reported an error",
@@ -540,6 +566,9 @@ class CommandLink {
    * acknowledges the set. The same exchange a Pixhawk expects.
    */
   uploadMission(items: MissionWire[]): Promise<void> {
+    // Whatever page asks, a real aircraft without a GPS position is not given a mission.
+    const block = missionBlock();
+    if (block) return Promise.reject(new Error(`${block.title}. ${block.body}`));
     const t = this.target();
     this.missionUp?.reject(new Error("Superseded by a newer upload"));
     return new Promise<void>((resolve, reject) => {
@@ -635,6 +664,8 @@ class CommandLink {
   }
 
   async startMission(): Promise<number> {
+    const block = missionBlock();
+    if (block) throw new Error(`${block.title}. ${block.body}`);
     return this.sendCommand(CMD.MISSION_START, {});
   }
 
