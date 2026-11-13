@@ -4676,3 +4676,7 @@ input[type="range"]::-moz-range-thumb {
   -webkit-appearance: none;
   margin: 0;
 }
+
+.rmap-wait {
+  color: var(--warn);
+}

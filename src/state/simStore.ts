@@ -32,6 +32,8 @@ interface SimState {
   points: PlanPoint[];
   ending: Ending;
   set: <K extends keyof Omit<SimState, Actions>>(k: K, v: SimState[K]) => void;
+  /** Home as the aircraft reports it. Like moveHome, but not a step to undo: it was not the reader's doing. */
+  followHome: (to: LatLon, altMsl?: number) => void;
   /** Swaps a waypoint with the one before (-1) or after (1). */
   shiftPoint: (id: string, by: -1 | 1) => void;
   /** Gives every waypoint the same height. */
@@ -50,7 +52,7 @@ interface SimState {
   clearPoints: () => void;
 }
 
-type Actions = "set" | "addPoint" | "updatePoint" | "removePoint" | "clearPoints" | "moveHome" | "shiftPoint" | "setAllHeights" | "loadPlan" | "undo" | "redo" | "canUndo" | "canRedo";
+type Actions = "set" | "addPoint" | "updatePoint" | "removePoint" | "clearPoints" | "moveHome" | "followHome" | "shiftPoint" | "setAllHeights" | "loadPlan" | "undo" | "redo" | "canUndo" | "canRedo";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -110,6 +112,7 @@ export const useSim = create<SimState>()(
       removePoint: (id) => set((s) => ({ ...remember(s, "remove"), points: s.points.filter((p) => p.id !== id) })),
       clearPoints: () => set((s) => (s.points.length ? { ...remember(s, "clear"), points: [] } : {})),
       moveHome: (to, altMsl) => set((s) => ({ ...remember(s, "home"), home: { lat: to.lat, lon: to.lon, altMsl: altMsl ?? s.home.altMsl }, points: rehomed(s.home, to, s.points) })),
+      followHome: (to, altMsl) => set((s) => ({ home: { lat: to.lat, lon: to.lon, altMsl: altMsl ?? s.home.altMsl }, points: rehomed(s.home, to, s.points) })),
       shiftPoint: (id, by) =>
         set((s) => {
           const i = s.points.findIndex((p) => p.id === id);

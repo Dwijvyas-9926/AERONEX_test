@@ -6,6 +6,7 @@ import { covers, sampleDem } from "../../geo/elevation";
 import { parseLatLon, tilesIn, tileUrl, toGlobal, toLocal, type LatLon } from "../../geo/geo";
 import { ELEVATION, IMAGERY, imageryById, imageryUrl, KEPT } from "../../geo/sources";
 import { clearKept, keptCount, keptFetch, saveTiles } from "../../geo/tileCache";
+import { useHomeSource } from "../../services/link/homeFollow";
 import { useLink } from "../../state/linkStore";
 import { useDem, useMapPrefs } from "../../state/mapStore";
 import { notify } from "../../state/notifyStore";
@@ -130,6 +131,9 @@ export default function RealMap(props: RealMapProps) {
   const virtual = useLink((s) => s.virtual);
   const pos = useLink((s) => s.telemetry.position?.value);
   const hudHeading = useLink((s) => s.telemetry.hud?.value.heading);
+  const sats = useLink((s) => s.telemetry.gps?.value.satellites ?? null);
+  const homeFrom = useHomeSource((h) => h.source);
+  const taken = useHomeSource((h) => h.taken);
 
   /** Home, the route and whatever else is drawn, as a box to fit the view to. */
   const fit = (animate = true) => {
@@ -274,7 +278,7 @@ export default function RealMap(props: RealMapProps) {
     }
     homeMark.current.setLngLat([home.lon, home.lat]);
     homeMark.current.setDraggable(!!props.onMoveHome && !homeLocked);
-    homeMark.current.getElement().title = homeLocked ? "Home: the aircraft is flying from here" : "Home. Drag to move it; the waypoints stay where they are.";
+    homeMark.current.getElement().title = homeFrom === "aircraft" ? "Home: the aircraft's GPS position. It follows the aircraft while it is linked." : homeLocked ? "Home: the aircraft is flying from here" : "Home. Drag to move it; the waypoints stay where they are.";
 
     // Waypoints: keep the markers that are still wanted, so a drag is not cut short.
     const want = new Set(route.map((r) => r.id));
@@ -319,7 +323,17 @@ export default function RealMap(props: RealMapProps) {
     place("mark", `rmap-mark ${mark?.tone ?? "ok"}`, mark?.label ?? null, mark);
     place("low", "rmap-low", low ? (low.clear < 0 ? `${Math.round(-low.clear)} m into the ground` : `${Math.round(low.clear)} m clear`) : null, low);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, home, route, closeRoute, ghost, fenceRadius, mark, low, homeLocked, !!props.onMoveHome, !!props.onMovePoint]);
+  }, [ready, home, route, closeRoute, ghost, fenceRadius, mark, low, homeLocked, homeFrom, !!props.onMoveHome, !!props.onMovePoint]);
+
+  // Home has just been taken from an aircraft's GPS: show it.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || !taken) return;
+    const h = latest.current.home;
+    if (!map.getBounds().contains([h.lon, h.lat])) fit(false);
+    setPlacing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, taken]);
 
   // Home moved a long way (a new field, or the aircraft's own position): go there.
   const lastHome = useRef(home);
@@ -409,6 +423,8 @@ export default function RealMap(props: RealMapProps) {
     return Math.abs(l.n) <= patch.half && Math.abs(l.e) <= patch.half ? sampleDem(patch, l.n, l.e) : null;
   })() : null;
 
+  const hasAircraft = linked && !!pos && (pos.lat !== 0 || pos.lon !== 0);
+
   if (failed) {
     return (
       <div className="rmap rmap-failed">
@@ -429,13 +445,14 @@ export default function RealMap(props: RealMapProps) {
         <button onClick={() => zoom(-1)} aria-label="Zoom out" title="Zoom out"><Minus /></button>
         <button onClick={() => fit()} aria-label="Fit the route" title="Fit the route"><Maximize /></button>
         <button onClick={() => prefs.set("relief3d", !prefs.relief3d)} aria-pressed={prefs.relief3d} aria-label="3D ground" title="Tilt the map and raise the ground"><Mountain /></button>
-        {linked && pos && (
-          <button onClick={() => mapRef.current?.flyTo({ center: [pos.lon, pos.lat], zoom: Math.max(16, mapRef.current.getZoom()) })} aria-label="Go to the aircraft" title="Go to the aircraft"><Navigation /></button>
-        )}
         {props.onMoveHome && !homeLocked && (
           <button onClick={() => setPlacing(!placing)} aria-pressed={placing} aria-label="Put home here" title="Put home here: then click the map where the aircraft will take off"><HomeIcon /></button>
         )}
-        <button onClick={toMe} aria-label="Go to where I am" title="Go to where I am"><LocateFixed /></button>
+        {hasAircraft ? (
+          <button onClick={() => mapRef.current?.flyTo({ center: [pos!.lon, pos!.lat], zoom: Math.max(16, mapRef.current.getZoom()) })} aria-label="Go to the aircraft" title="Go to the aircraft, where its GPS says it is"><Navigation /></button>
+        ) : (
+          <button onClick={toMe} aria-label="Go to this computer's location" title={linked && !virtual ? "The aircraft has no GPS position yet. This goes to this computer's location instead." : "Go to this computer's location. Link an aircraft and this goes to the aircraft instead."}><LocateFixed /></button>
+        )}
         <button onClick={() => setPanel(!panel)} aria-pressed={panel} aria-label="Layers and offline maps" title="Layers and offline maps"><Layers /></button>
       </div>
 
@@ -519,7 +536,13 @@ export default function RealMap(props: RealMapProps) {
         {pointer ? (
           <span className="num">{pointer.lat.toFixed(5)}, {pointer.lon.toFixed(5)}{ground != null ? `, ground ${Math.round(ground)} m` : ""}</span>
         ) : (
-          <span>Home {home.lat.toFixed(5)}, {home.lon.toFixed(5)}</span>
+          <span className={homeFrom === "waiting" ? "rmap-wait" : undefined}>
+            {homeFrom === "aircraft"
+              ? `Home is the aircraft's GPS position${sats !== null ? ` (${sats} satellites)` : ""}: ${home.lat.toFixed(5)}, ${home.lon.toFixed(5)}`
+              : homeFrom === "waiting"
+                ? `Waiting for the aircraft's GPS${sats !== null ? ` (${sats} satellites so far)` : ""}. Home is still where you placed it.`
+                : `Home ${home.lat.toFixed(5)}, ${home.lon.toFixed(5)}`}
+          </span>
         )}
         {wind && wind.speed > 0 && (
           <span><i className="fmap-wind" style={{ transform: `rotate(${wind.fromDeg + 180}deg)` }} aria-hidden /> Wind {wind.speed.toFixed(0)} m/s from {Math.round(wind.fromDeg)}°</span>

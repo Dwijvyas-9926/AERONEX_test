@@ -206,7 +206,7 @@ export const GUIDES: Record<string, Guide> = {
     purpose: "Plans a route on a real map for the aircraft to fly by itself, checks it clears the real ground, then predicts how that flight will go before you fly it: how long, how much battery, and what happens if something fails.",
     needs: ["Nothing to plan and predict. The real map needs the internet once for each place, or an area saved beforehand.", "To send a mission, a linked aircraft, real or virtual."],
     steps: [
-      "Choose Real map. Find your field, press the home button on the map and click where the aircraft will take off. Or link the aircraft and press Move home to the aircraft.",
+      "Choose Real map. Link your aircraft outdoors: when its GPS has a position, home goes there by itself and stays with the aircraft. With no aircraft, press the home button on the map and click where it will take off.",
       "Click the map to place waypoints. Drag a marker to move it. Undo is Ctrl Z; the arrows in the list change the order.",
       "Set each waypoint's height, and choose how the mission ends.",
       "Read the height profile under the map and the plan check under the list. They show the ground along the whole route and anything wrong that the numbers alone reveal.",

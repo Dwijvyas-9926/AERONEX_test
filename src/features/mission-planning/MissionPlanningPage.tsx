@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, Globe, Info, LandPlot, Navigation, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, Globe, Info, LandPlot, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { MODE_NAME } from "../../sim/autopilot";
@@ -15,8 +15,9 @@ import { FlightMap } from "../simulator/FlightMap";
 import { makeTerrain, type TerrainKind } from "../../sim/terrain";
 import { modelledParams, order } from "../simulator/SimulatorPage";
 import { covers, realTerrain } from "../../geo/elevation";
-import { distanceM, fmtLatLon, toGlobal, toLocal, type LatLon } from "../../geo/geo";
+import { fmtLatLon, toGlobal, toLocal, type LatLon } from "../../geo/geo";
 import { checkPlan } from "../../geo/planCheck";
+import { useHomeSource } from "../../services/link/homeFollow";
 import { fromWaypointFile, saveText, toWaypointFile } from "../../geo/planFile";
 import { routeProfile } from "../../geo/profile";
 import { demReach, ensureDem, useDem } from "../../state/mapStore";
@@ -27,45 +28,6 @@ const RealMap = lazy(() => import("./RealMap"));
 const FIELD = makeTerrain("flat");
 
 const far = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
-
-/** Where a real, linked aircraft is, once its GPS has a position. Null for the virtual one. */
-function aircraftPlace(): LatLon | null {
-  const l = useLink.getState();
-  const p = l.telemetry.position?.value;
-  if (l.status !== "connected" || l.virtual || !p || (p.lat === 0 && p.lon === 0)) return null;
-  const fix = l.telemetry.gps?.value.fixType;
-  return fix !== undefined && fix < 3 ? null : { lat: p.lat, lon: p.lon };
-}
-
-/*
-  A mission's waypoints are places on the Earth, but its heights are counted
-  from wherever the aircraft takes off. If that is not the plan's home, every
-  clearance worked out here is for the wrong start — and a plan drawn round a
-  home on another continent would send the aircraft towards it. So the page
-  says so, and offers the one fix.
-*/
-function AwayFromHome({ home, onMove }: { home: LatLon; onMove: (to: LatLon) => void }) {
-  // Checked a few times a second at most: the page must not redraw at telemetry rate.
-  const [at, setAt] = useState<LatLon | null>(aircraftPlace);
-  useEffect(() => {
-    const t = window.setInterval(() => setAt(aircraftPlace()), 1500);
-    return () => window.clearInterval(t);
-  }, []);
-  if (!at) return null;
-  const d = distanceM(home, at);
-  if (d < 30) return null;
-  return (
-    <div className="callout warn mp-away" role="status">
-      <TriangleAlert />
-      <span>
-        <strong>Your aircraft is {far(d)} from this plan's home.</strong> Heights are counted from where it takes off, so the clearances here are for a different start{d > 100 ? ", and the mission will not be sent" : ""}.
-      </span>
-      <button className="btn btn-sm" onClick={() => onMove(at)}>
-        <Navigation /> Move home to the aircraft
-      </button>
-    </div>
-  );
-}
 
 const VERDICT: Record<Verdict, { tone: "ok" | "warn" | "bad"; title: string }> = {
   completed: { tone: "ok", title: "Mission completed" },
@@ -120,6 +82,7 @@ export function MissionPlanningPage() {
   const [faultAt, setFaultAt] = useState<{ by: "waypoint" | "time"; value: number }>({ by: "waypoint", value: 1 });
   const [motor, setMotor] = useState({ n: 1, level: 0 });
   const dem = useDem();
+  const homeSource = useHomeSource((h) => h.source);
   const lastField = useRef<TerrainKind>(sim.terrain === "real" ? "hills" : sim.terrain);
   if (sim.terrain !== "real") lastField.current = sim.terrain;
 
@@ -231,22 +194,15 @@ export function MissionPlanningPage() {
   };
 
   const send = async () => {
-    // A real aircraft somewhere else would fly towards a plan drawn for another place.
-    const at = aircraftPlace();
-    const off = at ? distanceM(sim.home, at) : 0;
-    if (at && off > 100) {
-      notify("error", "Not sent: the aircraft is not at this plan's home", `It is ${far(off)} away. Move home to the aircraft, check the route is still where you want it, and send again.`, { label: "Move home to the aircraft", run: () => moveHome(at) });
-      return;
-    }
     if (!virtual) {
       // The last look before a real aircraft is told where to go.
       const highest = Math.max(sim.takeoffAlt, ...sim.points.map((w) => w.alt));
       const bad = checks.filter((c) => c.sev === "bad");
       const ok = await confirmAction({
         title: `Send this mission to your aircraft?`,
-        body: `${sim.points.length} ${sim.points.length === 1 ? "waypoint" : "waypoints"}, ${far(farthest)} from home at the farthest, up to ${Math.round(highest)} m above home, ending with ${sim.ending === "rtl" ? "a return home" : sim.ending === "land" ? "a landing at the last waypoint" : "a hover at the last waypoint"}. It replaces the mission the aircraft holds now.${bad.length ? ` The plan check found ${bad.length} ${bad.length === 1 ? "problem" : "problems"}: ${bad[0].text}` : ""}${at ? "" : " The aircraft has no GPS position yet, so nothing here can check it is at the plan's home."}`,
+        body: `${sim.points.length} ${sim.points.length === 1 ? "waypoint" : "waypoints"}, ${far(farthest)} from home at the farthest, up to ${Math.round(highest)} m above home, ending with ${sim.ending === "rtl" ? "a return home" : sim.ending === "land" ? "a landing at the last waypoint" : "a hover at the last waypoint"}. It replaces the mission the aircraft holds now.${bad.length ? ` The plan check found ${bad.length} ${bad.length === 1 ? "problem" : "problems"}: ${bad[0].text}` : ""}${homeSource === "aircraft" ? "" : " The aircraft has no GPS position yet, so home here is where you placed it, not where the aircraft is. Heights are counted from where it takes off."}`,
         confirmLabel: "Send the mission",
-        tone: bad.length ? "danger" : "default",
+        tone: bad.length || farthest > 2000 || homeSource !== "aircraft" ? "danger" : "default",
       });
       if (!ok) return;
     }
@@ -333,7 +289,6 @@ export function MissionPlanningPage() {
               {empty ? "No waypoints yet" : `${sim.points.length} waypoints, ${length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`}, about ${clock(length / cruise + sim.takeoffAlt / 2.5 + 30)} at ${cruise.toFixed(0)} m/s`}
             </span>
           </div>
-          <AwayFromHome home={sim.home} onMove={moveHome} />
           {real ? (
             <Suspense fallback={<div className="rmap rmap-loading">Loading the map…</div>}>
               <RealMap
@@ -345,7 +300,7 @@ export function MissionPlanningPage() {
                 wind={windShown}
                 mark={mark}
                 low={low}
-                homeLocked={!!simWorld}
+                homeLocked={!!simWorld || homeSource === "aircraft"}
                 onPick={(n, e) => {
                   sim.addPoint(n, e);
                   setResult(null);
@@ -432,7 +387,7 @@ export function MissionPlanningPage() {
               {empty ? (
                 <p className="mp-empty">
                   {real
-                    ? "Click the map to place the first waypoint. Home is the H: press the home button on the map and click where the aircraft will take off, or link the aircraft and move home to it."
+                    ? "Click the map to place the first waypoint. Home is the H. Link your aircraft and home goes to its GPS position by itself; with no aircraft, press the home button on the map and click where it will take off."
                     : "Click the map to place the first waypoint. Home is the H in the middle; the grid is in metres."}
                 </p>
               ) : (

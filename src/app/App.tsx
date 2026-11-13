@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AboutPage } from "../features/about/AboutPage";
 import { BrandLockup } from "../components/shell/BrandMark";
+import { startHomeFollow } from "../services/link/homeFollow";
 import { ErrorBoundary } from "../components/shell/ErrorBoundary";
 import { HelpPanel } from "../components/shell/HelpPanel";
 import { SearchPalette } from "../components/shell/SearchPalette";
@@ -38,6 +39,9 @@ import { useUi } from "../state/uiStore";
    is what triggers the vehicle to land on its own. */
 function useGcsHeartbeat() {
   const status = useLink((s) => s.status);
+  // Home follows a linked aircraft's GPS, whichever page is open.
+  useEffect(() => startHomeFollow(), []);
+
   useEffect(() => {
     if (status === "connected") {
       commandLink.startHeartbeat();
