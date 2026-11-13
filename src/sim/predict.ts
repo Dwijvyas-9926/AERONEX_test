@@ -337,7 +337,7 @@ function findings(v: VirtualVehicle, af: Airframe, verdict: Verdict, st: Predict
   if (p.FENCE_ENABLE === 0) out.push({ sev: "warn", text: "No geofence is set (FENCE_ENABLE is 0)." });
   const last = mission[mission.length - 1];
   if (last && last.command !== CMD.RTL && last.command !== CMD.LAND) out.push({ sev: "warn", text: "The mission does not end with a return or a landing. It will hover at the last waypoint until someone takes over." });
-  out.push({ sev: "ok", text: `A return home flies at ${(p.RTL_ALT / 100).toFixed(0)} m (RTL_ALT), or at its own height if it is already higher. The simulator has no terrain: check that clears everything on the way.` });
+  out.push({ sev: "ok", text: `A return home flies at ${(p.RTL_ALT / 100).toFixed(0)} m (RTL_ALT), or at its own height if it is already higher. Trees, buildings and wires are not modelled: check that clears everything on the way.` });
 
   const order = { bad: 0, warn: 1, ok: 2 };
   return out.sort((a, b) => order[a.sev] - order[b.sev]);

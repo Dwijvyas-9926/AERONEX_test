@@ -14,12 +14,14 @@
   terrain without a rangefinder or terrain data: it flies heights above home.
   A waypoint 20 m up over a 30 m hill is a crash, and the simulator will say so.
 */
-export type TerrainKind = "flat" | "hills" | "highlands";
+/** "real" is the measured ground around a real home point; see geo/elevation. */
+export type TerrainKind = "flat" | "hills" | "highlands" | "real";
 
 export const TERRAIN_LABEL: Record<TerrainKind, { name: string; detail: string }> = {
   flat: { name: "Open field", detail: "Level ground out to more than a kilometre, with mountains on the horizon." },
   hills: { name: "Rolling hills and a lake", detail: "Level at home, rising to hills of 30 to 40 m within a few hundred metres." },
   highlands: { name: "Highlands", detail: "Steep ground: ridges of 80 m and more close to home." },
+  real: { name: "The real ground around home", detail: "Measured heights for the place home is set to, about 30 m in detail. Needs the internet once, or an area saved in Mission Planning." },
 };
 
 export interface Terrain {
@@ -74,13 +76,19 @@ function fbm(x: number, y: number, seed: number, octaves: number): number {
   return v / norm;
 }
 
-const SHAPE: Record<TerrainKind, { near: number; padIn: number; padOut: number; scale: number; far: number; lake: { n: number; e: number; r: number } | null }> = {
+const SHAPE: Record<Exclude<TerrainKind, "real">, { near: number; padIn: number; padOut: number; scale: number; far: number; lake: { n: number; e: number; r: number } | null }> = {
   flat: { near: 0, padIn: 0, padOut: 1, scale: 400, far: 190, lake: null },
   hills: { near: 46, padIn: 55, padOut: 300, scale: 430, far: 280, lake: { n: -170, e: 250, r: 120 } },
   highlands: { near: 150, padIn: 70, padOut: 420, scale: 520, far: 520, lake: { n: 260, e: -330, r: 140 } },
 };
 
-export function makeTerrain(kind: TerrainKind, seed = 11): Terrain {
+/**
+ * A generated landscape. Real ground is not made here but loaded (see
+ * geo/elevation); asked for it, this gives the open field, which is what the
+ * simulator falls back to when the real heights cannot be had.
+ */
+export function makeTerrain(asked: TerrainKind, seed = 11): Terrain {
+  const kind = asked === "real" ? "flat" : asked;
   const s = SHAPE[kind];
   const waterLevel = -0.8;
   const land = (n: number, e: number): number => {

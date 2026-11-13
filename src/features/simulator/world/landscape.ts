@@ -252,6 +252,8 @@ export interface Tree {
 /** Where the trees stand: woods and scattered singles, clear of the pad and the water. */
 export function plantTrees(terrain: Terrain, reach: number, spacing: number, max: number): Tree[] {
   const out: Tree[] = [];
+  // Measured ground says nothing of what grows on it, so nothing is planted.
+  if (terrain.kind === "real") return out;
   let seed = 99;
   const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (let n = -reach; n <= reach && out.length < max; n += spacing) {

@@ -3890,3 +3890,484 @@ input[type="range"]::-moz-range-thumb {
   aspect-ratio: auto;
   cursor: inherit;
 }
+
+/* ------------------------------------------------------------------------
+   Mission Planning on a real map.
+   ------------------------------------------------------------------------ */
+.mp-map .panel-head {
+  flex-wrap: wrap;
+}
+
+.mp-world {
+  margin-right: auto;
+}
+
+.mp-sum {
+  text-align: right;
+}
+
+.mp-away {
+  margin: var(--s3) var(--s4);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mp-away span {
+  flex: 1 1 260px;
+}
+
+.mp-pos {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rmap {
+  position: relative;
+  background: var(--midnight-deep);
+}
+
+.rmap-canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: min(72vh, 760px);
+  min-height: 320px;
+}
+
+.rmap.pickable .maplibregl-canvas-container.maplibregl-interactive {
+  cursor: crosshair;
+}
+
+.rmap-loading,
+.rmap-failed {
+  display: grid;
+  place-content: center;
+  gap: var(--s2);
+  min-height: 320px;
+  padding: var(--s6);
+  color: var(--muted);
+  text-align: center;
+}
+
+.rmap-failed p {
+  max-width: 52ch;
+}
+
+.rmap-tools {
+  position: absolute;
+  top: var(--s3);
+  right: var(--s3);
+  display: grid;
+  gap: 1px;
+  border-radius: var(--r-ctl);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--line);
+  z-index: 3;
+}
+
+.rmap-tools button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: var(--slate);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rmap-tools button:hover,
+.rmap-tools button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.rmap-tools svg {
+  width: 17px;
+  height: 17px;
+}
+
+.rmap-panel {
+  position: absolute;
+  top: var(--s3);
+  right: calc(var(--s3) + 44px);
+  z-index: 4;
+  display: grid;
+  gap: var(--s4);
+  width: min(340px, calc(100% - 68px));
+  max-height: calc(100% - 64px);
+  overflow: auto;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--graphite);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+
+.rmap-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rmap-panel small {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+}
+
+.rmap-goto {
+  display: flex;
+  align-items: end;
+  gap: var(--s2);
+}
+
+.rmap-goto .field {
+  flex: 1;
+}
+
+.rmap-offline {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.rmap-saving {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.rmap-saving progress {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.rmap-note {
+  position: absolute;
+  left: var(--s3);
+  top: var(--s3);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: calc(100% - 80px);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctl);
+  background: rgba(27, 20, 16, 0.92);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.rmap-note.offline {
+  top: auto;
+  bottom: 52px;
+  color: var(--warn);
+}
+
+.rmap-note svg {
+  width: 15px;
+  height: 15px;
+}
+
+.rmap-legend .num {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+/* Markers: the same brass and beige as the practice map. */
+.rmap-home,
+.rmap-wp,
+.rmap-mark,
+.rmap-low {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rmap-home b,
+.rmap-wp b {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #120c08;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.rmap-wp b {
+  background: #f0c060;
+  color: #241704;
+}
+
+.rmap-home b {
+  background: #f2e8d6;
+  color: #241704;
+  border-radius: 7px;
+}
+
+.rmap-wp[aria-disabled="false"],
+.rmap-home {
+  cursor: grab;
+}
+
+/* The label hangs to the right, so the dot itself stays on the spot. */
+.rmap-wp,
+.rmap-home {
+  width: 26px;
+}
+
+.rmap-wp span,
+.rmap-mark span,
+.rmap-low span {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(18, 12, 8, 0.86);
+  color: #f2e8d6;
+  white-space: nowrap;
+}
+
+.rmap-mark,
+.rmap-low {
+  width: 14px;
+  pointer-events: none;
+}
+
+.rmap-mark b,
+.rmap-low b {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #120c08;
+  background: #9cb257;
+}
+
+.rmap-mark.bad b,
+.rmap-low b {
+  background: #de6149;
+}
+
+.rmap-low span {
+  margin-left: 14px;
+  color: #ffb4a3;
+}
+
+/* Waypoints sit above the notes about them. */
+.rmap .maplibregl-marker.rmap-wp,
+.rmap .maplibregl-marker.rmap-home {
+  z-index: 2;
+}
+
+.rmap .maplibregl-marker.rmap-ac {
+  z-index: 3;
+}
+
+.rmap-ac {
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.rmap-ac svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.rmap-ac path {
+  fill: #ffffff;
+  stroke: #120c08;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.rmap-ac.virtual path {
+  fill: #d9b3e6;
+}
+
+/* The map library's own furniture, in the app's colours. */
+.rmap .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  background: rgba(18, 12, 8, 0.78);
+  color: var(--muted);
+  font: 10px/1.5 var(--font-ui);
+}
+
+.rmap .maplibregl-ctrl.maplibregl-ctrl-attrib a {
+  color: var(--ink-2);
+}
+
+.rmap .maplibregl-ctrl-scale {
+  border-color: var(--ink);
+  background: rgba(18, 12, 8, 0.6);
+  color: var(--ink);
+  font: 10px var(--font-ui);
+}
+
+/* The route from the side. */
+.hprof {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.hprof-say {
+  display: flex;
+  gap: var(--s3);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.hprof-say p {
+  max-width: 78ch;
+}
+
+.hprof-say svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--ok);
+}
+
+.hprof.warn .hprof-say svg {
+  color: var(--warn);
+}
+
+.hprof.bad .hprof-say svg,
+.hprof.bad .hprof-say strong {
+  color: var(--danger);
+}
+
+.hprof-plot {
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.hprof-plot svg {
+  display: block;
+  width: 100%;
+  height: 132px;
+  border-radius: var(--r-ctl);
+  background: var(--midnight-deep);
+}
+
+.hprof-ground {
+  fill: #5b4a2c;
+  stroke: #8d7748;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.hprof-fly {
+  fill: none;
+  stroke: #f0c060;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.hprof-wp,
+.hprof-zero {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.hprof-low {
+  stroke: var(--ok);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.hprof.warn .hprof-low {
+  stroke: var(--warn);
+}
+
+.hprof.bad .hprof-low {
+  stroke: var(--danger);
+}
+
+.hprof-y,
+.hprof-tick {
+  position: absolute;
+  font-size: var(--t-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hprof-y {
+  left: 6px;
+}
+
+.hprof-y.top {
+  top: 4px;
+}
+
+.hprof-y.bottom {
+  bottom: 4px;
+}
+
+.hprof-tick {
+  top: 100%;
+  margin-top: 3px;
+  transform: translateX(-50%);
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.hprof-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.hprof-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hprof-key {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: #f0c060;
+}
+
+.hprof-key.ground {
+  height: 9px;
+  background: #5b4a2c;
+  border-top: 1px solid #8d7748;
+}
+
+.hprof-loading {
+  color: var(--accent);
+}

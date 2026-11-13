@@ -198,3 +198,27 @@ first STEP import.
 5. Calibration & configuration (firmware-aware)
 6. Integration, testing, refinement
 7. Mission planning & flight-log analysis
+
+## Maps and ground heights
+
+Mission Planning draws the route on a real map over measured ground. Nothing
+needs an account to work:
+
+| What | Source | Terms |
+| --- | --- | --- |
+| Map engine | MapLibre GL JS | Open source (BSD) |
+| Ground heights | Terrain Tiles on AWS Open Data (Mapzen; SRTM and other public surveys), about 30 m detail | Open, no key, may be kept offline; credit required |
+| Default picture | Sentinel-2 cloudless 2016 by EOX, 10 m detail | CC BY 4.0, may be kept offline; credit required |
+| Newer picture | Sentinel-2 cloudless 2024 by EOX | Non-commercial use only |
+| Street map | OpenStreetMap's tile servers | View only: their policy forbids saving areas |
+| Sharp satellite | MapTiler, with the user's own key | Their free plan is non-commercial; no bulk saving |
+
+Sharper pictures need a provider key, entered in the map's Layers panel and
+kept only in the browser. Tiles from the open sources are stored in the
+browser as they are viewed, and "Save this area" stores a whole view, so a
+saved field works with no internet.
+
+Heights in a mission are metres above home, ArduCopter's default frame. The
+height profile under the map walks the straight lines the autopilot will fly
+and shows where they come closest to the ground. The ground data does not
+include trees, buildings or wires.

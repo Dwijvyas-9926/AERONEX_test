@@ -1,5 +1,5 @@
-import { CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, Play, Trash2, TriangleAlert, Upload, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, Globe, LandPlot, Navigation, Play, Trash2, TriangleAlert, Upload, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { CMD, MODE_NAME, type MissionItem } from "../../sim/autopilot";
 import { defaultParams, type Params } from "../../sim/params";
@@ -11,10 +11,58 @@ import { notify } from "../../state/notifyStore";
 import { useParams } from "../../state/paramStore";
 import { planToMission, routeLength, useSim, type Ending, type PlanPoint } from "../../state/simStore";
 import { FlightMap } from "../simulator/FlightMap";
-import { makeTerrain } from "../../sim/terrain";
+import { makeTerrain, type TerrainKind } from "../../sim/terrain";
 import { modelledParams, order } from "../simulator/SimulatorPage";
+import { covers, realTerrain } from "../../geo/elevation";
+import { distanceM, fmtLatLon, toGlobal, toLocal, type LatLon } from "../../geo/geo";
+import { routeProfile } from "../../geo/profile";
+import { demReach, ensureDem, useDem } from "../../state/mapStore";
+import { CLEAR_WARN, HeightProfile } from "./HeightProfile";
 
-const M_PER_DEG = 111319.5;
+// The map library is large and only this page needs it.
+const RealMap = lazy(() => import("./RealMap"));
+const FIELD = makeTerrain("flat");
+
+const far = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+
+/** Where a real, linked aircraft is, once its GPS has a position. Null for the virtual one. */
+function aircraftPlace(): LatLon | null {
+  const l = useLink.getState();
+  const p = l.telemetry.position?.value;
+  if (l.status !== "connected" || l.virtual || !p || (p.lat === 0 && p.lon === 0)) return null;
+  const fix = l.telemetry.gps?.value.fixType;
+  return fix !== undefined && fix < 3 ? null : { lat: p.lat, lon: p.lon };
+}
+
+/*
+  A mission's waypoints are places on the Earth, but its heights are counted
+  from wherever the aircraft takes off. If that is not the plan's home, every
+  clearance worked out here is for the wrong start — and a plan drawn round a
+  home on another continent would send the aircraft towards it. So the page
+  says so, and offers the one fix.
+*/
+function AwayFromHome({ home, onMove }: { home: LatLon; onMove: (to: LatLon) => void }) {
+  // Checked a few times a second at most: the page must not redraw at telemetry rate.
+  const [at, setAt] = useState<LatLon | null>(aircraftPlace);
+  useEffect(() => {
+    const t = window.setInterval(() => setAt(aircraftPlace()), 1500);
+    return () => window.clearInterval(t);
+  }, []);
+  if (!at) return null;
+  const d = distanceM(home, at);
+  if (d < 30) return null;
+  return (
+    <div className="callout warn mp-away" role="status">
+      <TriangleAlert />
+      <span>
+        <strong>Your aircraft is {far(d)} from this plan's home.</strong> Heights are counted from where it takes off, so the clearances here are for a different start{d > 100 ? ", and the mission will not be sent" : ""}.
+      </span>
+      <button className="btn btn-sm" onClick={() => onMove(at)}>
+        <Navigation /> Move home to the aircraft
+      </button>
+    </div>
+  );
+}
 
 const VERDICT: Record<Verdict, { tone: "ok" | "warn" | "bad"; title: string }> = {
   completed: { tone: "ok", title: "Mission completed" },
@@ -81,22 +129,65 @@ export function MissionPlanningPage() {
   const [fault, setFault] = useState<"none" | FaultKind>("none");
   const [faultAt, setFaultAt] = useState<{ by: "waypoint" | "time"; value: number }>({ by: "waypoint", value: 1 });
   const [motor, setMotor] = useState({ n: 1, level: 0 });
+  const dem = useDem();
+  const lastField = useRef<TerrainKind>(sim.terrain === "real" ? "hills" : sim.terrain);
+  if (sim.terrain !== "real") lastField.current = sim.terrain;
+
+  // A running simulator has its world already; the page shows that one.
+  const simWorld = (linked && virtual && linkManager.sim?.terrain) || null;
+  const real = simWorld ? simWorld.kind === "real" : sim.terrain === "real";
+  const farthest = useMemo(() => Math.max(0, ...sim.points.map((p) => Math.hypot(p.n, p.e))), [sim.points]);
+  const reach = demReach(farthest);
+  const homeLat = sim.home.lat;
+  const homeLon = sim.home.lon;
+  useEffect(() => {
+    if (real && !simWorld) void ensureDem({ lat: homeLat, lon: homeLon }, reach).catch(() => undefined);
+  }, [real, simWorld, homeLat, homeLon, reach]);
+  // The measured ground, as soon as any of it is there for this home.
+  const measured = useMemo(() => (covers(dem.patch, { lat: homeLat, lon: homeLon }, 0) ? realTerrain(dem.patch) : null), [dem.patch, homeLat, homeLon]);
+  useEffect(() => {
+    // Home's height above the sea comes with the ground.
+    if (real && !simWorld && measured && dem.patch && Math.abs(sim.home.altMsl - dem.patch.base) >= 1) sim.set("home", { ...sim.home, altMsl: Math.round(dem.patch.base) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [real, simWorld, measured]);
+  const groundKnown = !real || !!simWorld || !!measured;
 
   // The landscape the aircraft will meet: the running simulator's, or the one chosen for it.
-  const terrain = useMemo(() => (linked && virtual && linkManager.sim?.terrain) || makeTerrain(sim.terrain), [linked, virtual, sim.terrain]);
+  const terrain = useMemo(() => simWorld ?? (sim.terrain === "real" ? (measured ?? FIELD) : makeTerrain(sim.terrain)), [simWorld, sim.terrain, measured]);
   const mission = useMemo(() => planToMission(sim.home, sim.takeoffAlt, sim.points, sim.ending), [sim.home, sim.takeoffAlt, sim.points, sim.ending]);
   const length = routeLength(sim.points, sim.ending);
   const cruise = params.WPNAV_SPEED / 100;
   // The last waypoint carries its command on the map as well as in the list.
   const lastTag = sim.ending === "land" ? " Land" : sim.ending === "hold" ? " Hover" : "";
-  const route = sim.points.map((p, i) => ({ n: p.n, e: p.e, label: String(i + 1), tag: i === sim.points.length - 1 ? lastTag.trim() : "" }));
+  const route = useMemo(() => sim.points.map((p, i) => ({ id: p.id, n: p.n, e: p.e, label: String(i + 1), tag: i === sim.points.length - 1 ? lastTag.trim() : "" })), [sim.points, lastTag]);
   const empty = sim.points.length === 0;
+  const profile = useMemo(() => routeProfile(sim.points, sim.takeoffAlt, sim.ending, params.RTL_ALT / 100, terrain.surface), [sim.points, sim.takeoffAlt, sim.ending, params.RTL_ALT, terrain]);
+  const low = useMemo(() => (profile.lowest && groundKnown && profile.lowest.clear < CLEAR_WARN ? { n: profile.lowest.n, e: profile.lowest.e, clear: profile.lowest.clear } : null), [profile, groundKnown]);
+  const mark = useMemo(
+    () => (result && result.verdict !== "completed" && result.verdict !== "refused" && result.verdict !== "grounded" ? { n: result.stats.endN, e: result.stats.endE, label: result.verdict === "crashed" ? "Crash" : "Ends here", tone: (result.verdict === "crashed" ? "bad" : "ok") as "bad" | "ok" } : null),
+    [result],
+  );
+  const windShown = useMemo(() => ({ speed: wind.speed, fromDeg: wind.from }), [wind.speed, wind.from]);
 
-  const send = () =>
-    order("Send the mission", async () => {
+  const moveHome = (to: LatLon) => {
+    sim.moveHome(to);
+    setResult(null);
+  };
+
+  const send = () => {
+    // A real aircraft somewhere else would fly towards a plan drawn for another place.
+    const at = aircraftPlace();
+    const off = at ? distanceM(sim.home, at) : 0;
+    if (at && off > 100) {
+      notify("error", "Not sent: the aircraft is not at this plan's home", `It is ${far(off)} away. Move home to the aircraft, check the route is still where you want it, and send again.`, { label: "Move home to the aircraft", run: () => moveHome(at) });
+      return;
+    }
+    if (linked && !virtual && !at) notify("warn", "The aircraft has no GPS position yet", "The mission is being sent, but nothing here can check that the aircraft is at the plan's home. Wait for a GPS fix and look again before flying.");
+    return order("Send the mission", async () => {
       await commandLink.uploadMission(mission);
       notify("success", "Mission sent", `${mission.length - 1} commands are on the ${virtual ? "virtual " : ""}aircraft.`);
     });
+  };
 
   const read = () =>
     order("Read the mission", async () => {
@@ -110,7 +201,8 @@ export function MissionPlanningPage() {
         else if (it.command === CMD.RTL) ending = "rtl";
         else if (it.command === CMD.LAND) ending = "land";
         else if (it.command === CMD.WAYPOINT && (it.x !== 0 || it.y !== 0)) {
-          pts.push({ id: `r${it.seq}`, n: Math.round((it.x / 1e7 - home.lat) * M_PER_DEG), e: Math.round((it.y / 1e7 - home.lon) * M_PER_DEG * Math.cos((home.lat * Math.PI) / 180)), alt: it.z, holdS: it.p1 });
+          const l = toLocal(home, it.x / 1e7, it.y / 1e7);
+          pts.push({ id: `r${it.seq}`, n: Math.round(l.n), e: Math.round(l.e), alt: it.z, holdS: it.p1 });
         }
       }
       sim.set("home", { ...sim.home, lat: home.lat, lon: home.lon });
@@ -159,7 +251,7 @@ export function MissionPlanningPage() {
       <header className="page-head">
         <div>
           <h1>Mission Planning</h1>
-          <p>Lay out a route, then fly it in the simulator before the aircraft does: with your wind, your battery, and the failure you are worried about.</p>
+          <p>Lay out a route on the real map, see how it clears the ground, then fly it in the simulator before the aircraft does: with your wind, your battery, and the failure you are worried about.</p>
         </div>
         <div className="actions">
           <button className="btn" disabled={!linked} onClick={read} title={linked ? undefined : "Connect an aircraft first"}>
@@ -175,24 +267,70 @@ export function MissionPlanningPage() {
         <section className="panel mp-map">
           <div className="panel-head">
             <h3>Route</h3>
-            <span className="muted" style={{ fontSize: "var(--t-sm)" }}>
+            <div className="segmented mp-world" role="group" aria-label="What the route is drawn on" title={simWorld ? "The virtual aircraft is flying in this world. Stop it to change." : undefined}>
+              <button aria-pressed={real} disabled={!!simWorld} onClick={() => { sim.set("terrain", "real"); setResult(null); }}>
+                <Globe /> Real map
+              </button>
+              <button aria-pressed={!real} disabled={!!simWorld} onClick={() => { sim.set("terrain", lastField.current); setResult(null); }}>
+                <LandPlot /> Practice field
+              </button>
+            </div>
+            <span className="muted mp-sum" style={{ fontSize: "var(--t-sm)" }}>
               {empty ? "No waypoints yet" : `${sim.points.length} waypoints, ${length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`}, about ${clock(length / cruise + sim.takeoffAlt / 2.5 + 30)} at ${cruise.toFixed(0)} m/s`}
             </span>
           </div>
-          <FlightMap
-            route={route}
-            closeRoute={sim.ending === "rtl"}
-            ghost={result?.track}
-            fenceRadius={params.FENCE_ENABLE ? params.FENCE_RADIUS : null}
-            wind={{ speed: wind.speed, fromDeg: wind.from }}
-            mark={result && result.verdict !== "completed" && result.verdict !== "refused" && result.verdict !== "grounded" ? { n: result.stats.endN, e: result.stats.endE, label: result.verdict === "crashed" ? "Crash" : "Ends here", tone: result.verdict === "crashed" ? "bad" : "ok" } : null}
-            terrain={terrain}
-            onPick={(n, e) => {
-              sim.addPoint(n, e);
-              setResult(null);
-            }}
-            minSpan={80}
-          />
+          <AwayFromHome home={sim.home} onMove={moveHome} />
+          {real ? (
+            <Suspense fallback={<div className="rmap rmap-loading">Loading the map…</div>}>
+              <RealMap
+                home={sim.home}
+                route={route}
+                closeRoute={sim.ending === "rtl"}
+                ghost={result?.track}
+                fenceRadius={params.FENCE_ENABLE ? params.FENCE_RADIUS : null}
+                wind={windShown}
+                mark={mark}
+                low={low}
+                homeLocked={!!simWorld}
+                onPick={(n, e) => {
+                  sim.addPoint(n, e);
+                  setResult(null);
+                }}
+                onMovePoint={(id, n, e) => {
+                  sim.updatePoint(id, { n: Math.round(n), e: Math.round(e) });
+                  setResult(null);
+                }}
+                onMoveHome={moveHome}
+              />
+            </Suspense>
+          ) : (
+            <FlightMap
+              route={route}
+              closeRoute={sim.ending === "rtl"}
+              ghost={result?.track}
+              fenceRadius={params.FENCE_ENABLE ? params.FENCE_RADIUS : null}
+              wind={windShown}
+              mark={mark}
+              terrain={terrain}
+              onPick={(n, e) => {
+                sim.addPoint(n, e);
+                setResult(null);
+              }}
+              minSpan={80}
+            />
+          )}
+          {real && !simWorld && dem.status === "error" && (
+            <div className="callout warn mp-away" role="status">
+              <TriangleAlert />
+              <span>
+                <strong>The ground heights could not be loaded.</strong> {dem.error} Until they are, clearances and predictions here assume level ground.
+              </span>
+              <button className="btn btn-sm" onClick={() => void ensureDem(sim.home, reach).catch(() => undefined)}>
+                Try again
+              </button>
+            </div>
+          )}
+          {groundKnown && <HeightProfile profile={profile} real={real} loading={real && !simWorld && dem.status === "loading"} />}
         </section>
 
         <div className="stack">
@@ -213,14 +351,24 @@ export function MissionPlanningPage() {
             </div>
             <div className="panel-body mp-plan">
               {empty ? (
-                <p className="mp-empty">Click the map to place the first waypoint. Home is the H in the middle; the grid is in metres.</p>
+                <p className="mp-empty">
+                  {real
+                    ? "Click the map to place the first waypoint. Home is the H: drag it to where the aircraft will take off, or link the aircraft and move home to it."
+                    : "Click the map to place the first waypoint. Home is the H in the middle; the grid is in metres."}
+                </p>
               ) : (
                 <table className="mp-table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>North (m)</th>
-                      <th>East (m)</th>
+                      {real ? (
+                        <th colSpan={2}>Latitude, longitude</th>
+                      ) : (
+                        <>
+                          <th>North (m)</th>
+                          <th>East (m)</th>
+                        </>
+                      )}
                       <th>Height (m)</th>
                       <th title="Height of the waypoint above the ground beneath it">Clear (m)</th>
                       <th>Wait (s)</th>
@@ -244,12 +392,24 @@ export function MissionPlanningPage() {
                     {sim.points.map((p, i) => (
                       <tr key={p.id}>
                         <td className="num">{i + 1}</td>
-                        <td><NumCell label={`Waypoint ${i + 1} north`} value={p.n} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { n: x })} /></td>
-                        <td><NumCell label={`Waypoint ${i + 1} east`} value={p.e} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { e: x })} /></td>
+                        {real ? (
+                          <td colSpan={2} className="num mp-pos" title={`${Math.round(Math.hypot(p.n, p.e))} m from home. Drag its marker on the map to move it.`}>
+                            {fmtLatLon(toGlobal(sim.home, p.n, p.e))}
+                          </td>
+                        ) : (
+                          <>
+                            <td><NumCell label={`Waypoint ${i + 1} north`} value={p.n} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { n: x })} /></td>
+                            <td><NumCell label={`Waypoint ${i + 1} east`} value={p.e} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { e: x })} /></td>
+                          </>
+                        )}
                         <td><NumCell label={`Waypoint ${i + 1} height`} value={p.alt} min={2} max={500} onChange={(x) => sim.updatePoint(p.id, { alt: x })} /></td>
-                        <td className={`num mp-clear${p.alt - terrain.surface(p.n, p.e) < 10 ? " low" : ""}`} title={`The ground here is ${terrain.surface(p.n, p.e).toFixed(0)} m above home`}>
-                          {terrain.isWater(p.n, p.e) ? "water" : Math.round(p.alt - terrain.surface(p.n, p.e))}
-                        </td>
+                        {groundKnown ? (
+                          <td className={`num mp-clear${p.alt - terrain.surface(p.n, p.e) < 10 ? " low" : ""}`} title={`The ground here is ${terrain.surface(p.n, p.e).toFixed(0)} m above home`}>
+                            {terrain.isWater(p.n, p.e) ? "water" : Math.round(p.alt - terrain.surface(p.n, p.e))}
+                          </td>
+                        ) : (
+                          <td className="num mp-clear" title="The ground heights are still loading">…</td>
+                        )}
                         <td><NumCell label={`Waypoint ${i + 1} wait`} value={p.holdS} min={0} max={600} onChange={(x) => sim.updatePoint(p.id, { holdS: x })} /></td>
                         <td>
                           <button className="icon-btn" aria-label={`Remove waypoint ${i + 1}`} onClick={() => sim.removePoint(p.id)}>
@@ -432,7 +592,13 @@ export function MissionPlanningPage() {
             </div>
           </div>
           <p className="mp-caveat">
-            A prediction from a model of ArduCopter with no terrain, obstacles or sensor noise. The final mode was {MODE_NAME[result.track.at(-1)?.mode ?? 0] ?? "unknown"}.
+            A prediction from a model of ArduCopter with no obstacles or sensor noise.{" "}
+            {real && groundKnown
+              ? "The ground is measured data of about 30 m detail, typically right to 10 m; trees, buildings and wires are not in it."
+              : real
+                ? "The ground heights were not loaded, so it flew over level ground."
+                : "The ground is the practice landscape, not a real place."}{" "}
+            The final mode was {MODE_NAME[result.track.at(-1)?.mode ?? 0] ?? "unknown"}.
             Use it to find mistakes in a plan and its settings, not as a promise.
           </p>
         </section>

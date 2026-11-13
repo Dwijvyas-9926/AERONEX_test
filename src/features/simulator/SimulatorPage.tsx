@@ -16,6 +16,7 @@ import { fromFrameStudio, fromProfile } from "./airframeSources";
 import { FlightMap, type MapPoint } from "./FlightMap";
 import { ValleyDemo } from "./ValleyDemo";
 import { makeTerrain, TERRAIN_LABEL, type TerrainKind } from "../../sim/terrain";
+import { realTerrainAt } from "../../state/mapStore";
 import { rehydrateModel, useModel } from "../../state/modelStore";
 import { useSettings } from "../../state/settingsStore";
 import type { WorldView } from "./world/FlightWorld";
@@ -121,17 +122,27 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
   const hoverW = (4 * ((af.massKg * G) / 4) ** 1.5) / Math.sqrt(2 * 1.225 * (d.discArea / 4)) / 0.5;
   const hoverMin = ((af.capacityMah / 1000) * af.cells * 3.7 * 0.8) / hoverW * 60;
   const flyable = d.thrustToWeight >= 1.5;
+  const [loading, setLoading] = useState(false);
 
   const start = async () => {
     // Weight, thrust and battery are what the aircraft is built from, so a
     // change to them means a new aircraft: stop the one flying and start again.
     if (running) await linkManager.disconnect("Virtual aircraft restarted with new settings.");
+    // The real ground has to be fetched, or read back from what was saved.
+    let terrain = makeTerrain(sim.terrain);
+    if (sim.terrain === "real") {
+      setLoading(true);
+      const measured = await realTerrainAt(sim.home);
+      setLoading(false);
+      if (measured) terrain = measured;
+      else notify("warn", "The real ground could not be loaded", "There is no internet and this place has not been saved in Mission Planning. The aircraft is starting over an open field instead.");
+    }
     linkManager.connectVirtual({
       airframe: af,
       home: sim.home,
       soc: sim.soc,
       params: sim.useAircraftParams ? fromAircraft : {},
-      terrain: makeTerrain(sim.terrain),
+      terrain,
     });
     onDone?.();
   };
@@ -261,7 +272,10 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
                   </option>
                 ))}
               </select>
-              <small>{TERRAIN_LABEL[sim.terrain].detail} The aircraft collides with this ground; trees are scenery only.</small>
+              <small>
+                {TERRAIN_LABEL[sim.terrain].detail}{" "}
+                {sim.terrain === "real" ? "The aircraft collides with this ground. Set home on the map in Mission Planning; nothing is drawn that the data does not know, so there are no trees or water." : "The aircraft collides with this ground; trees are scenery only."}
+              </small>
             </label>
             <label className="sim-check span2">
               <input type="checkbox" checked={sim.useAircraftParams && applied > 0} disabled={applied === 0} onChange={(e) => sim.set("useAircraftParams", e.target.checked)} />
@@ -281,7 +295,7 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
                 Back to the flight, unchanged
               </button>
             )}
-            <button className="btn btn-primary btn-lg" onClick={() => void start()}>
+            <button className="btn btn-primary btn-lg" disabled={loading} onClick={() => void start()}>
               {running ? <RotateCcw /> : <Play />} {running ? "Restart with these settings" : "Start the virtual aircraft"}
             </button>
           </div>
@@ -306,8 +320,8 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
             <div className="callout info">
               <Info />
               <span>
-                It is a model of ArduCopter written from its documentation, not the firmware itself, and it has no terrain, obstacles or sensor
-                noise. Treat a prediction as a strong hint about your settings, and still make the first real flight a cautious one.
+                It is a model of ArduCopter written from its documentation, not the firmware itself, and it has no obstacles or sensor
+                noise. The real ground, when chosen, is the bare shape of the land without trees or buildings. Treat a prediction as a strong hint about your settings, and still make the first real flight a cautious one.
               </span>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { PRESETS, type Airframe } from "../sim/airframe";
 import { CMD, type Home, type MissionItem } from "../sim/autopilot";
+import { M_PER_DEG, toGlobal, toLocal, type LatLon } from "../geo/geo";
 import type { TerrainKind } from "../sim/terrain";
 
 /* What the simulator flies and where, and the mission being planned. Kept in
@@ -30,7 +31,9 @@ interface SimState {
   takeoffAlt: number;
   points: PlanPoint[];
   ending: Ending;
-  set: <K extends keyof Omit<SimState, "set" | "addPoint" | "updatePoint" | "removePoint" | "clearPoints">>(k: K, v: SimState[K]) => void;
+  set: <K extends keyof Omit<SimState, "set" | "addPoint" | "updatePoint" | "removePoint" | "clearPoints" | "moveHome">>(k: K, v: SimState[K]) => void;
+  /** Moves home; the waypoints stay where they are on the ground. */
+  moveHome: (to: LatLon, altMsl?: number) => void;
   addPoint: (n: number, e: number) => void;
   updatePoint: (id: string, patch: Partial<PlanPoint>) => void;
   removePoint: (id: string) => void;
@@ -55,6 +58,7 @@ export const useSim = create<SimState>()(
       updatePoint: (id, patch) => set((s) => ({ points: s.points.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
       removePoint: (id) => set((s) => ({ points: s.points.filter((p) => p.id !== id) })),
       clearPoints: () => set({ points: [] }),
+      moveHome: (to, altMsl) => set((s) => ({ home: { lat: to.lat, lon: to.lon, altMsl: altMsl ?? s.home.altMsl }, points: rehomed(s.home, to, s.points) })),
     }),
     {
       name: "aeronex.sim.v1",
@@ -65,7 +69,14 @@ export const useSim = create<SimState>()(
   ),
 );
 
-const M_PER_DEG = 111319.5;
+/** The same waypoints, measured from a new home: each stays over the same ground. */
+export function rehomed(from: LatLon, to: LatLon, points: PlanPoint[]): PlanPoint[] {
+  return points.map((p) => {
+    const g = toGlobal(from, p.n, p.e);
+    const l = toLocal(to, g.lat, g.lon);
+    return { ...p, n: Math.round(l.n), e: Math.round(l.e) };
+  });
+}
 
 /**
  * The plan as MAVLink mission items.
