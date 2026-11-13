@@ -91,25 +91,37 @@ npm test         # run the protocol and link unit tests (Vitest)
 - The model persists with the vehicle profile: the descriptor on the profile,
   the raw bytes in IndexedDB, so it reloads after a refresh.
 
-### Flight Simulator — your Avion digital twin, embedded
-- The simulator is the **Avion digital twin exactly as authored** (the
-  self-contained build provided): its own low-poly flood-valley world, the
-  autonomous relief-mission flow (takeoff → route → drop-zone lock → delivery →
-  return), live flight telemetry, battery/motor/GNSS panels, a route map, a
-  D455 depth view, an exploded-view part inspector, and chase/orbit/overview/FPV
-  cameras.
-- It flies the model you import in Digital Twin Studio: the app hands the twin
-  the imported geometry (as raw arrays, with your orientation baked in) and the
-  twin rebuilds and re-materialises it by part name. With nothing imported it
-  uses its built-in Avion.
-- It is loaded verbatim in an isolated frame. The only changes to the original
-  file: its three.js (r147) was vendored locally, its inline scripts were
-  externalised (so it runs offline and within the app's sandbox), and it now
-  accepts the app's model. No sim logic or visuals were altered.
+### Flight Simulator
+- A virtual aircraft: a 6-DOF rigid-body model (thrust, drag, wind and gusts,
+  a battery that sags) flown by a model of ArduCopter's control loops, flight
+  modes, arming checks and failsafes, under their real parameter names.
+- It speaks MAVLink through the same session as a real flight controller, so
+  every page in the app works on it.
+- A 3D world with five cameras, the model imported in Digital Twin, and
+  generated landscapes or the measured ground around a real home point.
+- Faults on demand: lose a motor, the GPS, the radio or the link. Pause, or run
+  at up to 10 times speed.
+- It is a model written from ArduPilot's documentation, not the firmware, with
+  no sensor noise and no obstacles. The earlier scenic valley demo is still
+  there as a separate tab.
 
-### Calibration, Mission Planning, Logs — scaffolded
-- Each has a finished screen that explains what it will do and in which phase,
-  with no dead ends. True 6-DOF physics for the simulator is still future work.
+### Mission Planning
+- A real map (see Maps and ground heights) or a practice field. Click to add
+  waypoints, drag to move them, undo and redo, reorder, set every height.
+- A height profile along the whole route and an instant plan check: clearance,
+  fence, flight time against the battery, height and distance.
+- Predict the flight in the simulator model with wind, battery level and a
+  chosen failure.
+- Plans save and open as `.waypoints` files (QGC WPL 110), which Mission
+  Planner and QGroundControl also read.
+- Sending a mission to a real aircraft asks first, refuses if the aircraft is
+  not at the plan's home, and reads the mission back to check it.
+- Heights are metres above home. Take-off, waypoints with a wait, and one
+  ending (return, land, hover) are supported; other commands in a mission read
+  from an aircraft are left out and named.
+
+### Logs — scaffolded
+- A finished screen that explains what it will do, with no dead ends.
 
 ---
 
@@ -192,12 +204,12 @@ first STEP import.
 ## Roadmap
 
 1. **Foundation & visual identity** — *this milestone*
-2. Independent 3D flight simulator — **the provided Avion digital twin, embedded**
+2. Flight simulator — **done: physics, ArduCopter model, 3D world, faults**
 3. Digital Twin Studio (model import + orientation) — **done: STEP/mesh import + test flight**
 4. Pixhawk command layer (stream requests, parameters, commands with ACKs)
 5. Calibration & configuration (firmware-aware)
 6. Integration, testing, refinement
-7. Mission planning & flight-log analysis
+7. Mission planning — **done: real map, ground clearance, prediction, plan files**; flight-log analysis still to come
 
 ## Maps and ground heights
 

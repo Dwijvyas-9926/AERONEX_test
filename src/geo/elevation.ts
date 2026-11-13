@@ -155,5 +155,6 @@ export function realTerrain(p: DemPatch): Terrain {
     // Out of sight beneath the lowest ground.
     waterLevel: p.min - p.base - 80,
     forest: () => 0,
+    reach: p.half,
   };
 }

@@ -64,7 +64,7 @@ export function AboutPage() {
         <h2>Under the hood</h2>
         <p className="about-prose">
           AERONEX implements the MAVLink 1 / 2 protocol from scratch, validating every frame against its checksum, and reaches hardware directly through the
-          browser's Web Serial API. It is built with React, TypeScript and Three.js, and runs entirely on your machine — your vehicle's data never leaves it.
+          browser's Web Serial API. It is built with React, TypeScript, Three.js and MapLibre, and runs entirely on your machine: your vehicle's data never leaves it. The map pictures and ground heights in Mission Planning come from the providers credited on the map itself.
           Every value on screen comes from the aircraft itself; nothing is simulated unless it is clearly labelled as such.
         </p>
       </section>

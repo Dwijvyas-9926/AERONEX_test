@@ -142,7 +142,9 @@ export function FlightMap({ route = [], closeRoute, track = [], ghost = [], airc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const shaded = useMemo(() => (terrain && terrain.kind !== "flat" ? relief(terrain, cn, ce, half) : null), [terrain, cn, ce, half]);
+  // The open field is level near home, but its horizon is mountains: once the view reaches them they are drawn,
+  // because the aircraft can fly into them.
+  const shaded = useMemo(() => (terrain && (terrain.kind !== "flat" || Math.hypot(cn, ce) + half * 1.42 > 1300) ? relief(terrain, cn, ce, half) : null), [terrain, cn, ce, half]);
   const step = niceStep(half);
   const east: number[] = [];
   const north: number[] = [];

@@ -18,7 +18,7 @@
 export type TerrainKind = "flat" | "hills" | "highlands" | "real";
 
 export const TERRAIN_LABEL: Record<TerrainKind, { name: string; detail: string }> = {
-  flat: { name: "Open field", detail: "Level ground out to more than a kilometre, with mountains on the horizon." },
+  flat: { name: "Open field", detail: "Level ground for 1.3 km in every direction. Beyond that the mountains begin, and a flight that far will meet them." },
   hills: { name: "Rolling hills and a lake", detail: "Level at home, rising to hills of 30 to 40 m within a few hundred metres." },
   highlands: { name: "Highlands", detail: "Steep ground: ridges of 80 m and more close to home." },
   real: { name: "The real ground around home", detail: "Measured heights for the place home is set to, about 30 m in detail. Needs the internet once, or an area saved in Mission Planning." },
@@ -34,6 +34,8 @@ export interface Terrain {
   waterLevel: number;
   /** 0–1: how wooded this spot is. The view plants trees by it. */
   forest(n: number, e: number): number;
+  /** Measured ground only: how far from home the heights reach, m. Beyond it they repeat the edge. */
+  reach?: number;
 }
 
 const smooth = (a: number, b: number, x: number) => {

@@ -19,6 +19,41 @@ import { notify } from "../../state/notifyStore";
 // MAVProxy/Mission Planner identify as system 255, component 190 (GCS).
 const GCS = { sysid: 255, compid: 190 };
 
+/** Why an aircraft turns a mission down, as MAV_MISSION_RESULT numbers them. */
+const MISSION_RESULT: Record<number, string> = {
+  1: "it reported an error",
+  2: "it does not support the height reference used",
+  3: "it does not support one of the commands",
+  4: "it has no room for that many items",
+  5: "one of the items has a value it will not accept",
+  6: "a wait or radius is out of range",
+  7: "a value is out of range",
+  8: "a value is out of range",
+  9: "a value is out of range",
+  10: "a position is out of range",
+  11: "a position is out of range",
+  12: "a height is out of range",
+  13: "the items arrived out of order",
+  14: "it is busy and refused",
+  15: "the transfer was cancelled",
+};
+
+/** What differs between a mission sent and the one read back; null when nothing does. */
+export function compareMissions(sent: MissionWire[], got: MissionWire[]): string | null {
+  if (got.length !== sent.length) return `${sent.length - 1} commands were sent and the aircraft holds ${Math.max(0, got.length - 1)}.`;
+  for (let i = 1; i < sent.length; i++) {
+    const a = sent[i];
+    const b = got[i];
+    if (a.command !== b.command) return `Command ${i} was sent as type ${a.command} and reads back as type ${b.command}.`;
+    if (a.frame !== b.frame) return `Command ${i} reads back with a different height reference.`;
+    if (Math.abs(a.z - b.z) > 0.05) return `Command ${i} was sent with a height of ${a.z} m and reads back as ${b.z} m.`;
+    // One unit is about a centimetre on the ground.
+    if (Math.abs(a.x - b.x) > 2 || Math.abs(a.y - b.y) > 2) return `Command ${i} reads back at a different position.`;
+    if (Math.abs(a.p1 - b.p1) > 0.01) return `Command ${i} reads back with a different wait.`;
+  }
+  return null;
+}
+
 /** One mission item as MISSION_ITEM_INT carries it: x and y are degrees × 1e7. */
 export interface MissionWire {
   seq: number;
@@ -550,25 +585,52 @@ class CommandLink {
     const t = this.target();
     this.missionDown?.reject(new Error("Superseded by a newer download"));
     return new Promise<MissionWire[]>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.missionDown = null;
-        reject(new Error("The aircraft did not send its mission."));
-      }, 8000);
+      /*
+        Over a telemetry radio a message is lost now and then. Each request is
+        asked again if its answer does not come, five times, as the protocol
+        lays down; only then is the read given up.
+      */
+      let tries = 0;
+      const ask = () => {
+        const m = this.missionDown;
+        if (!m) return;
+        if (m.count < 0) void this.write("MISSION_REQUEST_LIST", { target_system: t.sysid, target_component: t.compid, mission_type: 0 }).catch(() => {});
+        else void this.write("MISSION_REQUEST_INT", { target_system: t.sysid, target_component: t.compid, seq: m.items.length, mission_type: 0 }).catch(() => {});
+      };
+      const arm = (): ReturnType<typeof setTimeout> =>
+        setTimeout(() => {
+          const m = this.missionDown;
+          if (!m) return;
+          if (++tries > 5) {
+            m.reject(new Error(m.count < 0 ? "The aircraft did not answer the request for its mission." : `The aircraft stopped answering at item ${m.items.length} of ${m.count}. Check the link and read again.`));
+            return;
+          }
+          ask();
+          m.timer = arm();
+        }, 1200);
       this.missionDown = {
         count: -1,
         items: [],
+        timer: arm(),
+        touch: () => {
+          tries = 0;
+          if (this.missionDown) {
+            clearTimeout(this.missionDown.timer);
+            this.missionDown.timer = arm();
+          }
+        },
         resolve: (m) => {
-          clearTimeout(timer);
+          clearTimeout(this.missionDown?.timer);
           this.missionDown = null;
           resolve(m);
         },
         reject: (e) => {
-          clearTimeout(timer);
+          clearTimeout(this.missionDown?.timer);
           this.missionDown = null;
           reject(e);
         },
       };
-      void this.write("MISSION_REQUEST_LIST", { target_system: t.sysid, target_component: t.compid, mission_type: 0 }).catch(reject);
+      ask();
     });
   }
 
@@ -577,7 +639,17 @@ class CommandLink {
   }
 
   private missionUp: { items: MissionWire[]; sent: number; timer: ReturnType<typeof setTimeout>; resolve: () => void; reject: (e: Error) => void; touch: () => void } | null = null;
-  private missionDown: { count: number; items: MissionWire[]; resolve: (m: MissionWire[]) => void; reject: (e: Error) => void } | null = null;
+  private missionDown: { count: number; items: MissionWire[]; timer: ReturnType<typeof setTimeout>; touch: () => void; resolve: (m: MissionWire[]) => void; reject: (e: Error) => void } | null = null;
+
+  /**
+   * Reads the mission back and compares it with what was sent. Null when they
+   * match; otherwise what differs, in words. Item 0 is home, which the
+   * aircraft keeps for itself, so it is not compared.
+   */
+  async verifyMission(sent: MissionWire[]): Promise<string | null> {
+    const got = await this.downloadMission();
+    return compareMissions(sent, got);
+  }
 
   private onMission(name: string, d: Decoded) {
     const t = this.target();
@@ -593,15 +665,23 @@ class CommandLink {
     } else if (name === "MISSION_ACK" && this.missionUp) {
       const type = d.type as number;
       if (type === 0) this.missionUp.resolve();
-      else this.missionUp.reject(new Error(`The aircraft rejected the mission (MAV_MISSION result ${type}).`));
+      else this.missionUp.reject(new Error(`The aircraft rejected the mission: ${MISSION_RESULT[type] ?? `result ${type}`}.`));
     } else if (name === "MISSION_COUNT" && this.missionDown) {
+      // An answer about the fence or rally points is not the mission.
+      if (((d.mission_type as number | undefined) ?? 0) !== 0) return;
       const count = d.count as number;
+      // A repeated answer to a repeated question must not start the read again.
+      if (this.missionDown.count >= 0) return;
       this.missionDown.count = count;
+      this.missionDown.touch();
       if (count === 0) this.missionDown.resolve([]);
       else void this.write("MISSION_REQUEST_INT", { target_system: t.sysid, target_component: t.compid, seq: 0, mission_type: 0 }).catch(() => {});
+    } else if (name === "MISSION_ACK" && this.missionDown && (d.type as number) !== 0) {
+      this.missionDown.reject(new Error(`The aircraft refused to send its mission (MAV_MISSION result ${d.type as number}).`));
     } else if (name === "MISSION_ITEM_INT" && this.missionDown) {
       const m = this.missionDown;
-      if ((d.seq as number) !== m.items.length) return;
+      if (m.count < 0 || (d.seq as number) !== m.items.length) return;
+      m.touch();
       m.items.push({ seq: d.seq as number, frame: d.frame as number, command: d.command as number, p1: d.param1 as number, p2: d.param2 as number, p3: d.param3 as number, p4: d.param4 as number, x: d.x as number, y: d.y as number, z: d.z as number });
       if (m.items.length >= m.count) {
         void this.write("MISSION_ACK", { target_system: t.sysid, target_component: t.compid, type: 0, mission_type: 0 }).catch(() => {});

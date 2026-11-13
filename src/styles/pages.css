@@ -3424,7 +3424,7 @@ input[type="range"]::-moz-range-thumb {
 
 .mp-table th:last-child,
 .mp-table td:last-child {
-  width: 38px;
+  width: 92px;
 }
 
 .mp-source {
@@ -4375,4 +4375,304 @@ input[type="range"]::-moz-range-thumb {
 .rmap-note.placing {
   border-color: var(--accent-line);
   color: var(--ink);
+}
+
+/* ------------------------------------------------------------------------
+   Planner: tools, the plan check, and a plan table that works on a phone.
+   ------------------------------------------------------------------------ */
+.mp-tools {
+  display: flex;
+  gap: 2px;
+}
+
+.mp-tools .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 2px var(--warn-soft);
+}
+
+.mp-table td.c-act {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.mp-table td.c-act .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.mp-table td.c-act .icon-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.mp-check {
+  display: grid;
+  gap: var(--s2);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line-soft);
+}
+
+.mp-check h4 {
+  font-size: var(--t-sm);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.mp-check ul {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mp-check li,
+.mp-check-ok {
+  display: flex;
+  gap: var(--s2);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.mp-check svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.mp-check li.bad {
+  color: var(--ink);
+}
+
+.mp-check li.bad svg {
+  color: var(--danger);
+}
+
+.mp-check li.warn svg {
+  color: var(--warn);
+}
+
+.mp-check-ok svg {
+  color: var(--ok);
+}
+
+/* A marker's dot keeps its shape when a label hangs beside it. */
+.rmap-home b,
+.rmap-wp b {
+  flex: none;
+}
+
+/* A page that failed to draw. */
+.fault {
+  display: flex;
+  gap: var(--s4);
+  max-width: 720px;
+  padding: var(--s6);
+  border: 1px solid rgba(214, 87, 63, 0.35);
+  border-radius: var(--r-panel);
+  background: var(--danger-soft);
+}
+
+.fault > svg {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--danger);
+}
+
+.fault h1 {
+  font-size: var(--t-xl);
+  margin-bottom: var(--s2);
+}
+
+.fault p {
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+
+.fault-detail {
+  margin-top: var(--s3);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-ctl);
+  background: var(--midnight-deep);
+  font-family: ui-monospace, monospace;
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+
+.fault-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+/* Narrow: each waypoint becomes a card, every box labelled and wide enough to type in. */
+@media (max-width: 640px) {
+  .mp-table,
+  .mp-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .mp-table thead {
+    display: none;
+  }
+
+  .mp-table tr {
+    display: grid;
+    grid-template-columns: 26px repeat(3, minmax(0, 1fr));
+    gap: var(--s2) var(--s3);
+    align-items: end;
+    padding: var(--s3) 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .mp-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .mp-table td:first-child,
+  .mp-table td:last-child {
+    width: auto;
+  }
+
+  .mp-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    font-size: var(--t-xs);
+    color: var(--muted);
+  }
+
+  .mp-table td.c-n {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .mp-table td.c-pos,
+  .mp-table td.c-what {
+    grid-column: 2 / 4;
+    grid-row: 1;
+    align-self: center;
+    white-space: normal;
+  }
+
+  .mp-table tr.mp-cmd.end td.c-what {
+    grid-column: 2 / 5;
+  }
+
+  .mp-table td.c-act {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  .mp-table td.c-rest {
+    display: none;
+  }
+
+  .mp-table td.c-h {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .mp-table tr.mp-cmd td.c-h {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  .mp-table td.c-clear {
+    grid-column: 3;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .mp-table td.c-wait {
+    grid-column: 4;
+    grid-row: 2;
+  }
+
+  /* The practice field has two position boxes: they take a row of their own. */
+  .mp-table:not(.real) td.c-north {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .mp-table:not(.real) td.c-east {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .mp-table:not(.real) tr.mp-wp td.c-act {
+    grid-column: 2 / 5;
+  }
+
+  .mp-table:not(.real) td.c-h {
+    grid-row: 3;
+  }
+
+  .mp-table:not(.real) td.c-clear {
+    grid-row: 3;
+  }
+
+  .mp-table:not(.real) td.c-wait {
+    grid-row: 3;
+  }
+
+  .mp-table:not(.real) tr.mp-cmd td.c-h {
+    grid-row: 1;
+  }
+
+}
+
+.sim-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-progress svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.sim-map-panel .segmented button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mp-acts {
+  display: inline-flex;
+  gap: 0;
+}
+
+/* No spinner arrows in the plan's number boxes: the room is needed for the number. */
+.mp-num {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.mp-num::-webkit-outer-spin-button,
+.mp-num::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }

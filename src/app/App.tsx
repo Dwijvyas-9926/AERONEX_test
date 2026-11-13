@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { HashRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AboutPage } from "../features/about/AboutPage";
 import { BrandLockup } from "../components/shell/BrandMark";
+import { ErrorBoundary } from "../components/shell/ErrorBoundary";
 import { HelpPanel } from "../components/shell/HelpPanel";
 import { SearchPalette } from "../components/shell/SearchPalette";
 import { ConfirmDialog, Toasts } from "../components/shell/Overlays";
@@ -57,6 +58,7 @@ function AnimatedRoutes() {
         exit={{ opacity: 0, y: -4 }}
         transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
       >
+        <ErrorBoundary page={location.pathname}>
         <Routes location={location}>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/connection" element={<ConnectionPage />} />
@@ -78,6 +80,7 @@ function AnimatedRoutes() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<OverviewPage />} />
         </Routes>
+        </ErrorBoundary>
       </motion.div>
     </AnimatePresence>
   );

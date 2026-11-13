@@ -189,8 +189,8 @@ export const GUIDES: Record<string, Guide> = {
     steps: [
       "Describe the aircraft: weight, size, motor thrust and battery. Copy them from your Aircraft Profile or Frame Studio design if you have one.",
       "Press Start the virtual aircraft. The top bar shows Virtual aircraft while it runs.",
-      "Choose a landscape. The aircraft collides with its hills and water, so a route that is too low will show it.",
-      "Take off, or fly the mission you planned. Speed time up to 10× for a long flight.",
+      "Choose a landscape: a practice one, or the real ground around the home you set in Mission Planning. The aircraft collides with it, so a route that is too low will show it.",
+      "Take off, or fly the mission you planned. Speed time up to 10× for a long flight, or pause it to look.",
       "Watch in the 3D world: Chase, Orbit, Ground, Top and Onboard cameras. If you imported a model in Digital Twin, that is the aircraft you see.",
       "Make something go wrong: stop a motor, lose GPS or the link, add wind, and watch what the failsafe settings do.",
       "Change a setting in Parameters and try again. It takes effect at once.",
@@ -207,11 +207,12 @@ export const GUIDES: Record<string, Guide> = {
     needs: ["Nothing to plan and predict. The real map needs the internet once for each place, or an area saved beforehand.", "To send a mission, a linked aircraft, real or virtual."],
     steps: [
       "Choose Real map. Find your field, press the home button on the map and click where the aircraft will take off. Or link the aircraft and press Move home to the aircraft.",
-      "Click the map to place waypoints. Drag a marker to move it.",
+      "Click the map to place waypoints. Drag a marker to move it. Undo is Ctrl Z; the arrows in the list change the order.",
       "Set each waypoint's height, and choose how the mission ends.",
-      "Read the height profile under the map. It shows the ground along the whole route and where the route comes closest to it.",
+      "Read the height profile under the map and the plan check under the list. They show the ground along the whole route and anything wrong that the numbers alone reveal.",
       "Set the wind and the battery charge you expect, and optionally something that goes wrong. Press Predict the flight.",
-      "Fix the plan or the settings and predict again. Then send it to the aircraft.",
+      "Fix the plan or the settings and predict again. Then send it to the aircraft: the app asks first and reads the mission back to check it.",
+      "Save the plan to a file to keep it or to open it in Mission Planner or QGroundControl.",
       "Flying somewhere without internet? Open Layers on the map and save the area first.",
     ],
     terms: [

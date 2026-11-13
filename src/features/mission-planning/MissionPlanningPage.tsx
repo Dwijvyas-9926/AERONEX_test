@@ -1,20 +1,23 @@
-import { CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, Globe, LandPlot, Navigation, Play, Trash2, TriangleAlert, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, Globe, Info, LandPlot, Navigation, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CMD, MODE_NAME, type MissionItem } from "../../sim/autopilot";
+import { MODE_NAME } from "../../sim/autopilot";
+import { NumInput } from "../../components/ui/NumInput";
 import { defaultParams, type Params } from "../../sim/params";
 import { predict, type FaultKind, type FaultPlan, type Prediction, type Verdict } from "../../sim/predict";
 import { commandLink, COPTER_MODE } from "../../services/link/commandLink";
 import { linkManager, rememberedParams } from "../../services/link/linkManager";
 import { useLink } from "../../state/linkStore";
-import { notify } from "../../state/notifyStore";
+import { confirmAction, notify } from "../../state/notifyStore";
 import { useParams } from "../../state/paramStore";
-import { planToMission, routeLength, useSim, type Ending, type PlanPoint } from "../../state/simStore";
+import { missionToPlan, planToMission, routeLength, useSim, type Ending, type ReadPlan } from "../../state/simStore";
 import { FlightMap } from "../simulator/FlightMap";
 import { makeTerrain, type TerrainKind } from "../../sim/terrain";
 import { modelledParams, order } from "../simulator/SimulatorPage";
 import { covers, realTerrain } from "../../geo/elevation";
 import { distanceM, fmtLatLon, toGlobal, toLocal, type LatLon } from "../../geo/geo";
+import { checkPlan } from "../../geo/planCheck";
+import { fromWaypointFile, saveText, toWaypointFile } from "../../geo/planFile";
 import { routeProfile } from "../../geo/profile";
 import { demReach, ensureDem, useDem } from "../../state/mapStore";
 import { CLEAR_WARN, HeightProfile } from "./HeightProfile";
@@ -80,20 +83,7 @@ const VERDICT: Record<Verdict, { tone: "ok" | "warn" | "bad"; title: string }> =
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 function NumCell({ value, onChange, min, max, label }: { value: number; onChange: (v: number) => void; min: number; max: number; label: string }) {
-  return (
-    <input
-      className="input mp-num"
-      type="number"
-      aria-label={label}
-      value={value}
-      min={min}
-      max={max}
-      onChange={(e) => {
-        const v = Number(e.target.value);
-        if (e.target.value !== "" && Number.isFinite(v)) onChange(Math.max(min, Math.min(max, v)));
-      }}
-    />
-  );
+  return <NumInput className="input mp-num" aria-label={label} value={value} min={min} max={max} onChange={onChange} />;
 }
 
 /** Which parameters a prediction should fly on, and where they came from. */
@@ -150,7 +140,7 @@ export function MissionPlanningPage() {
     if (real && !simWorld && measured && dem.patch && Math.abs(sim.home.altMsl - dem.patch.base) >= 1) sim.set("home", { ...sim.home, altMsl: Math.round(dem.patch.base) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [real, simWorld, measured]);
-  const groundKnown = !real || !!simWorld || !!measured;
+  const loaded = !real || !!simWorld || !!measured;
 
   // The landscape the aircraft will meet: the running simulator's, or the one chosen for it.
   const terrain = useMemo(() => simWorld ?? (sim.terrain === "real" ? (measured ?? FIELD) : makeTerrain(sim.terrain)), [simWorld, sim.terrain, measured]);
@@ -161,6 +151,9 @@ export function MissionPlanningPage() {
   const lastTag = sim.ending === "land" ? " Land" : sim.ending === "hold" ? " Hover" : "";
   const route = useMemo(() => sim.points.map((p, i) => ({ id: p.id, n: p.n, e: p.e, label: String(i + 1), tag: i === sim.points.length - 1 ? lastTag.trim() : "" })), [sim.points, lastTag]);
   const empty = sim.points.length === 0;
+  // Measured ground stops somewhere. Past it the heights are not known, and must not be shown as if they were.
+  const beyond = terrain.reach !== undefined && farthest > terrain.reach && (!!simWorld || dem.status !== "loading");
+  const groundKnown = loaded && !(terrain.reach !== undefined && farthest > terrain.reach);
   const profile = useMemo(() => routeProfile(sim.points, sim.takeoffAlt, sim.ending, params.RTL_ALT / 100, terrain.surface), [sim.points, sim.takeoffAlt, sim.ending, params.RTL_ALT, terrain]);
   const low = useMemo(() => (profile.lowest && groundKnown && profile.lowest.clear < CLEAR_WARN ? { n: profile.lowest.n, e: profile.lowest.e, clear: profile.lowest.clear } : null), [profile, groundKnown]);
   const mark = useMemo(
@@ -169,12 +162,75 @@ export function MissionPlanningPage() {
   );
   const windShown = useMemo(() => ({ speed: wind.speed, fromDeg: wind.from }), [wind.speed, wind.from]);
 
+  const checks = useMemo(
+    () => checkPlan({ points: sim.points, takeoffAlt: sim.takeoffAlt, ending: sim.ending, params, airframe: sim.airframe, profile, groundKnown, real, groundReach: beyond ? (terrain.reach ?? null) : null }),
+    [sim.points, sim.takeoffAlt, sim.ending, params, sim.airframe, profile, groundKnown, real, beyond, terrain],
+  );
+  const [allAlt, setAllAlt] = useState(30);
+  const fileBox = useRef<HTMLInputElement>(null);
+
   const moveHome = (to: LatLon) => {
     sim.moveHome(to);
     setResult(null);
   };
 
-  const send = () => {
+  // Ctrl or ⌘ Z, and Shift with it or Ctrl Y to go forward again. Not while typing: a box has its own undo.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT"))) return;
+      const k = e.key.toLowerCase();
+      if (k !== "z" && k !== "y") return;
+      e.preventDefault();
+      const s = useSim.getState();
+      if (k === "y" || e.shiftKey) s.redo();
+      else s.undo();
+      setResult(null);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
+
+  /** Puts a mission, from the aircraft or a file, into the planner, and says what did not fit. */
+  const adopt = (got: ReadPlan, from: string) => {
+    if (!got.points.length && got.takeoffAlt === null) {
+      notify("warn", `${from} holds no mission`, "There was nothing to load, so the plan here is unchanged.");
+      return;
+    }
+    sim.loadPlan({ takeoffAlt: got.takeoffAlt ?? sim.takeoffAlt, points: got.points, ending: got.ending, ...(got.home && !simWorld ? { home: got.home } : {}) });
+    setResult(null);
+    const what = `${got.points.length} ${got.points.length === 1 ? "waypoint" : "waypoints"} loaded. Undo brings the old plan back.`;
+    if (got.notes.length) notify("warn", `Loaded from ${from.toLowerCase()}, with changes`, `${got.notes.join(" ")} ${what}`);
+    else notify("success", `Loaded from ${from.toLowerCase()}`, what);
+  };
+
+  const openFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      // With the virtual aircraft flying, home stays where it is and the waypoints keep their places on the ground.
+      const items = fromWaypointFile(await file.text());
+      const got = missionToPlan(items, sim.home);
+      if (got.home && simWorld) {
+        const ref = got.home;
+        got.points = got.points.map((w) => {
+          const g = toGlobal(ref, w.n, w.e);
+          const l = toLocal(sim.home, g.lat, g.lon);
+          return { ...w, n: Math.round(l.n), e: Math.round(l.e) };
+        });
+      }
+      adopt(got, "The file");
+    } catch (e) {
+      notify("error", "That file could not be opened", (e as Error).message);
+    }
+  };
+
+  const saveFile = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    saveText(`aeronex-plan-${stamp}.waypoints`, toWaypointFile(mission));
+    notify("success", "Plan saved", "The file opens here, in Mission Planner and in QGroundControl.");
+  };
+
+  const send = async () => {
     // A real aircraft somewhere else would fly towards a plan drawn for another place.
     const at = aircraftPlace();
     const off = at ? distanceM(sim.home, at) : 0;
@@ -182,34 +238,32 @@ export function MissionPlanningPage() {
       notify("error", "Not sent: the aircraft is not at this plan's home", `It is ${far(off)} away. Move home to the aircraft, check the route is still where you want it, and send again.`, { label: "Move home to the aircraft", run: () => moveHome(at) });
       return;
     }
-    if (linked && !virtual && !at) notify("warn", "The aircraft has no GPS position yet", "The mission is being sent, but nothing here can check that the aircraft is at the plan's home. Wait for a GPS fix and look again before flying.");
-    return order("Send the mission", async () => {
+    if (!virtual) {
+      // The last look before a real aircraft is told where to go.
+      const highest = Math.max(sim.takeoffAlt, ...sim.points.map((w) => w.alt));
+      const bad = checks.filter((c) => c.sev === "bad");
+      const ok = await confirmAction({
+        title: `Send this mission to your aircraft?`,
+        body: `${sim.points.length} ${sim.points.length === 1 ? "waypoint" : "waypoints"}, ${far(farthest)} from home at the farthest, up to ${Math.round(highest)} m above home, ending with ${sim.ending === "rtl" ? "a return home" : sim.ending === "land" ? "a landing at the last waypoint" : "a hover at the last waypoint"}. It replaces the mission the aircraft holds now.${bad.length ? ` The plan check found ${bad.length} ${bad.length === 1 ? "problem" : "problems"}: ${bad[0].text}` : ""}${at ? "" : " The aircraft has no GPS position yet, so nothing here can check it is at the plan's home."}`,
+        confirmLabel: "Send the mission",
+        tone: bad.length ? "danger" : "default",
+      });
+      if (!ok) return;
+    }
+    await order("Send the mission", async () => {
       await commandLink.uploadMission(mission);
-      notify("success", "Mission sent", `${mission.length - 1} commands are on the ${virtual ? "virtual " : ""}aircraft.`);
+      // What matters is what the aircraft holds, so it is read back and compared.
+      const differs = await commandLink.verifyMission(mission);
+      if (differs) throw new Error(`The mission was sent, but the aircraft does not hold what was sent. ${differs} Send it again, and do not fly until it reads back the same.`);
+      notify("success", "Mission sent and checked", `${mission.length - 1} commands are on the ${virtual ? "virtual " : ""}aircraft, and reading them back gave the same mission.`);
     });
   };
 
   const read = () =>
     order("Read the mission", async () => {
       const items = await commandLink.downloadMission();
-      const home = useLink.getState().telemetry.home?.value ?? sim.home;
-      const pts: PlanPoint[] = [];
-      let ending: Ending = "hold";
-      let takeoff = sim.takeoffAlt;
-      for (const it of items.slice(1) as MissionItem[]) {
-        if (it.command === CMD.TAKEOFF) takeoff = it.z;
-        else if (it.command === CMD.RTL) ending = "rtl";
-        else if (it.command === CMD.LAND) ending = "land";
-        else if (it.command === CMD.WAYPOINT && (it.x !== 0 || it.y !== 0)) {
-          const l = toLocal(home, it.x / 1e7, it.y / 1e7);
-          pts.push({ id: `r${it.seq}`, n: Math.round(l.n), e: Math.round(l.e), alt: it.z, holdS: it.p1 });
-        }
-      }
-      sim.set("home", { ...sim.home, lat: home.lat, lon: home.lon });
-      sim.set("takeoffAlt", takeoff);
-      sim.set("points", pts);
-      sim.set("ending", ending);
-      notify("success", "Mission read", `${pts.length} waypoints came from the aircraft.`);
+      const known = useLink.getState().telemetry.home?.value;
+      adopt(missionToPlan(items, known ? { ...known } : sim.home), "The aircraft");
     });
 
   const flyNow = () =>
@@ -337,27 +391,52 @@ export function MissionPlanningPage() {
           <section className="panel">
             <div className="panel-head">
               <h3>Plan</h3>
-              {!empty && (
+              <div className="mp-tools" role="group" aria-label="Plan tools">
+                <button className="icon-btn" disabled={!sim.canUndo} onClick={() => { sim.undo(); setResult(null); }} aria-label="Undo" title="Undo (Ctrl Z)">
+                  <Undo2 />
+                </button>
+                <button className="icon-btn" disabled={!sim.canRedo} onClick={() => { sim.redo(); setResult(null); }} aria-label="Redo" title="Redo (Ctrl Shift Z)">
+                  <Redo2 />
+                </button>
+                <button className="icon-btn" onClick={() => fileBox.current?.click()} aria-label="Open a plan file" title="Open a plan file (.waypoints), from here, Mission Planner or QGroundControl">
+                  <FolderOpen />
+                </button>
+                <button className="icon-btn" disabled={empty} onClick={saveFile} aria-label="Save the plan to a file" title="Save the plan to a file that Mission Planner and QGroundControl also open">
+                  <Save />
+                </button>
                 <button
-                  className="btn btn-ghost btn-sm"
+                  className="icon-btn"
+                  disabled={empty}
                   onClick={() => {
                     sim.clearPoints();
                     setResult(null);
                   }}
+                  aria-label="Remove every waypoint"
+                  title="Remove every waypoint (Undo brings them back)"
                 >
-                  <Trash2 /> Clear
+                  <Trash2 />
                 </button>
-              )}
+                <input
+                  ref={fileBox}
+                  type="file"
+                  accept=".waypoints,.txt,.mission"
+                  hidden
+                  onChange={(e) => {
+                    void openFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
             </div>
             <div className="panel-body mp-plan">
               {empty ? (
                 <p className="mp-empty">
                   {real
-                    ? "Click the map to place the first waypoint. Home is the H: drag it to where the aircraft will take off, or link the aircraft and move home to it."
+                    ? "Click the map to place the first waypoint. Home is the H: press the home button on the map and click where the aircraft will take off, or link the aircraft and move home to it."
                     : "Click the map to place the first waypoint. Home is the H in the middle; the grid is in metres."}
                 </p>
               ) : (
-                <table className="mp-table">
+                <table className={`mp-table${real ? " real" : ""}`}>
                   <thead>
                     <tr>
                       <th>#</th>
@@ -372,56 +451,70 @@ export function MissionPlanningPage() {
                       <th>Height (m)</th>
                       <th title="Height of the waypoint above the ground beneath it">Clear (m)</th>
                       <th>Wait (s)</th>
-                      <th aria-label="Remove" />
+                      <th aria-label="Move or remove" />
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="mp-cmd">
-                      <td>
+                      <td className="c-n">
                         <PlaneTakeoff aria-label="Take off" />
                       </td>
-                      <td colSpan={2}>
+                      <td className="c-what" colSpan={2}>
                         <strong>Take off</strong>
                         <small>Straight up from home</small>
                       </td>
-                      <td>
+                      <td className="c-h" data-label="Height (m)">
                         <NumCell label="Take-off height" value={sim.takeoffAlt} min={2} max={500} onChange={(x) => sim.set("takeoffAlt", x)} />
                       </td>
-                      <td colSpan={3} />
+                      <td className="c-rest" colSpan={3} />
                     </tr>
-                    {sim.points.map((p, i) => (
-                      <tr key={p.id}>
-                        <td className="num">{i + 1}</td>
-                        {real ? (
-                          <td colSpan={2} className="num mp-pos" title={`${Math.round(Math.hypot(p.n, p.e))} m from home. Drag its marker on the map to move it.`}>
-                            {fmtLatLon(toGlobal(sim.home, p.n, p.e))}
+                    {sim.points.map((p, i) => {
+                      const ground = terrain.surface(p.n, p.e);
+                      const known = loaded && !(terrain.reach !== undefined && Math.max(Math.abs(p.n), Math.abs(p.e)) > terrain.reach);
+                      return (
+                        <tr key={p.id} className="mp-wp">
+                          <td className="num c-n">{i + 1}</td>
+                          {real ? (
+                            <td colSpan={2} className="num mp-pos c-pos" title={`${Math.round(Math.hypot(p.n, p.e))} m from home. Drag its marker on the map to move it.`}>
+                              {fmtLatLon(toGlobal(sim.home, p.n, p.e))}
+                            </td>
+                          ) : (
+                            <>
+                              <td className="c-north" data-label="North (m)"><NumCell label={`Waypoint ${i + 1} north`} value={p.n} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { n: x })} /></td>
+                              <td className="c-east" data-label="East (m)"><NumCell label={`Waypoint ${i + 1} east`} value={p.e} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { e: x })} /></td>
+                            </>
+                          )}
+                          <td className="c-h" data-label="Height (m)"><NumCell label={`Waypoint ${i + 1} height`} value={p.alt} min={2} max={500} onChange={(x) => sim.updatePoint(p.id, { alt: x })} /></td>
+                          {known ? (
+                            <td className={`num mp-clear c-clear${p.alt - ground < 10 ? " low" : ""}`} data-label="Clear (m)" title={`The ground here is ${ground.toFixed(0)} m above home`}>
+                              {terrain.isWater(p.n, p.e) ? "water" : Math.round(p.alt - ground)}
+                            </td>
+                          ) : (
+                            <td className="num mp-clear c-clear" data-label="Clear (m)" title={loaded ? "Too far from home: the ground heights do not reach here" : "The ground heights are still loading"}>
+                              {loaded ? "?" : "…"}
+                            </td>
+                          )}
+                          <td className="c-wait" data-label="Wait (s)"><NumCell label={`Waypoint ${i + 1} wait`} value={p.holdS} min={0} max={600} onChange={(x) => sim.updatePoint(p.id, { holdS: x })} /></td>
+                          <td className="c-act">
+                            <div className="mp-acts">
+                            <button className="icon-btn" disabled={i === 0} aria-label={`Move waypoint ${i + 1} earlier`} title="Fly this one earlier" onClick={() => { sim.shiftPoint(p.id, -1); setResult(null); }}>
+                              <ArrowUp />
+                            </button>
+                            <button className="icon-btn" disabled={i === sim.points.length - 1} aria-label={`Move waypoint ${i + 1} later`} title="Fly this one later" onClick={() => { sim.shiftPoint(p.id, 1); setResult(null); }}>
+                              <ArrowDown />
+                            </button>
+                            <button className="icon-btn" aria-label={`Remove waypoint ${i + 1}`} title="Remove" onClick={() => { sim.removePoint(p.id); setResult(null); }}>
+                              <X />
+                            </button>
+                            </div>
                           </td>
-                        ) : (
-                          <>
-                            <td><NumCell label={`Waypoint ${i + 1} north`} value={p.n} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { n: x })} /></td>
-                            <td><NumCell label={`Waypoint ${i + 1} east`} value={p.e} min={-20000} max={20000} onChange={(x) => sim.updatePoint(p.id, { e: x })} /></td>
-                          </>
-                        )}
-                        <td><NumCell label={`Waypoint ${i + 1} height`} value={p.alt} min={2} max={500} onChange={(x) => sim.updatePoint(p.id, { alt: x })} /></td>
-                        {groundKnown ? (
-                          <td className={`num mp-clear${p.alt - terrain.surface(p.n, p.e) < 10 ? " low" : ""}`} title={`The ground here is ${terrain.surface(p.n, p.e).toFixed(0)} m above home`}>
-                            {terrain.isWater(p.n, p.e) ? "water" : Math.round(p.alt - terrain.surface(p.n, p.e))}
-                          </td>
-                        ) : (
-                          <td className="num mp-clear" title="The ground heights are still loading">…</td>
-                        )}
-                        <td><NumCell label={`Waypoint ${i + 1} wait`} value={p.holdS} min={0} max={600} onChange={(x) => sim.updatePoint(p.id, { holdS: x })} /></td>
-                        <td>
-                          <button className="icon-btn" aria-label={`Remove waypoint ${i + 1}`} onClick={() => sim.removePoint(p.id)}>
-                            <X />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                     {/* The last command, as a row of its own, so the list is the whole mission. */}
                     <tr className={`mp-cmd end ${sim.ending}`}>
-                      <td>{sim.ending === "rtl" ? <HomeIcon aria-hidden /> : sim.ending === "land" ? <PlaneLanding aria-hidden /> : <CirclePause aria-hidden />}</td>
-                      <td colSpan={6}>
+                      <td className="c-n">{sim.ending === "rtl" ? <HomeIcon aria-hidden /> : sim.ending === "land" ? <PlaneLanding aria-hidden /> : <CirclePause aria-hidden />}</td>
+                      <td className="c-what" colSpan={6}>
                         <strong>{sim.ending === "rtl" ? "Return home and land" : sim.ending === "land" ? `Land at waypoint ${sim.points.length}` : `Hover at waypoint ${sim.points.length}`}</strong>
                         <small>
                           {sim.ending === "rtl"
@@ -442,6 +535,16 @@ export function MissionPlanningPage() {
                   <span className="muted">m</span>
                 </div>
               )}
+              {sim.points.length > 1 && (
+                <div className="mp-line">
+                  <span className="mp-step">Every height</span>
+                  <NumCell label="Height for every waypoint" value={allAlt} min={2} max={500} onChange={setAllAlt} />
+                  <span className="muted">m</span>
+                  <button className="btn btn-sm" onClick={() => { sim.setAllHeights(allAlt); setResult(null); }}>
+                    Set all waypoints
+                  </button>
+                </div>
+              )}
               <div className="mp-line">
                 <span className="mp-step">At the end</span>
                 <div className="segmented" role="group" aria-label="How the mission ends">
@@ -452,12 +555,30 @@ export function MissionPlanningPage() {
                       ["hold", "Hover there"],
                     ] as [Ending, string][]
                   ).map(([k, l]) => (
-                    <button key={k} aria-pressed={sim.ending === k} onClick={() => sim.set("ending", k)}>
+                    <button key={k} aria-pressed={sim.ending === k} onClick={() => { sim.set("ending", k); setResult(null); }}>
                       {l}
                     </button>
                   ))}
                 </div>
               </div>
+              {!empty && (
+                <div className="mp-check" aria-live="polite">
+                  <h4>Plan check</h4>
+                  {checks.some((c) => c.sev !== "note") ? null : (
+                    <p className="mp-check-ok">
+                      <CircleCheck aria-hidden /> Nothing wrong that can be seen from the numbers. Predict the flight to see how it goes.
+                    </p>
+                  )}
+                  <ul>
+                    {checks.map((c) => (
+                      <li key={c.text} className={c.sev}>
+                        {c.sev === "bad" ? <CircleX aria-hidden /> : c.sev === "warn" ? <TriangleAlert aria-hidden /> : <Info aria-hidden />}
+                        <span>{c.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </section>
 

@@ -1,14 +1,15 @@
-import { Pencil, SlidersHorizontal, BatteryWarning, CircleStop, Home as HomeIcon, Info, PlaneLanding, PlaneTakeoff, Play, Power, RotateCcw, Route, Satellite, TriangleAlert, Unplug, Wind } from "lucide-react";
+import { Pause, Pencil, SlidersHorizontal, BatteryWarning, CircleStop, Home as HomeIcon, Info, PlaneLanding, PlaneTakeoff, Play, Power, RotateCcw, Route, Satellite, TriangleAlert, Unplug, Wind } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { derive, G, PRESETS, type Airframe } from "../../sim/airframe";
-import { MODE_NAME } from "../../sim/autopilot";
+import { MODE, MODE_NAME } from "../../sim/autopilot";
 import { PARAM_DEFS, type Params } from "../../sim/params";
 import { euler } from "../../sim/physics";
 import { commandLink, COPTER_MODE } from "../../services/link/commandLink";
 import { linkManager, rememberedParams } from "../../services/link/linkManager";
 import { isPortOpen, useLink } from "../../state/linkStore";
 import { notify } from "../../state/notifyStore";
+import { NumInput } from "../../components/ui/NumInput";
 import { useActiveProfile } from "../../state/profileStore";
 import { planToMission, useSim } from "../../state/simStore";
 import { clockTime } from "../../utils/format";
@@ -22,6 +23,8 @@ import { useSettings } from "../../state/settingsStore";
 import type { WorldView } from "./world/FlightWorld";
 
 const FlightWorld = lazy(() => import("./world/FlightWorld"));
+// The real map, for the Map tab when the aircraft is flying over real ground.
+const RealMap = lazy(() => import("../mission-planning/RealMap"));
 const FLAT = makeTerrain("flat");
 const VIEWS: [WorldView, string, string][] = [
   ["orbit", "Orbit", "Drag to look around the aircraft, scroll to zoom"],
@@ -90,18 +93,7 @@ function Num({ label, value, onChange, step = 1, min, max, unit, hint }: { label
         {label}
         {unit ? ` (${unit})` : ""}
       </span>
-      <input
-        className="input"
-        type="number"
-        value={Number.isFinite(value) ? value : ""}
-        step={step}
-        min={min}
-        max={max}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (e.target.value !== "" && Number.isFinite(v)) onChange(max !== undefined ? Math.min(max, min !== undefined ? Math.max(min, v) : v) : min !== undefined ? Math.max(min, v) : v);
-        }}
-      />
+      <NumInput className="input" value={value} step={step} min={min} max={max} onChange={onChange} />
       {hint && <small>{hint}</small>}
     </label>
   );
@@ -353,6 +345,10 @@ interface Snap {
   rcOk: boolean;
   fence: number | null;
   failsafes: string[];
+  /** Which mission command it is on, how many there are, and how far the next point is. */
+  missionSeq: number;
+  missionLen: number;
+  toGo: number | null;
 }
 
 function useSnap(): { snap: Snap | null; track: MapPoint[]; clearTrack: () => void } {
@@ -392,6 +388,9 @@ function useSnap(): { snap: Snap | null; track: MapPoint[]; clearTrack: () => vo
         rcOk: v.rcOk,
         fence: v.ap.params.FENCE_ENABLE ? v.ap.params.FENCE_RADIUS : null,
         failsafes: [...v.ap.failsafes],
+        missionSeq: v.ap.missionSeq,
+        missionLen: v.ap.mission.length,
+        toGo: v.ap.goal ? Math.hypot(v.ap.goal.n - s.pos[0], v.ap.goal.e - s.pos[1], v.ap.goal.alt + s.pos[2]) : null,
       });
     }, 150);
     return () => clearInterval(id);
@@ -434,7 +433,8 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
     if (v) v.phys.env = { ...wind };
   }, [wind, snap === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const route = sim.points.map((p, i) => ({ n: p.n, e: p.e, label: String(i + 1) }));
+  const route = useMemo(() => sim.points.map((p, i) => ({ id: p.id, n: p.n, e: p.e, label: String(i + 1) })), [sim.points]);
+  const windShown = useMemo(() => ({ speed: wind.windSpeed, fromDeg: wind.windFromDeg }), [wind.windSpeed, wind.windFromDeg]);
   const flying = !!snap?.armed;
 
   const takeOff = () =>
@@ -501,7 +501,7 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
               <button className="btn btn-primary" disabled={!ready || flying || snap.crashed} onClick={takeOff}>
                 <PlaneTakeoff /> Take off to
               </button>
-              <input className="input" type="number" min={2} max={120} value={takeoffAlt} onChange={(e) => setTakeoffAlt(Math.max(2, Math.min(120, Number(e.target.value) || 2)))} aria-label="Take-off height in metres" />
+              <NumInput className="input" min={2} max={120} value={takeoffAlt} onChange={setTakeoffAlt} aria-label="Take-off height in metres" />
               <span className="muted">m</span>
             </div>
             <button className="btn" disabled={!ready || snap.crashed} onClick={flyMission}>
@@ -595,16 +595,18 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
               </button>
             </div>
             <div className="segmented" role="group" aria-label="Simulation speed">
-              {[1, 2, 5, 10].map((x) => (
+              {[0, 1, 2, 5, 10].map((x) => (
                 <button
                   key={x}
                   aria-pressed={speed === x}
+                  aria-label={x === 0 ? "Pause" : `${x} times speed`}
+                  title={x === 0 ? "Freeze the flight where it is. The link stays up." : undefined}
                   onClick={() => {
                     linkManager.simSpeed = x;
                     setSpeed(x);
                   }}
                 >
-                  {x}×
+                  {x === 0 ? <Pause /> : `${x}×`}
                 </button>
               ))}
             </div>
@@ -649,6 +651,10 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
                 <div><dt>Wind</dt><dd>{wind.windSpeed} m/s</dd></div>
               </dl>
             </div>
+          ) : terrain.kind === "real" ? (
+            <Suspense fallback={<div className="rmap rmap-loading">Loading the map…</div>}>
+              <RealMap home={sim.home} route={route} closeRoute={sim.ending === "rtl"} fenceRadius={snap.fence} wind={windShown} homeLocked />
+            </Suspense>
           ) : (
             <FlightMap
               route={route}
@@ -679,6 +685,18 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
             <div className="readout"><dt>Current</dt><dd>{snap.amps.toFixed(0)}<small>A</small></dd></div>
             <div className="readout"><dt>Climb</dt><dd>{snap.climb.toFixed(1)}<small>m/s</small></dd></div>
           </dl>
+          {speed === 0 && (
+            <div className="callout info" style={{ margin: "var(--s4)" }}>
+              <Pause />
+              <span>Paused. The aircraft is frozen where it is; press a speed to carry on.</span>
+            </div>
+          )}
+          {snap.mode === MODE.AUTO && snap.missionLen > 1 && (
+            <p className="sim-progress">
+              <Route aria-hidden /> Command {Math.min(snap.missionSeq, snap.missionLen - 1)} of {snap.missionLen - 1}
+              {snap.toGo !== null ? `, ${snap.toGo >= 1000 ? `${(snap.toGo / 1000).toFixed(1)} km` : `${Math.round(snap.toGo)} m`} to go` : ""}
+            </p>
+          )}
           {snap.failsafes.length > 0 && (
             <div className="callout warn" style={{ margin: "var(--s4)" }}>
               <TriangleAlert />
