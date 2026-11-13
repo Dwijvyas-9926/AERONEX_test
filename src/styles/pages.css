@@ -3836,3 +3836,57 @@ input[type="range"]::-moz-range-thumb {
     min-height: 300px;
   }
 }
+
+/* Map zoom: three buttons in the corner, and the pointer says the map can be moved. */
+.fmap svg {
+  touch-action: none;
+  cursor: grab;
+}
+
+.fmap svg:active {
+  cursor: grabbing;
+}
+
+.fmap.pickable svg:active {
+  cursor: grabbing;
+}
+
+.fmap-zoom {
+  position: absolute;
+  top: var(--s3);
+  right: var(--s3);
+  display: grid;
+  gap: 1px;
+  border-radius: var(--r-ctl);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.fmap-zoom button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: var(--slate);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.fmap-zoom button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.fmap-zoom button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.fmap-zoom svg {
+  width: 16px;
+  height: 16px;
+  aspect-ratio: auto;
+  cursor: inherit;
+}

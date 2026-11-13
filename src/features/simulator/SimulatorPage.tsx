@@ -23,18 +23,52 @@ import type { WorldView } from "./world/FlightWorld";
 const FlightWorld = lazy(() => import("./world/FlightWorld"));
 const FLAT = makeTerrain("flat");
 const VIEWS: [WorldView, string, string][] = [
+  ["orbit", "Orbit", "Drag to look around the aircraft, scroll to zoom"],
   ["chase", "Chase", "Follow from behind"],
-  ["orbit", "Orbit", "Drag to look around the aircraft"],
   ["ground", "Ground", "Watch from the ground station, as a pilot would"],
   ["top", "Top", "Straight down, north up"],
   ["fpv", "Onboard", "The view from the aircraft's nose"],
 ];
 
+/**
+ * Take the reader to the list of what the aircraft has said, and pick it out.
+ * The list is on the simulator page for the virtual aircraft and on Telemetry
+ * for a real one.
+ */
+export function showEvents() {
+  const want = useLink.getState().virtual ? "#/simulator" : "#/telemetry";
+  if (window.location.hash !== want) window.location.hash = want;
+  let tries = 0;
+  const find = () => {
+    const el = document.querySelector<HTMLElement>("[data-events]");
+    if (!el) {
+      // The page is still arriving.
+      if (++tries < 40) window.setTimeout(find, 150);
+      return;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.remove("flash");
+    void el.offsetWidth;
+    el.classList.add("flash");
+  };
+  window.setTimeout(find, 50);
+}
+
 /** Run a command and say so if the aircraft refuses it. */
 export async function order(label: string, fn: () => Promise<unknown>) {
   try {
+    const asked = Date.now();
     const r = await fn();
-    if (typeof r === "number" && r !== 0) notify("warn", `${label}: refused`, "The aircraft's reason is in the events list.");
+    if (typeof r === "number" && r !== 0) {
+      // The aircraft gives its reason as a status message a moment after it
+      // refuses. Wait for it, so the message can say why and not just where to look.
+      await new Promise((res) => window.setTimeout(res, 450));
+      const why = useLink
+        .getState()
+        .events.find((e) => e.at >= asked - 500 && (e.level === "error" || e.level === "warn") && !/^Simulator:/.test(e.text));
+      const reason = why ? why.text.replace(/^(Critical|Error|Warning|Emergency|Alert):\s*/i, "") : null;
+      notify("warn", `${label}: refused`, reason ? `The aircraft says: ${reason}` : "The aircraft did not say why.", { label: "Show the events list", run: showEvents });
+    }
   } catch (e) {
     notify("error", `${label} failed`, (e as Error).message);
   }
@@ -368,7 +402,7 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
   const [takeoffAlt, setTakeoffAlt] = useState(15);
   const [gcsCut, setGcsCut] = useState(false);
   const [show, setShow] = useState<"world" | "map">("world");
-  const [view, setView] = useState<WorldView>("chase");
+  const [view, setView] = useState<WorldView>("orbit");
   const graphics = useSettings((s) => s.graphics);
   const profile = useActiveProfile();
   const object = useModel((s) => s.object);
@@ -391,7 +425,8 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
 
   const takeOff = () =>
     order("Take-off", async () => {
-      await commandLink.setMode(COPTER_MODE.GUIDED);
+      const g = await commandLink.setMode(COPTER_MODE.GUIDED);
+      if (g !== 0) return g;
       const a = await commandLink.arm(true);
       if (a !== 0) return a;
       return commandLink.guidedTakeoff(takeoffAlt);
@@ -402,7 +437,8 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
       if (sim.points.length === 0) throw new Error("There is no mission yet. Plan one in Mission Planning.");
       await commandLink.uploadMission(planToMission(sim.home, sim.takeoffAlt, sim.points, sim.ending));
       if (!flying) {
-        await commandLink.setMode(COPTER_MODE.GUIDED);
+        const g = await commandLink.setMode(COPTER_MODE.GUIDED);
+        if (g !== 0) return g;
         const a = await commandLink.arm(true);
         if (a !== 0) return a;
       }
@@ -637,7 +673,7 @@ function ControlRoom({ onEdit }: { onEdit: () => void }) {
           )}
         </section>
 
-        <section className="panel">
+        <section className="panel" data-events>
           <div className="panel-head">
             <h3>What the aircraft says</h3>
           </div>

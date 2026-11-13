@@ -677,7 +677,7 @@ function CrashEffects({ pose, terrain, wind, size }: { pose: MutableRefObject<Po
         b.w.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18);
         b.s = k * (0.018 + Math.random() * 0.045);
       }
-      const burst = s.water ? 20 : 16;
+      const burst = s.water ? 20 : 9;
       for (let i = 0; i < burst; i++) {
         const a = (i / burst) * 6.28 + Math.random() * 0.4;
         const out = (s.water ? 1.6 : 2.6) * (0.5 + Math.random()) * (0.5 + s.energy);
@@ -685,10 +685,10 @@ function CrashEffects({ pose, terrain, wind, size }: { pose: MutableRefObject<Po
           tmp.w.copy(s.at).setY(s.at.y + 0.2),
           new THREE.Vector3(Math.cos(a) * out, s.water ? 3.5 + Math.random() * 4 * s.energy : 0.6 + Math.random() * 1.6, Math.sin(a) * out),
           s.water ? "#f2f7f9" : i % 3 ? "#cdbf9c" : "#a3977b",
-          s.water ? 1.1 + Math.random() * 0.5 : 1.8 + Math.random() * 1.4,
-          size * 1.2,
-          size * (s.water ? 3 : 7) * (0.6 + s.energy),
-          s.water ? 0.95 : 0.85,
+          s.water ? 1.1 + Math.random() * 0.5 : 1.2 + Math.random() * 0.8,
+          size * 0.8,
+          size * (s.water ? 3 : 3.6) * (0.6 + s.energy),
+          s.water ? 0.95 : 0.5,
           now,
         );
       }
@@ -703,16 +703,18 @@ function CrashEffects({ pose, terrain, wind, size }: { pose: MutableRefObject<Po
     windVector(wind, tmp.w);
 
     // Smoke, for a while, thinning out.
-    if (on && !s.water && age < 40 && now >= s.nextSmoke) {
-      s.nextSmoke = now + 0.16 + age * 0.012;
+    // A thin grey wisp for a quarter of a minute. A small electric aircraft
+    // has a battery and some plastic to burn, not a tank of fuel.
+    if (on && !s.water && age < 15 && now >= s.nextSmoke) {
+      s.nextSmoke = now + 0.5 + age * 0.06;
       puff(
-        new THREE.Vector3(s.at.x + (Math.random() - 0.5) * size * 0.5, s.at.y + size * 0.3, s.at.z + (Math.random() - 0.5) * size * 0.5),
-        new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.4 + Math.random() * 0.9, (Math.random() - 0.5) * 0.4),
-        age < 8 ? "#23211f" : "#4d4a45",
-        4.5 + Math.random() * 2.5,
-        size * 1.3,
-        size * 10,
-        0.9 * Math.max(0.3, 1 - age / 40),
+        new THREE.Vector3(s.at.x + (Math.random() - 0.5) * size * 0.3, s.at.y + size * 0.3, s.at.z + (Math.random() - 0.5) * size * 0.3),
+        new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.9 + Math.random() * 0.5, (Math.random() - 0.5) * 0.25),
+        "#8d8a85",
+        2.6 + Math.random() * 1.4,
+        size * 0.5,
+        size * 3.2,
+        0.34 * Math.max(0.2, 1 - age / 15),
         now,
       );
     }

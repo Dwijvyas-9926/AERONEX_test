@@ -1080,3 +1080,50 @@ kbd {
     display: none;
   }
 }
+
+/* A message that leads somewhere: the whole of it is the button. */
+.toast-go {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toast-go p {
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+
+.toast-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: var(--t-sm);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.toast-go:hover .toast-link {
+  text-decoration: underline;
+}
+
+/* The list a message pointed at, picked out for a moment on arrival. */
+@keyframes events-flash {
+  0%,
+  60% {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+[data-events].flash {
+  animation: events-flash 2.4s ease-out;
+}

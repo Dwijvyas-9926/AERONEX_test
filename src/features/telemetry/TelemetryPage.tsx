@@ -138,7 +138,7 @@ export function TelemetryPage() {
                 </div>
               </dl>
             </section>
-            <section className="panel">
+            <section className="panel" data-events>
               <div className="panel-head">
                 <h3>Events and vehicle messages</h3>
               </div>

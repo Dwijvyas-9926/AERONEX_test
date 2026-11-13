@@ -24,10 +24,24 @@ export function Toasts() {
               transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             >
               <Icon />
-              <div>
-                <strong>{t.title}</strong>
-                {t.body && <p>{t.body}</p>}
-              </div>
+              {t.action ? (
+                <button
+                  className="toast-go"
+                  onClick={() => {
+                    t.action?.run();
+                    dismiss(t.id);
+                  }}
+                >
+                  <strong>{t.title}</strong>
+                  {t.body && <p>{t.body}</p>}
+                  <span className="toast-link">{t.action.label}</span>
+                </button>
+              ) : (
+                <div>
+                  <strong>{t.title}</strong>
+                  {t.body && <p>{t.body}</p>}
+                </div>
+              )}
               <button className="icon-btn" onClick={() => dismiss(t.id)} aria-label="Dismiss">
                 <X />
               </button>

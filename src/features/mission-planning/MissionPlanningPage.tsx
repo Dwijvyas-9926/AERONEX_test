@@ -123,7 +123,8 @@ export function MissionPlanningPage() {
   const flyNow = () =>
     order("Fly the mission", async () => {
       await commandLink.uploadMission(mission);
-      await commandLink.setMode(COPTER_MODE.GUIDED);
+      const g = await commandLink.setMode(COPTER_MODE.GUIDED);
+      if (g !== 0) return g;
       const a = await commandLink.arm(true);
       if (a !== 0) return a;
       const m = await commandLink.setMode(COPTER_MODE.AUTO);

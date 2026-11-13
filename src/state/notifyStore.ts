@@ -7,6 +7,8 @@ export interface Toast {
   tone: Tone;
   title: string;
   body?: string;
+  /** Somewhere to go for more: clicking the message runs it. */
+  action?: { label: string; run: () => void };
 }
 
 export interface ConfirmRequest {
@@ -35,13 +37,14 @@ export const useNotify = create<NotifyState>((set) => ({
   clearHistory: () => set({ history: [] }),
 }));
 
-export function notify(tone: Tone, title: string, body?: string) {
-  const t: Toast = { id: ++seq, tone, title, body };
+export function notify(tone: Tone, title: string, body?: string, action?: Toast["action"]) {
+  const t: Toast = { id: ++seq, tone, title, body, action };
   useNotify.setState((s) => ({
     toasts: [...s.toasts, t].slice(-4),
     history: [{ ...t, at: Date.now() }, ...s.history].slice(0, 50),
   }));
-  const ttl = tone === "error" ? 9000 : tone === "warn" ? 7000 : 4500;
+  // One that leads somewhere stays long enough to be read and clicked.
+  const ttl = action ? 12000 : tone === "error" ? 9000 : tone === "warn" ? 7000 : 4500;
   window.setTimeout(() => useNotify.getState().dismiss(t.id), ttl);
 }
 
