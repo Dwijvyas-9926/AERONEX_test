@@ -3,13 +3,14 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { derive, G, PRESETS, type Airframe } from "../../sim/airframe";
 import { MODE, MODE_NAME } from "../../sim/autopilot";
-import { PARAM_DEFS, type Params } from "../../sim/params";
+import { PARAM_DEFS } from "../../sim/params";
 import { euler } from "../../sim/physics";
 import { commandLink, COPTER_MODE } from "../../services/link/commandLink";
 import { linkManager, rememberedParams } from "../../services/link/linkManager";
 import { isPortOpen, useLink } from "../../state/linkStore";
 import { notify } from "../../state/notifyStore";
 import { NumInput } from "../../components/ui/NumInput";
+import { modelledParams } from "../../sim/firmwareParams";
 import { useActiveProfile } from "../../state/profileStore";
 import { planToMission, useSim } from "../../state/simStore";
 import { clockTime } from "../../utils/format";
@@ -79,13 +80,7 @@ export async function order(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-/** Parameters the simulator models, out of a set read from a real aircraft. */
-export function modelledParams(values: Record<string, number> | undefined): Params {
-  const out: Params = {};
-  if (!values) return out;
-  for (const d of PARAM_DEFS) if (Number.isFinite(values[d.name])) out[d.name] = values[d.name];
-  return out;
-}
+export { modelledParams };
 
 function Num({ label, value, onChange, step = 1, min, max, unit, hint }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; unit?: string; hint?: string }) {
   return (

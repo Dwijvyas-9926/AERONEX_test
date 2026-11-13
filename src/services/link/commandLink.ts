@@ -47,6 +47,20 @@ export function missionBlock(): { title: string; body: string } | null {
   return null;
 }
 
+/**
+ * Why the mission on the linked aircraft may not be replaced right now.
+ *
+ * ArduPilot accepts a new mission while it is flying the old one, and carries
+ * on from the same item number in the new list. For someone learning that is
+ * a trap: the aircraft turns towards whatever now sits at that number. A real
+ * aircraft has its mission changed on the ground, disarmed.
+ */
+export function armedBlock(): { title: string; body: string } | null {
+  const l = useLink.getState();
+  if (l.status !== "connected" || l.virtual || !l.vehicle?.armed) return null;
+  return { title: "Disarm before changing the mission", body: "The aircraft is armed. A mission sent now would replace the one it may be flying. Land, disarm, and send again." };
+}
+
 /** Why an aircraft turns a mission down, as MAV_MISSION_RESULT numbers them. */
 const MISSION_RESULT: Record<number, string> = {
   1: "it reported an error",
@@ -73,7 +87,10 @@ export function compareMissions(sent: MissionWire[], got: MissionWire[]): string
     const a = sent[i];
     const b = got[i];
     if (a.command !== b.command) return `Command ${i} was sent as type ${a.command} and reads back as type ${b.command}.`;
-    if (a.frame !== b.frame) return `Command ${i} reads back with a different height reference.`;
+    // A command with no place and no height (return home, land where you are) has no height reference
+    // to compare: ArduPilot stores none for it and reports its own default.
+    const placed = a.x !== 0 || a.y !== 0 || a.z !== 0;
+    if (placed && a.frame !== b.frame) return `Command ${i} reads back with a different height reference.`;
     if (Math.abs(a.z - b.z) > 0.05) return `Command ${i} was sent with a height of ${a.z} m and reads back as ${b.z} m.`;
     // One unit is about a centimetre on the ground.
     if (Math.abs(a.x - b.x) > 2 || Math.abs(a.y - b.y) > 2) return `Command ${i} reads back at a different position.`;
@@ -568,8 +585,9 @@ class CommandLink {
    * acknowledges the set. The same exchange a Pixhawk expects.
    */
   uploadMission(items: MissionWire[]): Promise<void> {
-    // Whatever page asks, a real aircraft without a GPS position is not given a mission.
-    const block = missionBlock();
+    // Whatever page asks, a real aircraft without a GPS position is not given a mission,
+    // and neither is one that is armed.
+    const block = missionBlock() ?? armedBlock();
     if (block) return Promise.reject(new Error(`${block.title}. ${block.body}`));
     const t = this.target();
     this.missionUp?.reject(new Error("Superseded by a newer upload"));

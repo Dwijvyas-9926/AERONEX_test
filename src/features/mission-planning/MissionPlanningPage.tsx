@@ -5,7 +5,7 @@ import { MODE_NAME } from "../../sim/autopilot";
 import { NumInput } from "../../components/ui/NumInput";
 import { defaultParams, type Params } from "../../sim/params";
 import { predict, type FaultKind, type FaultPlan, type Prediction, type Verdict } from "../../sim/predict";
-import { commandLink, missionBlock, COPTER_MODE } from "../../services/link/commandLink";
+import { armedBlock, commandLink, missionBlock, COPTER_MODE } from "../../services/link/commandLink";
 import { linkManager, rememberedParams } from "../../services/link/linkManager";
 import { useLink } from "../../state/linkStore";
 import { confirmAction, notify } from "../../state/notifyStore";
@@ -49,7 +49,7 @@ function NumCell({ value, onChange, min, max, label }: { value: number; onChange
 }
 
 /** Which parameters a prediction should fly on, and where they came from. */
-function useFlightParams(): { params: Params; source: string } {
+function useFlightParams(): { params: Params; source: string; unread: { received: number; count: number | null } | null } {
   const sim = useSim();
   const virtual = useLink((s) => s.virtual);
   const status = useLink((s) => s.status);
@@ -58,12 +58,14 @@ function useFlightParams(): { params: Params; source: string } {
   const received = useParams((s) => s.received);
   return useMemo(() => {
     const base = defaultParams(sim.airframe);
-    if (status === "connected" && virtual && linkManager.sim) return { params: { ...linkManager.sim.ap.params }, source: "the virtual aircraft's current settings" };
-    if (status === "connected" && !virtual && count && received >= count) return { params: { ...base, ...modelledParams(live) }, source: "the settings just read from your aircraft" };
+    if (status === "connected" && virtual && linkManager.sim) return { params: { ...linkManager.sim.ap.params }, source: "the virtual aircraft's current settings", unread: null };
+    if (status === "connected" && !virtual && count && received >= count) return { params: { ...base, ...modelledParams(live) }, source: "the settings just read from your aircraft", unread: null };
+    // A real aircraft is linked and its settings are not all here yet: nothing below is its own.
+    const unread = status === "connected" && !virtual ? { received, count } : null;
     const saved = sim.useAircraftParams ? rememberedParams() : null;
     const got = modelledParams(saved?.values);
-    if (saved && Object.keys(got).length) return { params: { ...base, ...got }, source: `the settings read from your aircraft on ${new Date(saved.at).toLocaleDateString()}` };
-    return { params: base, source: "ArduCopter's default settings, tuned for this airframe" };
+    if (saved && Object.keys(got).length) return { params: { ...base, ...got }, source: `the settings read from your aircraft on ${new Date(saved.at).toLocaleDateString()}`, unread };
+    return { params: base, source: "ArduCopter's default settings, tuned for this airframe", unread };
   }, [sim.airframe, sim.useAircraftParams, status, virtual, live, count, received]);
 }
 
@@ -73,7 +75,23 @@ export function MissionPlanningPage() {
   const status = useLink((s) => s.status);
   const virtual = useLink((s) => s.virtual);
   const linked = status === "connected";
-  const { params, source } = useFlightParams();
+  const { params, source, unread } = useFlightParams();
+  /*
+    The return-home height, the speeds, the fence and the battery failsafe are
+    the aircraft's own settings. With a real aircraft linked they are read
+    before anything is checked or sent, without the reader having to know to
+    open the Parameters page first.
+  */
+  const askedFor = useRef(false);
+  useEffect(() => {
+    if (!unread) {
+      askedFor.current = false;
+      return;
+    }
+    if (askedFor.current || unread.count !== null) return;
+    askedFor.current = true;
+    void commandLink.requestAllParams().catch(() => (askedFor.current = false));
+  }, [unread]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Prediction | null>(null);
   const [wind, setWind] = useState({ speed: 0, from: 270, gust: 30 });
@@ -84,10 +102,10 @@ export function MissionPlanningPage() {
   const dem = useDem();
   const homeSource = useHomeSource((h) => h.source);
   // Looked at a couple of times a second, not at telemetry rate.
-  const [gpsBlock, setGpsBlock] = useState(missionBlock);
+  const [gpsBlock, setGpsBlock] = useState(() => missionBlock() ?? armedBlock());
   useEffect(() => {
     const t = window.setInterval(() => {
-      const b = missionBlock();
+      const b = missionBlock() ?? armedBlock();
       setGpsBlock((was) => (was?.body === b?.body ? was : b));
     }, 700);
     return () => window.clearInterval(t);
@@ -218,9 +236,18 @@ export function MissionPlanningPage() {
       if (!ok) return;
     }
     await order("Send the mission", async () => {
-      await commandLink.uploadMission(mission);
+      let sendError: Error | null = null;
+      await commandLink.uploadMission(mission).catch((e: Error) => {
+        // Over a poor link the aircraft's "got it" can be the message that is lost. A refusal is final;
+        // silence is not: the read-back below decides.
+        if (!/stopped answering/.test(e.message)) throw e;
+        sendError = e;
+      });
       // What matters is what the aircraft holds, so it is read back and compared.
-      const differs = await commandLink.verifyMission(mission);
+      const differs = await commandLink.verifyMission(mission).catch((e: Error) => {
+        throw sendError ?? e;
+      });
+      if (differs && sendError) throw sendError;
       if (differs) throw new Error(`The mission was sent, but the aircraft does not hold what was sent. ${differs} Send it again, and do not fly until it reads back the same.`);
       notify("success", "Mission sent and checked", `${mission.length - 1} commands are on the ${virtual ? "virtual " : ""}aircraft, and reading them back gave the same mission.`);
     });
@@ -278,7 +305,7 @@ export function MissionPlanningPage() {
           <button className="btn" disabled={!linked} onClick={read} title={linked ? undefined : "Connect an aircraft first"}>
             <Download /> Read from aircraft
           </button>
-          <button className="btn btn-primary" disabled={!linked || empty || !!gpsBlock} onClick={send} title={!linked ? "Connect an aircraft first" : gpsBlock ? gpsBlock.title : undefined}>
+          <button className="btn btn-primary" disabled={!linked || empty || !!gpsBlock || !!unread} onClick={send} title={!linked ? "Connect an aircraft first" : gpsBlock ? gpsBlock.title : unread ? "Reading the aircraft's settings first" : undefined}>
             <Upload /> Send to {virtual ? "virtual aircraft" : "aircraft"}
           </button>
         </div>
@@ -327,6 +354,15 @@ export function MissionPlanningPage() {
               </button>
             </div>
           </div>
+          {unread && !gpsBlock && (
+            <div className="callout info mp-away" role="status">
+              <Info />
+              <span>
+                <strong>Reading the aircraft's settings{unread.count ? `: ${unread.received} of ${unread.count}` : ""}.</strong> The return-home height, speeds, fence and battery failsafe are the aircraft's own. The
+                checks here use them, so the mission can be sent once they are all read.
+              </span>
+            </div>
+          )}
           {gpsBlock && (
             <div className="callout warn mp-away" role="status">
               <SatelliteDish />

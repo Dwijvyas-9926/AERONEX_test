@@ -161,3 +161,60 @@ describe("no mission for a real aircraft without a GPS position", () => {
     commandLink.detach();
   });
 });
+
+describe("an armed real aircraft keeps its mission", () => {
+  const set = (armed: boolean, virtual = false) =>
+    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, armed } as never, telemetry: { gps: { at: Date.now(), value: { fixType: 3, satellites: 12, hdop: 1 } } } as never });
+
+  it("refuses a new mission while armed, and writes nothing", async () => {
+    const { commandLink, armedBlock } = await import("../../services/link/commandLink");
+    let wrote = 0;
+    commandLink.attach(async () => void wrote++);
+    set(true);
+    expect(armedBlock()?.title).toBe("Disarm before changing the mission");
+    await expect(commandLink.uploadMission([{ seq: 0, frame: 0, command: 16, p1: 0, p2: 0, p3: 0, p4: 0, x: 1, y: 1, z: 0 }])).rejects.toThrow(/Disarm before changing the mission/);
+    expect(wrote).toBe(0);
+    set(false);
+    expect(armedBlock()).toBeNull();
+    // The virtual aircraft is re-tasked in the air by the simulator page.
+    set(true, true);
+    expect(armedBlock()).toBeNull();
+    commandLink.detach();
+  });
+});
+
+describe("settings from firmware that renamed them", () => {
+  it("gives the app its own names and units from ArduCopter 4.7's", async () => {
+    const { withOlderNames, usesNewerNames } = await import("../../sim/firmwareParams");
+    const v47 = { RTL_ALT_M: 30, WP_SPD: 8, WP_SPD_UP: 2.5, WP_SPD_DN: 1.5, LAND_SPD_MS: 0.5, ATC_ANGLE_MAX: 35, PSC_D_ACC_P: 0.05, PSC_NE_VEL_P: 2, ARMING_SKIPCHK: 0, MAV_SYSID: 1, FENCE_RADIUS: 300 };
+    const out = withOlderNames(v47);
+    expect(usesNewerNames(v47)).toBe(true);
+    expect(out.RTL_ALT).toBe(3000);
+    expect(out.WPNAV_SPEED).toBe(800);
+    expect(out.WPNAV_SPEED_UP).toBe(250);
+    expect(out.WPNAV_SPEED_DN).toBe(150);
+    expect(out.LAND_SPEED).toBe(50);
+    expect(out.ANGLE_MAX).toBe(3500);
+    expect(out.PSC_ACCZ_P).toBeCloseTo(0.5);
+    expect(out.PSC_VELXY_P).toBe(2);
+    expect(out.ARMING_CHECK).toBe(1);
+    expect(withOlderNames({ ARMING_SKIPCHK: -1 }).ARMING_CHECK).toBe(0);
+    expect(out.SYSID_THISMAV).toBe(1);
+    // Untouched names stay as they are.
+    expect(out.FENCE_RADIUS).toBe(300);
+    expect(out.RTL_ALT_M).toBe(30);
+  });
+
+  it("leaves older firmware exactly as it is", async () => {
+    const { withOlderNames, usesNewerNames } = await import("../../sim/firmwareParams");
+    const v46 = { RTL_ALT: 1500, WPNAV_SPEED: 1000, ANGLE_MAX: 3000, ARMING_CHECK: 1 };
+    expect(withOlderNames(v46)).toEqual(v46);
+    expect(usesNewerNames(v46)).toBe(false);
+  });
+
+  it("is what the route profile's return height is taken from", async () => {
+    const { modelledParams } = await import("../../sim/firmwareParams");
+    expect(modelledParams({ RTL_ALT_M: 40, WP_SPD: 6 })).toMatchObject({ RTL_ALT: 4000, WPNAV_SPEED: 600 });
+    expect(modelledParams({ RTL_ALT: 2500 })).toMatchObject({ RTL_ALT: 2500 });
+  });
+});

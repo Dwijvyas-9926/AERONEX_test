@@ -235,3 +235,25 @@ Heights in a mission are metres above home, ArduCopter's default frame. The
 height profile under the map walks the straight lines the autopilot will fly
 and shows where they come closest to the ground. The ground data does not
 include trees, buildings or wires.
+
+## Testing against real ArduCopter
+
+`sitl/` holds tests that connect the app's real serial path to ArduPilot's own
+simulator build of ArduCopter (the same flight code as a Pixhawk, with
+simulated sensors) and do what a user does: link, read the settings, send
+missions, read them back, and fly them while watching where the aircraft goes.
+They are skipped unless pointed at a simulator binary:
+
+```
+git clone --depth 1 --branch Copter-4.7.2 https://github.com/ArduPilot/ardupilot.git
+cd ardupilot && git submodule update --init --recursive --depth 1
+./waf configure --board sitl && ./waf copter
+cd ../AERONEX_test
+SITL_BIN=../ardupilot/build/sitl/bin/arducopter \
+SITL_DEFAULTS=../ardupilot/Tools/autotest/default_params/copter.parm \
+  npx vitest run sitl
+```
+
+They have been run against ArduCopter 4.7.2 and 4.6.3. They do not replace a
+props-off bench test and a cautious first flight with the real aircraft: the
+simulator has no real radio, GPS, compass or motors.
