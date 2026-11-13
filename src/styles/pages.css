@@ -3858,7 +3858,7 @@ input[type="range"]::-moz-range-thumb {
   display: grid;
   gap: 1px;
   border-radius: var(--r-ctl);
-  overflow: hidden;
+
   border: 1px solid var(--line);
   background: var(--line);
 }
@@ -3970,7 +3970,6 @@ input[type="range"]::-moz-range-thumb {
   display: grid;
   gap: 1px;
   border-radius: var(--r-ctl);
-  overflow: hidden;
   border: 1px solid var(--line);
   background: var(--line);
   z-index: 3;
@@ -4679,4 +4678,219 @@ input[type="range"]::-moz-range-thumb {
 
 .rmap-wait {
   color: var(--warn);
+}
+
+/* The tool column is no longer clipped, so its name labels can reach out of it. */
+.rmap-tools button:first-child {
+  border-radius: calc(var(--r-ctl) - 1px) calc(var(--r-ctl) - 1px) 0 0;
+}
+
+.rmap-tools button:last-child {
+  border-radius: 0 0 calc(var(--r-ctl) - 1px) calc(var(--r-ctl) - 1px);
+}
+
+/*
+  A map button's name, beside it, the moment the pointer or the keyboard is on
+  it. An icon alone is a guess; the browser's own tooltip comes too late.
+*/
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctl);
+  background: var(--graphite);
+  color: var(--ink);
+  font: 500 var(--t-xs) / 1.2 var(--font-ui);
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 90ms;
+  z-index: 6;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+}
+
+.fmap-zoom button:first-child {
+  border-radius: calc(var(--r-ctl) - 1px) calc(var(--r-ctl) - 1px) 0 0;
+}
+
+.fmap-zoom button:last-child {
+  border-radius: 0 0 calc(var(--r-ctl) - 1px) calc(var(--r-ctl) - 1px);
+}
+
+/* ------------------------------------------------------------------------
+   Planner layout: the plan at a glance, and one panel at a time beside the map.
+   ------------------------------------------------------------------------ */
+.mp-glance {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 var(--s5);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-panel);
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.mp-glance > div {
+  display: grid;
+  gap: 2px;
+  padding: var(--s3) var(--s4);
+  background: var(--graphite);
+  min-width: 0;
+}
+
+.mp-glance dt {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-glance dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.mp-glance dd small {
+  margin-left: 4px;
+  font-family: var(--font-ui);
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+
+.mp-glance dd.word,
+.mp-glance dd.na {
+  font-family: var(--font-ui);
+  font-size: var(--t-base);
+  line-height: 1.6;
+}
+
+.mp-glance dd.na {
+  color: var(--faint);
+}
+
+.mp-glance dd.warn {
+  color: var(--warn);
+}
+
+.mp-glance dd.bad {
+  color: var(--danger);
+}
+
+@media (max-width: 1100px) {
+  .mp-glance {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .mp-glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.mp-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-panel);
+  background: var(--midnight-deep);
+}
+
+.mp-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  border: 0;
+  border-radius: calc(var(--r-panel) - 4px);
+  background: none;
+  color: var(--muted);
+  font: 600 var(--t-sm) var(--font-ui);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+
+.mp-tabs button:hover {
+  color: var(--ink);
+}
+
+.mp-tabs button[aria-selected="true"] {
+  background: var(--slate);
+  color: var(--ink);
+}
+
+.mp-tabs svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.mp-dot.warn {
+  background: var(--warn);
+}
+
+.mp-dot.bad {
+  background: var(--danger);
+}
+
+/* The map credit folds into a small button, as the map library provides. */
+.rmap .maplibregl-ctrl-attrib.maplibregl-compact {
+  min-height: 22px;
+  margin: 0 8px 8px 0;
+  border-radius: 11px;
+}
+
+.rmap .maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-button {
+  background-color: rgba(242, 232, 214, 0.75);
+  border-radius: 50%;
+}
+
+.rmap .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  padding-right: 28px;
+}
+
+/* A panel that is not the chosen tab is not there at all. */
+.panel[hidden] {
+  display: none;
+}
+
+/* The prediction's report sits under its form, in the same column. */
+.mp-result.in-col {
+  margin-top: 0;
+}
+
+.mp-result.in-col .mp-cols {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s5);
 }

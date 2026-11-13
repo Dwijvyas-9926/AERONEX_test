@@ -210,7 +210,7 @@ export const GUIDES: Record<string, Guide> = {
       "Click the map to place waypoints. Drag a marker to move it. Undo is Ctrl Z; the arrows in the list change the order.",
       "Set each waypoint's height, and choose how the mission ends.",
       "Read the height profile under the map and the plan check under the list. They show the ground along the whole route and anything wrong that the numbers alone reveal.",
-      "Set the wind and the battery charge you expect, and optionally something that goes wrong. Press Predict the flight.",
+      "Open the Predict tab. Set the wind and the battery charge you expect, and optionally something that goes wrong. Press Predict the flight.",
       "Fix the plan or the settings and predict again. Then send it to the aircraft: the app asks first and reads the mission back to check it.",
       "Save the plan to a file to keep it or to open it in Mission Planner or QGroundControl.",
       "Flying somewhere without internet? Open Layers on the map and save the area first.",

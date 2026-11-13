@@ -41,6 +41,74 @@ function shade(terrain: Terrain, n: number, e: number, h: number, slope: number,
  * A square patch of terrain. `skipInside` leaves a hole for a finer patch to
  * fill, so two resolutions never fight for the same pixels.
  */
+/** The near ground mesh: how far it reaches from home and how finely it is cut. */
+export const NEAR_HALF = 780;
+export const NEAR_SEGS = 230;
+export const FAR_HALF = 7000;
+export const FAR_SEGS = 190;
+/** The far mesh sits a little low so the near one always wins where they overlap. */
+export const FAR_DROP = 0.7;
+
+function cellHeight(terrain: Terrain, n: number, e: number, half: number, segs: number): number {
+  const step = (half * 2) / segs;
+  const i = Math.max(0, Math.min(segs - 1, Math.floor((e + half) / step)));
+  const j = Math.max(0, Math.min(segs - 1, Math.floor((half - n) / step)));
+  const e0 = -half + i * step;
+  const n0 = half - j * step;
+  const u = Math.max(0, Math.min(1, (e - e0) / step));
+  const v = Math.max(0, Math.min(1, (n0 - n) / step));
+  const tl = terrain.land(n0, e0);
+  const tr = terrain.land(n0, e0 + step);
+  const bl = terrain.land(n0 - step, e0);
+  const br = terrain.land(n0 - step, e0 + step);
+  // The same two triangles terrainGeometry cuts each square into.
+  return u + v <= 1 ? tl + u * (tr - tl) + v * (bl - tl) : br + (1 - u) * (bl - br) + (1 - v) * (tr - br);
+}
+
+/**
+ * The height of the ground as it is drawn, which is flat triangles between
+ * the points the terrain was sampled at, and so not quite the terrain itself.
+ * Anything laid on the ground must follow this, or the ground cuts through it.
+ */
+export function drawnGround(terrain: Terrain, n: number, e: number): number {
+  return Math.max(Math.abs(n), Math.abs(e)) < NEAR_HALF ? cellHeight(terrain, n, e, NEAR_HALF, NEAR_SEGS) : cellHeight(terrain, n, e, FAR_HALF, FAR_SEGS) - FAR_DROP;
+}
+
+/**
+ * A disc or ring that lies on the drawn ground, following its slope, centred
+ * n metres north and e east of home. A flat disc on sloping ground is half
+ * buried; this one is whole wherever it is put. Its picture, if it has one,
+ * maps as on a flat disc.
+ */
+export function drapedRing(terrain: Terrain, n: number, e: number, inner: number, outer: number, lift = 0.06, around = 64, across = 6): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let r = 0; r <= across; r++) {
+    const rad = inner + ((outer - inner) * r) / across;
+    for (let a = 0; a <= around; a++) {
+      const t = (a / around) * Math.PI * 2;
+      const de = Math.cos(t) * rad;
+      const dn = Math.sin(t) * rad;
+      pos.push(e + de, drawnGround(terrain, n + dn, e + de) + lift, -(n + dn));
+      uv.push(0.5 + de / (2 * outer), 0.5 + dn / (2 * outer));
+    }
+  }
+  const row = around + 1;
+  for (let r = 0; r < across; r++) {
+    for (let a = 0; a < around; a++) {
+      const k = r * row + a;
+      idx.push(k, k + 1, k + row, k + 1, k + row + 1, k + row);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 export function terrainGeometry(terrain: Terrain, half: number, segs: number, uvMetres: number, skipInside = 0): THREE.BufferGeometry {
   const side = segs + 1;
   const pos = new Float32Array(side * side * 3);

@@ -32,7 +32,9 @@ const GCS = { sysid: 255, compid: 190 };
 export function missionBlock(): { title: string; body: string } | null {
   const l = useLink.getState();
   if (l.status !== "connected" || l.virtual) return null;
-  const g = l.telemetry.gps?.value;
+  const seen = l.telemetry.gps;
+  // A GPS that was reporting and has gone quiet, unplugged or failed, is no GPS.
+  const g = seen && Date.now() - seen.at < 8000 ? seen.value : null;
   if (!g || g.fixType <= 0) {
     return { title: "Connect a GPS to fly a mission", body: "The flight controller is not reporting a GPS. Plug a GPS module into its GPS port, power the aircraft again, and take it outdoors. A mission cannot be sent or started without one." };
   }

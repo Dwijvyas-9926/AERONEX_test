@@ -117,8 +117,8 @@ describe("home follows a linked aircraft", () => {
 });
 
 describe("no mission for a real aircraft without a GPS position", () => {
-  const gps = (fixType: number | null, virtual = false, satellites: number | null = 5) =>
-    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, armed: false } as never, telemetry: (fixType === null ? {} : { gps: { at: 0, value: { fixType, satellites, hdop: 2 } } }) as never });
+  const gps = (fixType: number | null, virtual = false, satellites: number | null = 5, age = 0) =>
+    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, armed: false } as never, telemetry: (fixType === null ? {} : { gps: { at: Date.now() - age, value: { fixType, satellites, hdop: 2 } } }) as never });
   const mission = [{ seq: 0, frame: 0, command: 16, p1: 0, p2: 0, p3: 0, p4: 0, x: 1, y: 1, z: 0 }];
 
   it("asks for a GPS when none reports, and for patience when it has no fix", async () => {
@@ -135,6 +135,9 @@ describe("no mission for a real aircraft without a GPS position", () => {
     expect(missionBlock()).toBeNull();
     gps(6);
     expect(missionBlock()).toBeNull();
+    // A good fix that stopped arriving ten seconds ago is a GPS that has gone.
+    gps(3, false, 12, 10000);
+    expect(missionBlock()?.title).toBe("Connect a GPS to fly a mission");
   });
 
   it("lets the virtual aircraft fly without one, and says nothing when nothing is linked", async () => {

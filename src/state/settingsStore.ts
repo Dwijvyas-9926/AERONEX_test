@@ -10,6 +10,8 @@ interface SettingsState {
   graphics: GraphicsPreset;
   units: Units;
   sidebarCollapsed: boolean;
+  /** Which section of the side menu is open: one at a time, or none. */
+  navOpen: string | null;
   /** BYOK: the user's own Anthropic API key for the Ask the Doctor chat. Stored only in this browser. */
   aiKey: string;
   aiModel: string;
@@ -28,6 +30,7 @@ export const useSettings = create<SettingsState>()(
       graphics: "high",
       units: "metric",
       sidebarCollapsed: false,
+      navOpen: null,
       aiKey: "",
       aiModel: DEFAULT_AI_MODEL,
       set: (k, v) => set({ [k]: v } as Partial<SettingsState>),

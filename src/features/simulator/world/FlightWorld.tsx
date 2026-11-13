@@ -1,6 +1,6 @@
 import { Line, OrbitControls, PerformanceMonitor, Sky } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -15,7 +15,7 @@ import type { Terrain } from "../../../sim/terrain";
 import { GRAPHICS, type GraphicsPreset } from "../../../state/settingsStore";
 import type { Ending, PlanPoint } from "../../../state/simStore";
 import { applyTwinMaterials } from "../../digital-twin/twinMaterials";
-import { blobTexture, cloudTexture, groundDetail, labelTexture, padTexture, plantTrees, smokeTexture, terrainGeometry } from "./landscape";
+import { blobTexture, cloudTexture, drapedRing, drawnGround, FAR_DROP, FAR_HALF, FAR_SEGS, groundDetail, labelTexture, NEAR_HALF, NEAR_SEGS, padTexture, plantTrees, smokeTexture, terrainGeometry } from "./landscape";
 
 /*
   The world the virtual aircraft flies in.
@@ -73,8 +73,8 @@ function Ground({ terrain, shadows }: { terrain: Terrain; shadows: boolean }) {
     const detail = groundDetail();
     const detailFar = groundDetail();
     return {
-      near: terrainGeometry(terrain, 780, 230, 7),
-      far: terrainGeometry(terrain, 7000, 190, 110, 700),
+      near: terrainGeometry(terrain, NEAR_HALF, NEAR_SEGS, 7),
+      far: terrainGeometry(terrain, FAR_HALF, FAR_SEGS, 110, 700),
       detail,
       detailFar,
     };
@@ -93,7 +93,7 @@ function Ground({ terrain, shadows }: { terrain: Terrain; shadows: boolean }) {
       <mesh geometry={parts.near} receiveShadow={shadows}>
         <meshStandardMaterial vertexColors map={parts.detail} roughness={0.96} metalness={0} />
       </mesh>
-      <mesh geometry={parts.far} position={[0, -0.7, 0]}>
+      <mesh geometry={parts.far} position={[0, -FAR_DROP, 0]}>
         <meshStandardMaterial vertexColors map={parts.detailFar} roughness={1} metalness={0} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, terrain.waterLevel, 0]}>
@@ -300,25 +300,38 @@ function Tag({ text, position, tone = "accent", size = 0.045 }: { text: string; 
   );
 }
 
-function HomeBase({ wind }: { wind: { speed: number; fromDeg: number } }) {
+/** A ring or disc painted on the ground, lying on it whatever the slope. */
+function GroundRing({ terrain, n, e, inner, outer, color, opacity, lift = 0.06 }: { terrain: Terrain; n: number; e: number; inner: number; outer: number; color: string; opacity: number; lift?: number }) {
+  const g = useMemo(() => drapedRing(terrain, n, e, inner, outer, lift, 48, inner > 0 ? 2 : 5), [terrain, n, e, inner, outer, lift]);
+  useEffect(() => () => g.dispose(), [g]);
+  return (
+    <mesh geometry={g}>
+      <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function HomeBase({ wind, terrain }: { wind: { speed: number; fromDeg: number }; terrain: Terrain }) {
   const pad = useMemo(() => padTexture(), []);
+  // The pad lies on the ground as drawn, slope and all: a flat disc on a slope is half buried.
+  const disc = useMemo(() => drapedRing(terrain, 0, 0, 0, 2.6, 0.05, 64, 8), [terrain]);
+  useEffect(() => () => disc.dispose(), [disc]);
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
-        <circleGeometry args={[2.6, 48]} />
-        <meshStandardMaterial map={pad} roughness={0.9} />
+      <mesh geometry={disc} receiveShadow>
+        <meshStandardMaterial map={pad} roughness={0.9} side={THREE.DoubleSide} />
       </mesh>
       {Array.from({ length: 8 }, (_, i) => {
         const a = (i / 8) * Math.PI * 2;
         return (
-          <mesh key={i} position={[Math.cos(a) * 3.1, 0.08, Math.sin(a) * 3.1]}>
+          <mesh key={i} position={[Math.cos(a) * 3.1, drawnGround(terrain, -Math.sin(a) * 3.1, Math.cos(a) * 3.1) + 0.08, Math.sin(a) * 3.1]}>
             <sphereGeometry args={[0.07, 10, 8]} />
             <meshBasicMaterial color={i % 2 ? "#ffd27a" : "#7fd6ff"} />
           </mesh>
         );
       })}
       {/* The ground station: a shelter, a table and an antenna mast, for a sense of scale. */}
-      <group position={[8.5, 0, 6]} rotation={[0, -0.5, 0]}>
+      <group position={[8.5, drawnGround(terrain, -6, 8.5), 6]} rotation={[0, -0.5, 0]}>
         <mesh position={[0, 1.15, 0]} castShadow receiveShadow>
           <boxGeometry args={[3.2, 2.3, 2.4]} />
           <meshStandardMaterial color="#b9b3a4" roughness={0.9} />
@@ -383,15 +396,13 @@ function Route({ terrain, route, takeoffAlt, ending, pose, fenceRadius }: { terr
         const g = terrain.surface(p.n, p.e);
         const h = Math.max(0.5, p.alt - g);
         return (
-          <group key={p.id} position={[p.e, 0, -p.n]}>
+          <Fragment key={p.id}>
+          <GroundRing terrain={terrain} n={p.n} e={p.e} inner={0.9} outer={1.15} color={ACCENT} opacity={0.7} />
+          <group position={[p.e, 0, -p.n]}>
             {/* A post from the ground to the waypoint: its height above what is under it. */}
             <mesh position={[0, g + h / 2, 0]}>
               <cylinderGeometry args={[0.07, 0.07, h, 6]} />
               <meshBasicMaterial color={ACCENT} transparent opacity={0.45} />
-            </mesh>
-            <mesh position={[0, g + 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[0.9, 1.15, 28]} />
-              <meshBasicMaterial color={ACCENT} transparent opacity={0.7} side={THREE.DoubleSide} />
             </mesh>
             <mesh ref={(m) => void (rings.current[i] = m)} position={[0, p.alt, 0]} rotation={[-Math.PI / 2, 0, 0]}>
               <torusGeometry args={[2, 0.09, 8, 40]} />
@@ -399,16 +410,17 @@ function Route({ terrain, route, takeoffAlt, ending, pose, fenceRadius }: { terr
             </mesh>
             <Tag text={`${i + 1}  ${Math.round(p.alt)} m`} position={[0, p.alt + 2.6, 0]} />
           </group>
+          </Fragment>
         );
       })}
+      {last && ending === "land" && (
+        <>
+          <GroundRing terrain={terrain} n={last.n} e={last.e} inner={0} outer={2.2} color="#9fd45a" opacity={0.22} lift={0.07} />
+          <GroundRing terrain={terrain} n={last.n} e={last.e} inner={2.4} outer={3} color="#9fd45a" opacity={0.9} lift={0.08} />
+        </>
+      )}
       {last && ending !== "rtl" && (
         <group position={[last.e, terrain.surface(last.n, last.e), -last.n]}>
-          {ending === "land" && (
-            <mesh position={[0, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[2.4, 3, 40]} />
-              <meshBasicMaterial color="#9fd45a" transparent opacity={0.85} side={THREE.DoubleSide} />
-            </mesh>
-          )}
           <Tag text={ending === "land" ? "LAND" : "HOVER"} position={[0, ending === "land" ? 2 : last.alt - terrain.surface(last.n, last.e) + 5.4, 0]} tone="active" size={0.04} />
         </group>
       )}
@@ -957,7 +969,7 @@ export default function FlightWorld(props: FlightWorldProps) {
       <Ground terrain={props.terrain} shadows={shadows} />
       <Trees terrain={props.terrain} shadows={shadows} max={trees} />
       <Clouds wind={props.wind} />
-      <HomeBase wind={props.wind} />
+      <HomeBase wind={props.wind} terrain={props.terrain} />
       <Route terrain={props.terrain} route={props.route} takeoffAlt={props.takeoffAlt} ending={props.ending} pose={pose} fenceRadius={props.fenceRadius} />
       <WindStreaks wind={props.wind} pose={pose} />
       <Flight {...props} pose={pose} env={env} shadows={shadows} />

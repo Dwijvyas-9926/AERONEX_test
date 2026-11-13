@@ -167,7 +167,7 @@ export default function RealMap(props: RealMapProps) {
         zoom: 15,
         maxPitch: 75,
         // The ground heights are used whatever picture is shown, so they are always credited.
-        attributionControl: { compact: false, customAttribution: ELEVATION.attribution },
+        attributionControl: { compact: true, customAttribution: ELEVATION.attribution },
         // The picture is all there is to see: no need to keep drawing copies of the world.
         renderWorldCopies: false,
       });
@@ -441,19 +441,19 @@ export default function RealMap(props: RealMapProps) {
       <div ref={box} className="rmap-canvas" role="application" aria-label="Map of the route. Click to add a waypoint; drag a marker to move it." />
 
       <div className="rmap-tools" role="group" aria-label="Map controls">
-        <button onClick={() => zoom(1)} aria-label="Zoom in" title="Zoom in"><Plus /></button>
-        <button onClick={() => zoom(-1)} aria-label="Zoom out" title="Zoom out"><Minus /></button>
-        <button onClick={() => fit()} aria-label="Fit the route" title="Fit the route"><Maximize /></button>
-        <button onClick={() => prefs.set("relief3d", !prefs.relief3d)} aria-pressed={prefs.relief3d} aria-label="3D ground" title="Tilt the map and raise the ground"><Mountain /></button>
+        <button onClick={() => zoom(1)} aria-label="Zoom in" data-tip="Zoom in"><Plus /></button>
+        <button onClick={() => zoom(-1)} aria-label="Zoom out" data-tip="Zoom out"><Minus /></button>
+        <button onClick={() => fit()} aria-label="Fit the route" data-tip="Show the whole route"><Maximize /></button>
+        <button onClick={() => prefs.set("relief3d", !prefs.relief3d)} aria-pressed={prefs.relief3d} aria-label="3D ground" data-tip={prefs.relief3d ? "Back to the flat map" : "3D ground"}><Mountain /></button>
         {props.onMoveHome && !homeLocked && (
-          <button onClick={() => setPlacing(!placing)} aria-pressed={placing} aria-label="Put home here" title="Put home here: then click the map where the aircraft will take off"><HomeIcon /></button>
+          <button onClick={() => setPlacing(!placing)} aria-pressed={placing} aria-label="Put home here" data-tip="Put home: then click the take-off spot"><HomeIcon /></button>
         )}
         {hasAircraft ? (
-          <button onClick={() => mapRef.current?.flyTo({ center: [pos!.lon, pos!.lat], zoom: Math.max(16, mapRef.current.getZoom()) })} aria-label="Go to the aircraft" title="Go to the aircraft, where its GPS says it is"><Navigation /></button>
+          <button onClick={() => mapRef.current?.flyTo({ center: [pos!.lon, pos!.lat], zoom: Math.max(16, mapRef.current.getZoom()) })} aria-label="Go to the aircraft" data-tip="Go to the aircraft"><Navigation /></button>
         ) : (
-          <button onClick={toMe} aria-label="Go to this computer's location" title={linked && !virtual ? "The aircraft has no GPS position yet. This goes to this computer's location instead." : "Go to this computer's location. Link an aircraft and this goes to the aircraft instead."}><LocateFixed /></button>
+          <button onClick={toMe} aria-label="Go to this computer's location" data-tip={linked && !virtual ? "No aircraft GPS yet: go to this computer's location" : "Go to this computer's location"}><LocateFixed /></button>
         )}
-        <button onClick={() => setPanel(!panel)} aria-pressed={panel} aria-label="Layers and offline maps" title="Layers and offline maps"><Layers /></button>
+        <button onClick={() => setPanel(!panel)} aria-pressed={panel} aria-label="Layers and offline maps" data-tip="Map picture and offline areas"><Layers /></button>
       </div>
 
       {panel && (

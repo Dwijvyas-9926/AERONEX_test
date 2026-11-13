@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, SatelliteDish, Globe, Info, LandPlot, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CirclePause, Home as HomeIcon, PlaneLanding, PlaneTakeoff, CircleCheck, CircleX, Download, FlaskConical, FolderOpen, SatelliteDish, Globe, Info, LandPlot, ListChecks, Play, Redo2, Save, Trash2, TriangleAlert, Undo2, Upload, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { MODE_NAME } from "../../sim/autopilot";
@@ -16,7 +16,7 @@ import { makeTerrain, type TerrainKind } from "../../sim/terrain";
 import { modelledParams, order } from "../simulator/SimulatorPage";
 import { covers, realTerrain } from "../../geo/elevation";
 import { fmtLatLon, toGlobal, toLocal, type LatLon } from "../../geo/geo";
-import { checkPlan } from "../../geo/planCheck";
+import { checkPlan, flightSeconds } from "../../geo/planCheck";
 import { useHomeSource } from "../../services/link/homeFollow";
 import { fromWaypointFile, saveText, toWaypointFile } from "../../geo/planFile";
 import { routeProfile } from "../../geo/profile";
@@ -118,13 +118,14 @@ export function MissionPlanningPage() {
   const terrain = useMemo(() => simWorld ?? (sim.terrain === "real" ? (measured ?? FIELD) : makeTerrain(sim.terrain)), [simWorld, sim.terrain, measured]);
   const mission = useMemo(() => planToMission(sim.home, sim.takeoffAlt, sim.points, sim.ending), [sim.home, sim.takeoffAlt, sim.points, sim.ending]);
   const length = routeLength(sim.points, sim.ending);
-  const cruise = params.WPNAV_SPEED / 100;
   // The last waypoint carries its command on the map as well as in the list.
   const lastTag = sim.ending === "land" ? " Land" : sim.ending === "hold" ? " Hover" : "";
   const route = useMemo(() => sim.points.map((p, i) => ({ id: p.id, n: p.n, e: p.e, label: String(i + 1), tag: i === sim.points.length - 1 ? lastTag.trim() : "" })), [sim.points, lastTag]);
   const empty = sim.points.length === 0;
   // Measured ground stops somewhere. Past it the heights are not known, and must not be shown as if they were.
   const beyond = terrain.reach !== undefined && farthest > terrain.reach && (!!simWorld || dem.status !== "loading");
+  // A prediction is for the home it was made from.
+  useEffect(() => setResult(null), [homeLat, homeLon]);
   const groundKnown = loaded && !(terrain.reach !== undefined && farthest > terrain.reach);
   const profile = useMemo(() => routeProfile(sim.points, sim.takeoffAlt, sim.ending, params.RTL_ALT / 100, terrain.surface), [sim.points, sim.takeoffAlt, sim.ending, params.RTL_ALT, terrain]);
   const low = useMemo(() => (profile.lowest && groundKnown && profile.lowest.clear < CLEAR_WARN ? { n: profile.lowest.n, e: profile.lowest.e, clear: profile.lowest.clear } : null), [profile, groundKnown]);
@@ -139,6 +140,7 @@ export function MissionPlanningPage() {
     [sim.points, sim.takeoffAlt, sim.ending, params, sim.airframe, profile, groundKnown, real, beyond, terrain],
   );
   const [allAlt, setAllAlt] = useState(30);
+  const [tab, setTab] = useState<"plan" | "predict">("plan");
   const fileBox = useRef<HTMLInputElement>(null);
 
   const moveHome = (to: LatLon) => {
@@ -270,7 +272,7 @@ export function MissionPlanningPage() {
       <header className="page-head">
         <div>
           <h1>Mission Planning</h1>
-          <p>Lay out a route on the real map, see how it clears the ground, then fly it in the simulator before the aircraft does: with your wind, your battery, and the failure you are worried about.</p>
+          <p>Draw the route, check it against the ground, predict the flight, then send it to the aircraft.</p>
         </div>
         <div className="actions">
           <button className="btn" disabled={!linked} onClick={read} title={linked ? undefined : "Connect an aircraft first"}>
@@ -281,6 +283,36 @@ export function MissionPlanningPage() {
           </button>
         </div>
       </header>
+
+      {/* The plan in six numbers, so the state of it can be read without reading the page. */}
+      <dl className="mp-glance" aria-label="The plan at a glance">
+        <div>
+          <dt>Waypoints</dt>
+          <dd>{sim.points.length}</dd>
+        </div>
+        <div>
+          <dt>Route</dt>
+          <dd>{empty ? "–" : length >= 1000 ? <>{(length / 1000).toFixed(2)}<small>km</small></> : <>{Math.round(length)}<small>m</small></>}</dd>
+        </div>
+        <div title="Take-off, the legs at cruise speed, the waits and the landing. The prediction gives the real figure.">
+          <dt>Flight time, about</dt>
+          <dd>{empty ? "–" : clock(flightSeconds({ points: sim.points, takeoffAlt: sim.takeoffAlt, ending: sim.ending, params, profile }))}</dd>
+        </div>
+        <div>
+          <dt>Highest point</dt>
+          <dd>{Math.round(Math.max(sim.takeoffAlt, ...sim.points.map((w) => w.alt)))}<small>m above home</small></dd>
+        </div>
+        <div title="The closest the whole route comes to the ground, not only at the waypoints.">
+          <dt>Closest to the ground</dt>
+          <dd className={!profile.lowest || !groundKnown ? "na" : profile.lowest.clear < 0 ? "bad" : profile.lowest.clear < CLEAR_WARN ? "warn" : undefined}>
+            {!profile.lowest ? "–" : !groundKnown ? "not known" : <>{Math.round(profile.lowest.clear)}<small>m</small></>}
+          </dd>
+        </div>
+        <div title={fmtLatLon(sim.home)}>
+          <dt>Home</dt>
+          <dd className="word">{simWorld ? "Virtual aircraft" : homeSource === "aircraft" ? "Aircraft GPS" : homeSource === "waiting" ? "Waiting for GPS" : real ? "Placed by you" : "Practice field"}</dd>
+        </div>
+      </dl>
 
       <div className="mp-grid">
         <section className="panel mp-map">
@@ -294,9 +326,6 @@ export function MissionPlanningPage() {
                 <LandPlot /> Practice field
               </button>
             </div>
-            <span className="muted mp-sum" style={{ fontSize: "var(--t-sm)" }}>
-              {empty ? "No waypoints yet" : `${sim.points.length} waypoints, ${length >= 1000 ? `${(length / 1000).toFixed(2)} km` : `${Math.round(length)} m`}, about ${clock(length / cruise + sim.takeoffAlt / 2.5 + 30)} at ${cruise.toFixed(0)} m/s`}
-            </span>
           </div>
           {gpsBlock && (
             <div className="callout warn mp-away" role="status">
@@ -360,7 +389,18 @@ export function MissionPlanningPage() {
         </section>
 
         <div className="stack">
-          <section className="panel">
+          {/* One thing at a time beside the map: the plan, or the prediction of it. */}
+          <div className="mp-tabs" role="tablist" aria-label="Plan or prediction">
+            <button role="tab" id="mp-tab-plan" aria-selected={tab === "plan"} aria-controls="mp-plan" onClick={() => setTab("plan")}>
+              <ListChecks /> Plan
+              {checks.some((c) => c.sev === "bad") ? <i className="mp-dot bad" title="The plan check found a problem" /> : checks.some((c) => c.sev === "warn") ? <i className="mp-dot warn" title="The plan check has warnings" /> : null}
+            </button>
+            <button role="tab" id="mp-tab-predict" aria-selected={tab === "predict"} aria-controls="mp-predict" onClick={() => setTab("predict")}>
+              <FlaskConical /> Predict
+              {result && v ? <i className={`mp-dot ${v.tone}`} title={v.title} /> : null}
+            </button>
+          </div>
+          <section className="panel" id="mp-plan" role="tabpanel" aria-labelledby="mp-tab-plan" hidden={tab !== "plan"}>
             <div className="panel-head">
               <h3>Plan</h3>
               <div className="mp-tools" role="group" aria-label="Plan tools">
@@ -507,16 +547,6 @@ export function MissionPlanningPage() {
                   <span className="muted">m</span>
                 </div>
               )}
-              {sim.points.length > 1 && (
-                <div className="mp-line">
-                  <span className="mp-step">Every height</span>
-                  <NumCell label="Height for every waypoint" value={allAlt} min={2} max={500} onChange={setAllAlt} />
-                  <span className="muted">m</span>
-                  <button className="btn btn-sm" onClick={() => { sim.setAllHeights(allAlt); setResult(null); }}>
-                    Set all waypoints
-                  </button>
-                </div>
-              )}
               <div className="mp-line">
                 <span className="mp-step">At the end</span>
                 <div className="segmented" role="group" aria-label="How the mission ends">
@@ -533,6 +563,16 @@ export function MissionPlanningPage() {
                   ))}
                 </div>
               </div>
+              {sim.points.length > 1 && (
+                <div className="mp-line">
+                  <span className="mp-step">Every height</span>
+                  <NumCell label="Height for every waypoint" value={allAlt} min={2} max={500} onChange={setAllAlt} />
+                  <span className="muted">m</span>
+                  <button className="btn btn-sm" onClick={() => { sim.setAllHeights(allAlt); setResult(null); }}>
+                    Set all waypoints
+                  </button>
+                </div>
+              )}
               {!empty && (
                 <div className="mp-check" aria-live="polite">
                   <h4>Plan check</h4>
@@ -554,10 +594,9 @@ export function MissionPlanningPage() {
             </div>
           </section>
 
-          <section className="panel">
+          <section className="panel" id="mp-predict" role="tabpanel" aria-labelledby="mp-tab-predict" hidden={tab !== "predict"}>
             <div className="panel-head">
               <h3>Predict this flight</h3>
-              <FlaskConical size={18} color="var(--muted)" />
             </div>
             <div className="panel-body mp-predict">
               <p className="mp-source">
@@ -633,69 +672,69 @@ export function MissionPlanningPage() {
               </div>
             </div>
           </section>
+          {result && v && tab === "predict" && (
+            <section className={`panel mp-result in-col ${v.tone}`} aria-live="polite">
+              <div className="mp-verdict">
+                {v.tone === "ok" ? <CircleCheck /> : v.tone === "bad" ? <CircleX /> : <TriangleAlert />}
+                <div>
+                  <h3>{v.title}</h3>
+                  <p>{result.headline}</p>
+                </div>
+              </div>
+              {result.verdict !== "refused" && result.verdict !== "grounded" && (
+                <dl className="readouts mp-stats">
+                  <div className="readout"><dt>Flight time</dt><dd>{clock(result.stats.durationS)}</dd></div>
+                  <div className="readout"><dt>Distance flown</dt><dd>{result.stats.distanceM >= 1000 ? (result.stats.distanceM / 1000).toFixed(2) : Math.round(result.stats.distanceM)}<small>{result.stats.distanceM >= 1000 ? "km" : "m"}</small></dd></div>
+                  <div className="readout"><dt>Battery left</dt><dd className={result.stats.endSoc < 0.2 ? "bad" : undefined}>{Math.round(result.stats.endSoc * 100)}<small>%</small></dd></div>
+                  <div className="readout"><dt>Battery used</dt><dd>{Math.round(result.stats.usedMah)}<small>mAh</small></dd></div>
+                  <div className="readout"><dt>Lowest voltage</dt><dd>{result.stats.minVolts.toFixed(1)}<small>V</small></dd></div>
+                  <div className="readout"><dt>Peak current</dt><dd>{Math.round(result.stats.maxAmps)}<small>A</small></dd></div>
+                  <div className="readout"><dt>Top speed</dt><dd>{result.stats.maxSpeed.toFixed(1)}<small>m/s</small></dd></div>
+                  <div className="readout"><dt>Steepest lean</dt><dd>{Math.round(result.stats.maxLeanDeg)}<small>°</small></dd></div>
+                  <div className="readout"><dt>Peak throttle</dt><dd className={result.stats.maxThrottle > 0.9 ? "bad" : undefined}>{Math.round(result.stats.maxThrottle * 100)}<small>%</small></dd></div>
+                  <div className="readout"><dt>Commands done</dt><dd>{result.stats.reached.length}<small>of {result.stats.commands}</small></dd></div>
+                </dl>
+              )}
+              <div className="mp-cols">
+                <div>
+                  <h4>What it means</h4>
+                  <ul className="mp-findings">
+                    {result.findings.map((f) => (
+                      <li key={f.text} className={f.sev}>
+                        {f.text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h4>What happened, in order</h4>
+                  <ol className="mp-timeline">
+                    {result.events
+                      .filter((e) => e.kind && e.kind !== "prearm")
+                      .map((e, i) => (
+                        <li key={i} className={e.sev}>
+                          <span className="num">{clock(e.t)}</span>
+                          {e.text}
+                        </li>
+                      ))}
+                  </ol>
+                </div>
+              </div>
+              <p className="mp-caveat">
+                A prediction from a model of ArduCopter with no obstacles or sensor noise.{" "}
+                {real && groundKnown
+                  ? "The ground is measured data of about 30 m detail, typically right to 10 m; trees, buildings and wires are not in it."
+                  : real
+                    ? "The ground heights were not loaded, so it flew over level ground."
+                    : "The ground is the practice landscape, not a real place."}{" "}
+                The final mode was {MODE_NAME[result.track.at(-1)?.mode ?? 0] ?? "unknown"}.
+                Use it to find mistakes in a plan and its settings, not as a promise.
+              </p>
+            </section>
+          )}
         </div>
       </div>
 
-      {result && v && (
-        <section className={`panel mp-result ${v.tone}`} aria-live="polite">
-          <div className="mp-verdict">
-            {v.tone === "ok" ? <CircleCheck /> : v.tone === "bad" ? <CircleX /> : <TriangleAlert />}
-            <div>
-              <h3>{v.title}</h3>
-              <p>{result.headline}</p>
-            </div>
-          </div>
-          {result.verdict !== "refused" && result.verdict !== "grounded" && (
-            <dl className="readouts mp-stats">
-              <div className="readout"><dt>Flight time</dt><dd>{clock(result.stats.durationS)}</dd></div>
-              <div className="readout"><dt>Distance flown</dt><dd>{result.stats.distanceM >= 1000 ? (result.stats.distanceM / 1000).toFixed(2) : Math.round(result.stats.distanceM)}<small>{result.stats.distanceM >= 1000 ? "km" : "m"}</small></dd></div>
-              <div className="readout"><dt>Battery left</dt><dd className={result.stats.endSoc < 0.2 ? "bad" : undefined}>{Math.round(result.stats.endSoc * 100)}<small>%</small></dd></div>
-              <div className="readout"><dt>Battery used</dt><dd>{Math.round(result.stats.usedMah)}<small>mAh</small></dd></div>
-              <div className="readout"><dt>Lowest voltage</dt><dd>{result.stats.minVolts.toFixed(1)}<small>V</small></dd></div>
-              <div className="readout"><dt>Peak current</dt><dd>{Math.round(result.stats.maxAmps)}<small>A</small></dd></div>
-              <div className="readout"><dt>Top speed</dt><dd>{result.stats.maxSpeed.toFixed(1)}<small>m/s</small></dd></div>
-              <div className="readout"><dt>Steepest lean</dt><dd>{Math.round(result.stats.maxLeanDeg)}<small>°</small></dd></div>
-              <div className="readout"><dt>Peak throttle</dt><dd className={result.stats.maxThrottle > 0.9 ? "bad" : undefined}>{Math.round(result.stats.maxThrottle * 100)}<small>%</small></dd></div>
-              <div className="readout"><dt>Commands done</dt><dd>{result.stats.reached.length}<small>of {result.stats.commands}</small></dd></div>
-            </dl>
-          )}
-          <div className="mp-cols">
-            <div>
-              <h4>What it means</h4>
-              <ul className="mp-findings">
-                {result.findings.map((f) => (
-                  <li key={f.text} className={f.sev}>
-                    {f.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h4>What happened, in order</h4>
-              <ol className="mp-timeline">
-                {result.events
-                  .filter((e) => e.kind && e.kind !== "prearm")
-                  .map((e, i) => (
-                    <li key={i} className={e.sev}>
-                      <span className="num">{clock(e.t)}</span>
-                      {e.text}
-                    </li>
-                  ))}
-              </ol>
-            </div>
-          </div>
-          <p className="mp-caveat">
-            A prediction from a model of ArduCopter with no obstacles or sensor noise.{" "}
-            {real && groundKnown
-              ? "The ground is measured data of about 30 m detail, typically right to 10 m; trees, buildings and wires are not in it."
-              : real
-                ? "The ground heights were not loaded, so it flew over level ground."
-                : "The ground is the practice landscape, not a real place."}{" "}
-            The final mode was {MODE_NAME[result.track.at(-1)?.mode ?? 0] ?? "unknown"}.
-            Use it to find mistakes in a plan and its settings, not as a promise.
-          </p>
-        </section>
-      )}
     </div>
   );
 }

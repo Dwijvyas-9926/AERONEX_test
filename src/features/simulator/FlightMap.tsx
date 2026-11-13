@@ -246,13 +246,13 @@ export function FlightMap({ route = [], closeRoute, track = [], ghost = [], airc
         )}
       </svg>
       <div className="fmap-zoom" role="group" aria-label="Map zoom">
-        <button onClick={() => zoomBy(1 / 1.5)} aria-label="Zoom in" title="Zoom in" disabled={half <= MIN}>
+        <button onClick={() => zoomBy(1 / 1.5)} aria-label="Zoom in" data-tip="Zoom in" disabled={half <= MIN}>
           <Plus />
         </button>
-        <button onClick={() => zoomBy(1.5)} aria-label="Zoom out" title="Zoom out" disabled={half >= MAX}>
+        <button onClick={() => zoomBy(1.5)} aria-label="Zoom out" data-tip="Zoom out" disabled={half >= MAX}>
           <Minus />
         </button>
-        <button onClick={() => setView(null)} aria-label="Fit the route" title="Fit the route" disabled={!view}>
+        <button onClick={() => setView(null)} aria-label="Fit the route" data-tip="Show the whole route" disabled={!view}>
           <Maximize />
         </button>
       </div>

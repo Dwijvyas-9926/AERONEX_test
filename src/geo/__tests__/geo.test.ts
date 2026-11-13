@@ -231,3 +231,31 @@ describe("route profile", () => {
     expect(routeProfile([{ n: 0, e: 600, alt: 20 }], 20, "land", 50, flat).length).toBeCloseTo(600);
   });
 });
+
+describe("things laid on the drawn ground", () => {
+  it("follow the ground as it is drawn, so nothing is buried on a slope", async () => {
+    const { drapedRing, drawnGround, NEAR_HALF, NEAR_SEGS } = await import("../../features/simulator/world/landscape");
+    // A steady slope with a bump: 30 cm per metre east.
+    const terrain = { ...makeTerrain("flat"), land: (n: number, e: number) => e * 0.3 + 4 * Math.sin(n / 9) };
+    const step = (NEAR_HALF * 2) / NEAR_SEGS;
+    // At the points the mesh was sampled, the drawn ground is the terrain.
+    expect(drawnGround(terrain, NEAR_HALF - 3 * step, -NEAR_HALF + 5 * step)).toBeCloseTo(terrain.land(NEAR_HALF - 3 * step, -NEAR_HALF + 5 * step), 6);
+    // Between them it is the flat triangle, not the curve.
+    const mid = drawnGround(terrain, NEAR_HALF - 3.5 * step, -NEAR_HALF + 5 * step);
+    expect(mid).toBeCloseTo((terrain.land(NEAR_HALF - 3 * step, -NEAR_HALF + 5 * step) + terrain.land(NEAR_HALF - 4 * step, -NEAR_HALF + 5 * step)) / 2, 6);
+
+    const g = drapedRing(terrain, 40, 25, 0, 2.6, 0.05);
+    const pos = g.getAttribute("position");
+    let lowest = Infinity;
+    let spread = 0;
+    for (let k = 0; k < pos.count; k++) {
+      const above = pos.getY(k) - drawnGround(terrain, -pos.getZ(k), pos.getX(k));
+      lowest = Math.min(lowest, above);
+      spread = Math.max(spread, Math.abs(pos.getY(k) - pos.getY(0)));
+    }
+    // Every point sits its lift above the ground, and the disc tilts with the slope: a flat one would be half under.
+    expect(lowest).toBeCloseTo(0.05, 4);
+    expect(spread).toBeGreaterThan(0.5);
+    expect(Math.hypot(pos.getX(pos.count - 1) - 25, -pos.getZ(pos.count - 1) - 40)).toBeCloseTo(2.6, 4);
+  });
+});
