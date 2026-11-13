@@ -4371,3 +4371,8 @@ input[type="range"]::-moz-range-thumb {
 .hprof-loading {
   color: var(--accent);
 }
+
+.rmap-note.placing {
+  border-color: var(--accent-line);
+  color: var(--ink);
+}

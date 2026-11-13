@@ -57,6 +57,16 @@ export const IMAGERY: ImagerySource[] = [
     keep: false,
   },
   {
+    id: "esri",
+    name: "Sharp satellite (Esri World Imagery)",
+    detail: "Detail down to buildings and single trees in most towns. No key needed to try it. Esri expects a published app to use an Esri account, and does not allow saving areas.",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    tileSize: 256,
+    maxZoom: 19,
+    attribution: 'Powered by <a href="https://www.esri.com" target="_blank" rel="noreferrer">Esri</a> | Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    keep: false,
+  },
+  {
     id: "maptiler",
     name: "Sharp satellite (your MapTiler key)",
     detail: "Detail down to single trees and buildings. Needs a free MapTiler account and its key; their free plan is for non-commercial use and stops for the month at its limit.",

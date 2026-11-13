@@ -110,6 +110,7 @@ describe("map tiles", () => {
     expect(imageryUrl(imageryById("maptiler"), { maptiler: "a b" }, "")).toContain("key=a%20b");
     expect(imageryUrl(imageryById("custom"), {}, "http://x/{z}/{x}/{y}")).toBeNull();
     expect(imageryUrl(imageryById("custom"), {}, "https://x/{z}/{x}/{y}.png")).toBe("https://x/{z}/{x}/{y}.png");
+    expect(imageryUrl(imageryById("esri"), {}, "")).toContain("World_Imagery");
     expect(imageryById("gone").id).toBe(IMAGERY[0].id);
     // Only open data may be stored.
     expect(IMAGERY.filter((s) => s.keep).map((s) => s.id)).toEqual(["s2-2016", "s2-2024"]);

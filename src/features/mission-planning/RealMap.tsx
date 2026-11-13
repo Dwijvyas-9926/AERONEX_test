@@ -1,4 +1,4 @@
-import { CloudDownload, Layers, LocateFixed, Maximize, Minus, Mountain, Navigation, Plus, WifiOff, X } from "lucide-react";
+import { CloudDownload, Home as HomeIcon, Layers, LocateFixed, Maximize, Minus, Mountain, Navigation, Plus, WifiOff, X } from "lucide-react";
 import maplibregl, { type GeoJSONSource, type Map as MlMap, type Marker, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
@@ -116,6 +116,10 @@ export default function RealMap(props: RealMapProps) {
   const [saved, setSaved] = useState(0);
   const [saving, setSaving] = useState<{ done: number; total: number } | null>(null);
   const [goto, setGoto] = useState("");
+  // The next click on the map puts home there, instead of adding a waypoint.
+  const [placing, setPlacing] = useState(false);
+  const placingRef = useRef(false);
+  placingRef.current = placing;
   const stopSave = useRef<AbortController | null>(null);
 
   const prefs = useMapPrefs();
@@ -176,6 +180,11 @@ export default function RealMap(props: RealMapProps) {
     });
     map.on("click", (ev) => {
       const p = latest.current;
+      if (placingRef.current) {
+        setPlacing(false);
+        p.onMoveHome?.({ lat: ev.lngLat.lat, lon: ev.lngLat.lng });
+        return;
+      }
       if (!p.onPick) return;
       const l = toLocal(p.home, ev.lngLat.lat, ev.lngLat.lng);
       p.onPick(l.n, l.e);
@@ -188,6 +197,8 @@ export default function RealMap(props: RealMapProps) {
       setPointer({ lat: ev.lngLat.lat, lon: ev.lngLat.lng });
     });
     map.on("mouseout", () => setPointer(null));
+    const esc = (ev: KeyboardEvent) => ev.key === "Escape" && setPlacing(false);
+    window.addEventListener("keydown", esc);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
     window.addEventListener("online", on);
@@ -198,6 +209,7 @@ export default function RealMap(props: RealMapProps) {
     const held = marks.current;
     const others = extra.current;
     return () => {
+      window.removeEventListener("keydown", esc);
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
       sized.disconnect();
@@ -420,6 +432,9 @@ export default function RealMap(props: RealMapProps) {
         {linked && pos && (
           <button onClick={() => mapRef.current?.flyTo({ center: [pos.lon, pos.lat], zoom: Math.max(16, mapRef.current.getZoom()) })} aria-label="Go to the aircraft" title="Go to the aircraft"><Navigation /></button>
         )}
+        {props.onMoveHome && !homeLocked && (
+          <button onClick={() => setPlacing(!placing)} aria-pressed={placing} aria-label="Put home here" title="Put home here: then click the map where the aircraft will take off"><HomeIcon /></button>
+        )}
         <button onClick={toMe} aria-label="Go to where I am" title="Go to where I am"><LocateFixed /></button>
         <button onClick={() => setPanel(!panel)} aria-pressed={panel} aria-label="Layers and offline maps" title="Layers and offline maps"><Layers /></button>
       </div>
@@ -486,7 +501,12 @@ export default function RealMap(props: RealMapProps) {
         </div>
       )}
 
-      {!url && (
+      {placing && (
+        <div className="rmap-note placing">
+          Click the map where the aircraft will take off. The waypoints stay where they are. <button className="link-btn" onClick={() => setPlacing(false)}>Cancel</button>
+        </div>
+      )}
+      {!url && !placing && (
         <div className="rmap-note">
           {src.needsKey ? "This picture needs your MapTiler key." : "This picture needs a tile address."} <button className="link-btn" onClick={() => setPanel(true)}>Open Layers</button>
         </div>
@@ -504,7 +524,7 @@ export default function RealMap(props: RealMapProps) {
         {wind && wind.speed > 0 && (
           <span><i className="fmap-wind" style={{ transform: `rotate(${wind.fromDeg + 180}deg)` }} aria-hidden /> Wind {wind.speed.toFixed(0)} m/s from {Math.round(wind.fromDeg)}°</span>
         )}
-        <span className="fmap-hint">{props.onPick ? "Click to add a waypoint. Drag a marker to move it." : "Scroll to zoom, drag to move."}</span>
+        <span className="fmap-hint">{placing ? "Click to put home there. Esc cancels." : props.onPick ? "Click to add a waypoint. Drag a marker to move it." : "Scroll to zoom, drag to move."}</span>
       </div>
     </div>
   );

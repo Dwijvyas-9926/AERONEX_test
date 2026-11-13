@@ -212,6 +212,7 @@ needs an account to work:
 | Newer picture | Sentinel-2 cloudless 2024 by EOX | Non-commercial use only |
 | Street map | OpenStreetMap's tile servers | View only: their policy forbids saving areas |
 | Sharp satellite | MapTiler, with the user's own key | Their free plan is non-commercial; no bulk saving |
+| Sharp satellite | Esri World Imagery | Works without a key; a published app should use an Esri account; no saving |
 
 Sharper pictures need a provider key, entered in the map's Layers panel and
 kept only in the browser. Tiles from the open sources are stored in the
