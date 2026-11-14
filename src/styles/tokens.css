@@ -20,16 +20,11 @@
   --midnight: #f6f3ec;      /* page background */
   --midnight-deep: #ece7dd; /* wells under 3D, maps and drawings */
   --chrome: #ebe6dc;        /* side menu and top bar: a breath off the page */
-  /* Clear tinted glass for the side menu and top bar. The app's back wall
-     carries the light; the panes are see-through with a warm tint, a thick
-     amber edge where the glass catches the light, and a second pane line
-     just inside it. */
-  --pane-tint: linear-gradient(180deg, rgba(250, 249, 226, 0.58) 0%, rgba(242, 242, 212, 0.42) 55%, rgba(236, 234, 198, 0.5) 100%);
-  --pane-sheen: linear-gradient(105deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.28) 100%);
-  --pane-edge: linear-gradient(180deg, #f8dd9a 0%, #e3ac47 30%, #f2ca78 58%, #d59a35 82%, #c4882a 100%);
-  --pane-edge-x: linear-gradient(90deg, #f8dd9a 0%, #e3ac47 30%, #f2ca78 58%, #d59a35 82%, #c4882a 100%);
-  --pane-line: rgba(255, 255, 255, 0.75);
-  --pane-inner: rgba(196, 136, 42, 0.22);
+  /* Clear light-beige glass for the side menu and top bar: see-through
+     over a softly lit back wall, with no edges or lines, so it flows into
+     the page. */
+  --pane-tint: linear-gradient(180deg, rgba(246, 240, 228, 0.6) 0%, rgba(240, 233, 219, 0.46) 55%, rgba(236, 228, 212, 0.54) 100%);
+  --pane-sheen: linear-gradient(105deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.22) 100%);
   --graphite: #fdfcf8;      /* panels and cards */
   --slate: #efebe2;         /* raised controls: buttons, chips */
   --field: #ffffff;         /* text fields and the selected segment */
