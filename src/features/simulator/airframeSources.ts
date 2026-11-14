@@ -29,6 +29,8 @@ export function fromProfile(p: VehicleProfile | null, base: Airframe): { airfram
 export function fromFrameStudio(): Airframe {
   const d = designFrame(useStudio.getState().spec);
   const cells = d.motor.thrustCells;
+  // An estimate, said so in the notice shown on copying. Motor thrust is the
+  // catalogue's representative figure for the motor class, not a test-stand reading.
   const wh = (d.spec.battery.massG / 1000) * 150;
   return {
     name: `Frame Studio ${d.spec.propIn}" design`,

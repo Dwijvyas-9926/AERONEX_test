@@ -1,8 +1,11 @@
 import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
 import { Activity, BatteryMedium, Radar, CircleCheck, Compass, Radio, Satellite, ShieldAlert, ShieldCheck, Waves } from "lucide-react";
+import { useEffect } from "react";
 import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
-import { batteryHealth, GPS_FIX_LABEL, gpsHealth, type Health, SENSOR_BITS, sensorHealth, varianceHealth, vibeHealth, worst } from "./health";
+import { useParams } from "../../state/paramStore";
+import { commandLink } from "../../services/link/commandLink";
+import { GPS_FIX_LABEL, type Health, preflightVerdict, varianceHealth, vibeHealth } from "./health";
 
 function Dot({ h }: { h: Health }) {
   return <span className={`pf-dot ${h}`} aria-hidden />;
@@ -26,6 +29,13 @@ export function PreflightPage() {
   // vehicle connects, which React treats as a fatal error.
   const now = useNow(500);
   const connected = !!vehicle && (status === "connected" || status === "stale");
+  const battLow = useParams((p) => p.values.BATT_LOW_VOLT);
+  const battCrit = useParams((p) => p.values.BATT_CRT_VOLT);
+  // The battery is graded against the aircraft's own limits, so read them.
+  const sysid = vehicle?.sysid;
+  useEffect(() => {
+    if (sysid != null && commandLink.canSend) void commandLink.requestParams(["BATT_LOW_VOLT", "BATT_CRT_VOLT"]);
+  }, [sysid]);
 
   if (!connected) {
     return (
@@ -54,54 +64,26 @@ export function PreflightPage() {
 
   const armed = vehicle!.armed;
   const isFresh = (at?: number) => at != null && now - at < 3000;
-  const sensors = tel.sensors?.value;
   const ekf = tel.ekf?.value;
   const vibe = tel.vibration?.value;
   const gps = tel.gps?.value;
   const batt = tel.battery?.value;
   const rc = tel.rc?.value;
 
-  const sensorsFresh = isFresh(tel.sensors?.at);
-  // Fold staleness into each check: present + fresh → real health; present but
-  // stale (telemetry stopped) → warn; absent → unknown. Prevents a frozen reading
-  // from being presented as a current, healthy one.
-  const stale = (h: Health, present: boolean, at?: number): Health => (!present ? "unknown" : isFresh(at) ? h : "warn");
-
-  const sensorChecks = SENSOR_BITS.map((s) => ({
-    ...s,
-    health: !sensors ? ("unknown" as Health) : !sensorsFresh ? ("warn" as Health) : sensorHealth(s.bit, sensors.present, sensors.health),
-  }));
-  const gpsPresent = sensors ? !!(sensors.present & (1 << 5)) : false;
-  const ekfHealth = stale(ekf ? worst([ekf.velVar, ekf.posHoriz, ekf.posVert, ekf.compass].map(varianceHealth)) : ("unknown" as Health), !!ekf, tel.ekf?.at);
-  const vibeHealthAll = stale(vibe ? worst([vibeHealth(vibe.x), vibeHealth(vibe.y), vibeHealth(vibe.z), vibe.clip0 + vibe.clip1 + vibe.clip2 > 0 ? "warn" : "ok"]) : ("unknown" as Health), !!vibe, tel.vibration?.at);
-  const gpsH = stale(gps ? gpsHealth(gps.fixType) : ("unknown" as Health), !!gps, tel.gps?.at);
-  const battH = stale(batt ? batteryHealth(batt.remaining, batt.voltage) : ("unknown" as Health), !!batt, tel.battery?.at);
-
-  // Only channels that actually have data contribute to the verdict, so an
-  // absent optional channel doesn't wedge it on "waiting".
-  const graded = [
-    ...sensorChecks.filter((s) => s.critical).map((s) => s.health),
-    ekfHealth,
-    ...(gpsPresent ? [gpsH] : []),
-    vibeHealthAll,
-    battH,
-  ].filter((h) => h !== "unknown" && h !== "absent");
-  const overall = graded.length ? worst(graded) : ("unknown" as Health);
-  const telemetryStale = !!sensors && !sensorsFresh;
-
-  const prearm = events.filter((e) => /prearm/i.test(e.text)).slice(0, 6);
-
-  const verdict = armed
-    ? { cls: "go", icon: ShieldCheck, title: "Armed", note: "The vehicle is armed." }
-    : telemetryStale
-      ? { cls: "caution", icon: ShieldAlert, title: "Telemetry stale", note: "Live health messages have stopped. Reconnect and let telemetry refresh before trusting this readout." }
-      : graded.length === 0
-        ? { cls: "wait", icon: Activity, title: "Waiting for data", note: "Waiting for the vehicle to stream its health messages." }
-        : overall === "ok"
-          ? { cls: "go", icon: ShieldCheck, title: "Ready to arm", note: "Live telemetry shows no blocking issues. The vehicle's own pre-arm checks remain the authority." }
-          : overall === "warn"
-            ? { cls: "caution", icon: ShieldAlert, title: "Caution", note: "Some values are marginal or stale. Review the flagged items below before flying." }
-            : { cls: "nogo", icon: ShieldAlert, title: "Not ready", note: "One or more health checks are failing. Resolve them before arming." };
+  const verdict = preflightVerdict({
+    now,
+    armed,
+    sensors: tel.sensors,
+    attitude: tel.attitude,
+    ekf: tel.ekf,
+    gps: tel.gps,
+    battery: tel.battery,
+    vibration: tel.vibration,
+    battLimits: { low: battLow, crit: battCrit },
+    events,
+  });
+  const { sensors: sensorChecks, ekf: ekfHealth, gps: gpsH, vibration: vibeHealthAll, battery: battH } = verdict.health;
+  const VerdictIcon = verdict.cls === "go" ? ShieldCheck : verdict.cls === "wait" ? Activity : ShieldAlert;
 
   return (
     <div className="page-pad">
@@ -113,11 +95,16 @@ export function PreflightPage() {
         <span className={`pill ${status === "connected" ? "ok" : "warn"} plain`}>{vehicle!.firmwareLabel} · sys {vehicle!.sysid}</span>
       </header>
 
-      <div className={`pf-verdict ${verdict.cls}`}>
-        <verdict.icon />
+      <div className={`pf-verdict ${verdict.cls}`} role="status">
+        <VerdictIcon />
         <div>
           <strong>{verdict.title}</strong>
           <span>{verdict.note}</span>
+          {verdict.reasons.length > 1 && (
+            <ul className="pf-reasons">
+              {verdict.reasons.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          )}
         </div>
       </div>
 
@@ -223,12 +210,12 @@ export function PreflightPage() {
       <section className="panel" style={{ marginTop: "var(--s4)" }}>
         <div className="panel-head"><h3>{armed ? "Vehicle armed" : "Pre-arm messages"}</h3></div>
         <div className="panel-body cal-body">
-          {prearm.length === 0 ? (
-            <p className="muted">{armed ? "The vehicle is armed; pre-arm checks passed." : "No pre-arm messages received. If the vehicle refuses to arm, its reason will appear here."}</p>
+          {verdict.prearm.length === 0 ? (
+            <p className="muted">{armed ? "The vehicle is armed; pre-arm checks passed." : "No pre-arm failure in the last minute. If the vehicle refuses to arm, its reason will appear here."}</p>
           ) : (
             <ul className="pf-prearm">
-              {prearm.map((e) => (
-                <li key={e.id} className={e.level}>{e.text.replace(/^[^:]*:\s*/, "")}</li>
+              {verdict.prearm.map((t) => (
+                <li key={t} className="error">{t}</li>
               ))}
             </ul>
           )}

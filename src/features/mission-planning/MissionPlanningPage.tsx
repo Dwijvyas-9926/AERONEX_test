@@ -5,7 +5,7 @@ import { MODE_NAME } from "../../sim/autopilot";
 import { NumInput } from "../../components/ui/NumInput";
 import { defaultParams, type Params } from "../../sim/params";
 import { predict, type FaultKind, type FaultPlan, type Prediction, type Verdict } from "../../sim/predict";
-import { armedBlock, commandLink, missionBlock, COPTER_MODE } from "../../services/link/commandLink";
+import { armedBlock, commandLink, missionBlock, vehicleBlock, COPTER_MODE } from "../../services/link/commandLink";
 import { linkManager, rememberedParams } from "../../services/link/linkManager";
 import { useLink } from "../../state/linkStore";
 import { confirmAction, notify } from "../../state/notifyStore";
@@ -102,10 +102,10 @@ export function MissionPlanningPage() {
   const dem = useDem();
   const homeSource = useHomeSource((h) => h.source);
   // Looked at a couple of times a second, not at telemetry rate.
-  const [gpsBlock, setGpsBlock] = useState(() => missionBlock() ?? armedBlock());
+  const [gpsBlock, setGpsBlock] = useState(() => vehicleBlock() ?? missionBlock() ?? armedBlock());
   useEffect(() => {
     const t = window.setInterval(() => {
-      const b = missionBlock() ?? armedBlock();
+      const b = vehicleBlock() ?? missionBlock() ?? armedBlock();
       setGpsBlock((was) => (was?.body === b?.body ? was : b));
     }, 700);
     return () => window.clearInterval(t);

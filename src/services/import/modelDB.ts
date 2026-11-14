@@ -5,7 +5,7 @@
   scale) lives on the profile; the bytes live here.
 */
 
-const DB = "avion.models.v1";
+const DB = "avion.models.v1"; // also named in state/resetApp.ts
 const STORE = "files";
 
 function open(): Promise<IDBDatabase> {

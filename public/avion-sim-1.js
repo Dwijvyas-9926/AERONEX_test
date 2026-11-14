@@ -198,10 +198,10 @@ const onModel=gltf=>{
       const mesh=new THREE.Mesh(geo); mesh.name=pt.name||'plate'; g.add(mesh); }
     $('loadBar').style.width='100%'; onModel({scene:g});
   }catch(err){console.error('part build failed',err); done=false; loadBaked();} }
-  window.addEventListener('message',ev=>{ const d=ev.data; if(!d||d.type!=='avion:model'||done)return;
+  window.addEventListener('message',ev=>{ if(ev.origin!==location.origin||ev.source!==window.parent)return; const d=ev.data; if(!d||d.type!=='avion:model'||done)return;
     if(d.parts&&d.parts.length){ loadParts(d.parts); } else { loadBaked(); } });
   const embedded = !!(window.parent&&window.parent!==window);
-  if(embedded){ try{ window.parent.postMessage({type:'avion:ready'},'*'); }catch(e){}
+  if(embedded){ try{ window.parent.postMessage({type:'avion:ready'},'/'); }catch(e){}
     setTimeout(()=>{ if(!done) loadBaked(); }, 5000); }
   else { setTimeout(loadBaked,50); }
 })();

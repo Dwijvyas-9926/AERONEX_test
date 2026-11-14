@@ -38,7 +38,7 @@ export function AboutPage() {
           <Compass className="about-icon" />
           <h3>Who it's for</h3>
           <p>
-            Builders and pilots setting up ArduPilot or PX4 multicopters; field teams who need a fast, dependable pre-flight check; and students and
+            Builders and pilots setting up ArduCopter multicopters (other MAVLink autopilots, PX4 included, can be monitored but not commanded); field teams who need a fast, dependable pre-flight check; and students and
             engineers learning how flight controllers really work. AERONEX grew out of a disaster-relief drone programme, where reliability on the ground
             is everything.
           </p>

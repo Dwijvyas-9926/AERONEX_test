@@ -121,11 +121,20 @@ export class Autopilot {
   private accFF = [0, 0];
   private accI = 0;
   private navSpeed = 0;
+  /** Along-track acceleration of the held point, m/s²: changes no faster than the jerk limit. */
+  private navAcc = 0;
+  /**
+   * The desired height and climb rate in position-held flight: a trajectory
+   * toward the held height that keeps within WPNAV_SPEED_UP/DN and
+   * WPNAV_ACCEL_Z. The height loop then corrects the aircraft onto it.
+   */
+  private zDes = 0;
+  private vzCmd = 0;
   private climbCmd = 0;
   private velCmd = { n: 0, e: 0 };
   private guided: { kind: "hold" | "vel" | "pos" | "takeoff"; vx: number; vy: number; vz: number; yawRate: number; until: number } = { kind: "hold", vx: 0, vy: 0, vz: 0, yawRate: 0, until: 0 };
   private rtl: { stage: "climb" | "return" | "loiter" | "land"; since: number } = { stage: "climb", since: 0 };
-  private auto: { started: boolean; legFrom: { n: number; e: number } | null; holdUntil: number | null; speed: number | null; done: boolean } = { started: false, legFrom: null, holdUntil: null, speed: null, done: false };
+  private auto: { started: boolean; legFrom: { n: number; e: number } | null; holdUntil: number | null; speed: number | null; done: boolean; liftAt?: number } = { started: false, legFrom: null, holdUntil: null, speed: null, done: false };
   private battLowSince: number | null = null;
   private battCrtSince: number | null = null;
   private rcLostSince: number | null = null;
@@ -222,7 +231,10 @@ export class Autopilot {
     // Start from the speed it has, so a stop is a deceleration and not a lurch.
     this.velCmd = { n: s.vel[0], e: s.vel[1] };
     this.climbCmd = -s.vel[2];
+    this.vzCmd = -s.vel[2];
+    this.zDes = this.alt;
     this.navSpeed = Math.hypot(s.vel[0], s.vel[1]);
+    this.navAcc = 0;
     this.auto.legFrom = null;
   }
 
@@ -462,6 +474,14 @@ export class Autopilot {
   /**
    * Fly the held point toward a destination: accelerate to the cruise speed,
    * and slow so as to arrive stopped. Returns the distance still to go.
+   *
+   * The speed follows ArduCopter's jerk-limited ("S-curve") profile: the
+   * acceleration itself ramps at WPNAV_JERK (WP_JERK on 4.7) up to
+   * WPNAV_ACCEL, rather than appearing at once. At the default 1 m/s³ the
+   * aircraft takes 2.5 s just to reach full acceleration and some 35 m to
+   * reach 10 m/s, which on the short legs of a typical mission is most of
+   * the leg. Without it the prediction ran a quarter faster than the
+   * firmware flew the same mission (78 s against 104 s, ArduCopter 4.7.2).
    */
   private flyToward(n: number, e: number, speed: number, dt: number): number {
     if (!this.auto.legFrom) {
@@ -473,8 +493,18 @@ export class Autopilot {
     const de = e - this.nav.e;
     const dist = Math.hypot(dn, de);
     const acc = this.p("WPNAV_ACCEL") / 100;
-    const want = Math.min(speed, Math.sqrt(2 * acc * Math.max(0, dist)));
-    this.navSpeed += clamp(want - this.navSpeed, -acc * dt * 2, acc * dt);
+    const jerk = Math.max(0.1, this.p("WPNAV_JERK"));
+    // The fastest speed from which it can still stop in `dist` with this acceleration and jerk:
+    // stopping distance ≈ v²/2a + v·a/2j.
+    const k = acc / (2 * jerk);
+    const reachable = acc * (Math.sqrt(k * k + (2 * Math.max(0, dist)) / acc) - k);
+    const want = Math.min(speed, reachable);
+    const accWant = clamp((want - this.navSpeed) * 2, -acc, acc);
+    this.navAcc += clamp(accWant - this.navAcc, -jerk * dt, jerk * dt);
+    // Braking may not wait on the jerk limit past the point of no return.
+    if (this.navSpeed > reachable) this.navAcc = Math.min(this.navAcc, -Math.min(acc, (this.navSpeed - reachable) / Math.max(dt, 1e-3)));
+    this.navSpeed = Math.max(0, Math.min(speed, this.navSpeed + this.navAcc * dt));
+    if (this.navSpeed === 0 && this.navAcc < 0) this.navAcc = 0;
     const move = Math.min(dist, this.navSpeed * dt);
     if (dist > 1e-6) {
       this.nav.n += (dn / dist) * move;
@@ -483,6 +513,7 @@ export class Autopilot {
     } else {
       this.velCmd = { n: 0, e: 0 };
       this.navSpeed = 0;
+      this.navAcc = 0;
     }
     this.target.n = this.nav.n;
     this.target.e = this.nav.e;
@@ -493,9 +524,23 @@ export class Autopilot {
   }
   private nav = { n: 0, e: 0 };
 
+  /**
+   * The descent rate while landing, as ArduCopter's land_run_vertical_control
+   * sets it: a square-root approach (PSC_POSZ_P, WPNAV_ACCEL_Z) toward
+   * LAND_ALT_LOW, held between WPNAV_SPEED_DN and LAND_SPEED. So it slows
+   * smoothly into LAND_ALT_LOW rather than switching speed there, and then
+   * comes down at LAND_SPEED.
+   */
   private landRate(): number {
-    const low = this.p("LAND_ALT_LOW") / 100;
-    return -(this.alt > low ? this.p("WPNAV_SPEED_DN") : this.p("LAND_SPEED")) / 100;
+    const low = Math.max(1, this.p("LAND_ALT_LOW") / 100);
+    const p = Math.max(0.1, this.p("PSC_POSZ_P"));
+    const a = Math.max(0.1, this.p("WPNAV_ACCEL_Z") / 100);
+    const err = low - this.alt;
+    const linear = a / (p * p);
+    const rate = Math.abs(err) > linear ? Math.sign(err) * Math.sqrt(2 * a * (Math.abs(err) - linear / 2)) : p * err;
+    const slow = Math.abs(this.p("LAND_SPEED") / 100);
+    const fast = Math.max(this.p("WPNAV_SPEED_DN") / 100, slow);
+    return clamp(rate, -fast, -slow);
   }
 
   private landDetect(dt: number) {
@@ -568,13 +613,26 @@ export class Autopilot {
     switch (item.command) {
       case CMD.TAKEOFF: {
         if (this.landed) {
+          /*
+            ArduCopter (takeoff.cpp) first spools the motors up (MOT_SPOOL_TIME),
+            then ramps the throttle at TKOFF_SLEW_TIME per full scale until it
+            sees the aircraft lift, at about hover throttle. Until then it is
+            on the ground, as it is here.
+          */
+          if (this.auto.liftAt === undefined) {
+            this.auto.liftAt = s.t + this.p("MOT_SPOOL_TIME") + this.p("MOT_THST_HOVER") * this.p("TKOFF_SLEW_TIME");
+            this.log("info", `Mission: take-off to ${relAlt.toFixed(0)} m`, "takeoff");
+          }
+          // Still on the ground: motors at their armed idle, controllers at rest.
+          if (s.t < this.auto.liftAt) return true;
           this.holdHere();
           this.landed = false;
-          this.log("info", `Mission: take-off to ${relAlt.toFixed(0)} m`, "takeoff");
         }
-        if (this.target.alt < relAlt) this.target.alt = relAlt;
+        this.auto.liftAt = undefined;
         this.goal = { n: s.pos[0], e: s.pos[1], alt: relAlt };
-        if (this.alt >= relAlt - 0.5) next();
+        if (this.target.alt < relAlt) this.target.alt = relAlt;
+        // Complete, as the firmware counts it, at the height with the climb all but stopped (< 10% of WPNAV_SPEED_UP).
+        if (this.alt >= relAlt - 0.3 && Math.abs(this.vzCmd) < 0.1 * (this.p("WPNAV_SPEED_UP") / 100)) next();
         return false;
       }
       case CMD.WAYPOINT:
@@ -700,9 +758,27 @@ export class Autopilot {
       this.climbCmd += clamp(climbRate - this.climbCmd, -2.5 * dt, 2.5 * dt);
       this.target.alt = this.alt + this.climbCmd * 0.2;
       velT = this.climbCmd;
+      this.vzCmd = this.climbCmd;
+      this.zDes = this.alt;
     } else {
       this.climbCmd += clamp(0 - this.climbCmd, -2.5 * dt, 2.5 * dt);
-      velT = clamp(this.p("PSC_POSZ_P") * (this.target.alt - this.alt), -dn, up);
+      /*
+        A change of held height is flown as ArduCopter's position controller
+        flies it: climb rate limited to WPNAV_SPEED_UP/DN and changing no
+        faster than WPNAV_ACCEL_Z (WP_ACC_Z on 4.7, 1 m/s² by default), and
+        slowing so as to arrive. A step in height used to become full climb
+        rate at once, which made every take-off and height change quicker
+        than the firmware's.
+      */
+      const accZ = Math.max(0.1, this.p("WPNAV_ACCEL_Z") / 100);
+      const kP = this.p("PSC_POSZ_P");
+      const err = this.target.alt - this.zDes;
+      const arrive = Math.sign(err) * Math.sqrt(2 * accZ * Math.abs(err));
+      const want = clamp(Math.abs(arrive) < Math.abs(kP * err) ? arrive : kP * err, -dn, up);
+      this.vzCmd += clamp(want - this.vzCmd, -accZ * dt, accZ * dt);
+      this.zDes += this.vzCmd * dt;
+      // The planned climb rate, plus a correction for wherever the aircraft has been pushed off the plan.
+      velT = this.vzCmd + clamp(kP * (this.zDes - this.alt), -2.5, 2.5);
     }
     const climb = -s.vel[2];
     const accT = clamp(this.p("PSC_VELZ_P") * (velT - climb), -7.5, 7.5);

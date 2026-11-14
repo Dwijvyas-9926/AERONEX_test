@@ -52,7 +52,7 @@ describe("home follows a linked aircraft", () => {
     useLink.setState({
       status: (over.status ?? "connected") as never,
       virtual: over.virtual ?? false,
-      vehicle: { sysid: 1, compid: 1, armed: over.armed ?? false } as never,
+      vehicle: { sysid: 1, compid: 1, autopilot: 3, type: 2, armed: over.armed ?? false } as never,
       telemetry: {
         gps: { at: 0, value: { fixType: over.fix ?? 3, satellites: 12, hdop: 0.8 } },
         ...(at ? { position: { at: 0, value: { lat: at.lat, lon: at.lon, altMsl: 40, altRel: 0, heading: 0 } } } : {}),
@@ -118,7 +118,7 @@ describe("home follows a linked aircraft", () => {
 
 describe("no mission for a real aircraft without a GPS position", () => {
   const gps = (fixType: number | null, virtual = false, satellites: number | null = 5, age = 0) =>
-    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, armed: false } as never, telemetry: (fixType === null ? {} : { gps: { at: Date.now() - age, value: { fixType, satellites, hdop: 2 } } }) as never });
+    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, autopilot: 3, type: 2, armed: false } as never, telemetry: (fixType === null ? {} : { gps: { at: Date.now() - age, value: { fixType, satellites, hdop: 2 } } }) as never });
   const mission = [{ seq: 0, frame: 0, command: 16, p1: 0, p2: 0, p3: 0, p4: 0, x: 1, y: 1, z: 0 }];
 
   it("asks for a GPS when none reports, and for patience when it has no fix", async () => {
@@ -164,7 +164,7 @@ describe("no mission for a real aircraft without a GPS position", () => {
 
 describe("an armed real aircraft keeps its mission", () => {
   const set = (armed: boolean, virtual = false) =>
-    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, armed } as never, telemetry: { gps: { at: Date.now(), value: { fixType: 3, satellites: 12, hdop: 1 } } } as never });
+    useLink.setState({ status: "connected" as never, virtual, vehicle: { sysid: 1, compid: 1, autopilot: 3, type: 2, armed } as never, telemetry: { gps: { at: Date.now(), value: { fixType: 3, satellites: 12, hdop: 1 } } } as never });
 
   it("refuses a new mission while armed, and writes nothing", async () => {
     const { commandLink, armedBlock } = await import("../../services/link/commandLink");

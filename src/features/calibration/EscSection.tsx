@@ -4,7 +4,9 @@ import { commandLink } from "../../services/link/commandLink";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
 import { ESC_CALIBRATION, ESC_TYPES } from "./ardupilot";
-import { ParamNumber, ParamSelect, useRequireParams } from "./common";
+import { ParamNumber, ParamSelect } from "./common";
+import { useRequireParams, writeParam } from "./paramWrite";
+import { notify } from "../../state/notifyStore";
 
 export function EscSection({ canSend }: { canSend: boolean }) {
   useRequireParams(["MOT_PWM_TYPE", "MOT_PWM_MIN", "MOT_PWM_MAX", "MOT_SPIN_ARM", "MOT_SPIN_MIN", "MOT_SPIN_MAX", "ESC_CALIBRATION"], canSend);
@@ -14,8 +16,15 @@ export function EscSection({ canSend }: { canSend: boolean }) {
   const [done, setDone] = useState(false);
 
   const calibrate = async () => {
-    // Arm the one-shot "calibrate at next boot" mode, then reboot into it.
-    await commandLink.setParam("ESC_CALIBRATION", 3).catch(() => {});
+    // Arm the one-shot "calibrate at next boot" mode, then reboot into it —
+    // only once the aircraft has confirmed the setting. Rebooting without it
+    // would show the steps for a calibration that is not going to happen.
+    try {
+      await commandLink.setParam("ESC_CALIBRATION", 3);
+    } catch (e) {
+      notify("error", "ESC calibration not started", (e as Error).message);
+      return;
+    }
     setDone(true);
     await commandLink.reboot();
   };
@@ -78,7 +87,7 @@ export function EscSection({ canSend }: { canSend: boolean }) {
               <Rocket /> Calibrate &amp; reboot
             </button>
             {escCal !== undefined && escCal !== 0 && (
-              <button className="btn btn-ghost" disabled={!canSend} onClick={() => void commandLink.setParam("ESC_CALIBRATION", 0)}>
+              <button className="btn btn-ghost" disabled={!canSend} onClick={() => writeParam("ESC_CALIBRATION", 0)}>
                 <RotateCw size={15} /> Clear calibration flag
               </button>
             )}

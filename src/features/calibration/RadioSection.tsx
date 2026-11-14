@@ -4,7 +4,9 @@ import { commandLink } from "../../services/link/commandLink";
 import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { RADIO_FUNCTION } from "./ardupilot";
-import { ParamToggle, useRequireParams } from "./common";
+import { ParamToggle } from "./common";
+import { useRequireParams } from "./paramWrite";
+import { notify } from "../../state/notifyStore";
 
 const PWM_LO = 900;
 const PWM_HI = 2100;
@@ -58,14 +60,18 @@ export function RadioSection({ canSend }: { canSend: boolean }) {
     // Write min/max for every captured channel, trim = current (centre the sticks first).
     const current: Record<number, number> = {};
     for (const { ch, pwm } of live) current[ch] = pwm;
+    // "Saved" only when every write was confirmed; otherwise say which were not.
+    const failed: string[] = [];
+    const put = (name: string, v: number) => commandLink.setParam(name, v).catch(() => void failed.push(name));
     for (const [chStr, c] of Object.entries(capRef.current)) {
       const ch = Number(chStr);
       if (c.max - c.min < 50) continue; // channel never moved — skip
-      await commandLink.setParam(`RC${ch}_MIN`, Math.round(c.min)).catch(() => {});
-      await commandLink.setParam(`RC${ch}_MAX`, Math.round(c.max)).catch(() => {});
-      if (current[ch]) await commandLink.setParam(`RC${ch}_TRIM`, Math.round(current[ch])).catch(() => {});
+      await put(`RC${ch}_MIN`, Math.round(c.min));
+      await put(`RC${ch}_MAX`, Math.round(c.max));
+      if (current[ch]) await put(`RC${ch}_TRIM`, Math.round(current[ch]));
     }
-    setSaved(true);
+    if (failed.length) notify("error", "Radio calibration not fully saved", `Not confirmed by the aircraft: ${failed.join(", ")}. Check the link and capture again.`);
+    setSaved(failed.length === 0);
   };
 
   return (

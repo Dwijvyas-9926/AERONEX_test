@@ -40,6 +40,19 @@ export function firmwareFamily(autopilot: number): FirmwareFamily {
   return "other";
 }
 
+/**
+ * The MAV_TYPE values ArduCopter reports for itself: every multicopter frame
+ * (AP_MotorsMatrix: tri, quad, hexa, octa, deca, dodeca), single and coaxial
+ * (AP_MotorsSingle / Coax) and traditional helicopter. ArduCopter never sends
+ * MAV_TYPE_GENERIC: GCS_MAVLink_Copter replaces it with quad or heli.
+ */
+const ARDUCOPTER_TYPES = new Set([2, 3, 4, 13, 14, 15, 29, 35]);
+
+/** True only for an ArduPilot autopilot running the Copter firmware. */
+export function isArduCopter(v: { autopilot: number; type: number }): boolean {
+  return v.autopilot === MAV_AUTOPILOT_ARDUPILOTMEGA && ARDUCOPTER_TYPES.has(v.type);
+}
+
 export const firmwareLabel = (f: FirmwareFamily) => (f === "ardupilot" ? "ArduPilot" : f === "px4" ? "PX4" : "Other MAVLink");
 
 export const isArmed = (hb: Heartbeat) => (hb.base_mode & MODE_FLAG_SAFETY_ARMED) !== 0;
@@ -88,8 +101,8 @@ export function flightModeLabel(hb: Heartbeat): string | null {
   if ((hb.base_mode & MODE_FLAG_CUSTOM_MODE_ENABLED) === 0) return null;
   const fam = firmwareFamily(hb.autopilot);
   if (fam === "ardupilot") {
-    const multirotor = [2, 3, 4, 13, 14, 15].includes(hb.type);
-    if (!multirotor) return `Mode ${hb.custom_mode}`;
+    // Plane and Rover number their modes differently; only Copter's names are known here.
+    if (!isArduCopter(hb)) return `Mode ${hb.custom_mode}`;
     const name = COPTER_MODES[hb.custom_mode];
     return name ? titleCase(name).replace("Rtl", "RTL") : `Mode ${hb.custom_mode}`;
   }

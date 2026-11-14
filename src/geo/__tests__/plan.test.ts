@@ -233,7 +233,7 @@ describe("mission transfer over a poor link", () => {
     const parser = new MavlinkParser();
     let sent = 0;
     const seen: Record<string, number> = {};
-    useLink.setState({ vehicle: { sysid: 1, compid: 1 } as never });
+    useLink.setState({ vehicle: { sysid: 1, compid: 1, autopilot: 3, type: 2 } as never });
     commandLink.attach(async (bytes) => {
       if (!lose.toVehicle(sent++)) v.receive(bytes);
     });

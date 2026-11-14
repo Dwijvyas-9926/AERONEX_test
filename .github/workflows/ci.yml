@@ -1,0 +1,77 @@
+# Checks every push and pull request: types, lint, unit tests, production build
+# and the production dependencies' security advisories.
+#
+# The real-firmware tests (sitl/) build ArduCopter's own simulator, which takes
+# a while, so they run on demand (Actions → CI → Run workflow) and weekly.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npx tsc -b
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npx vite build
+      - name: Security advisories (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
+  arducopter:
+    # The planner against real ArduCopter, on each supported release.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [Copter-4.6.3, Copter-4.7.2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Cache the ArduCopter build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ardupilot-bin
+          key: sitl-${{ matrix.release }}-ubuntu-24.04
+      - name: Build ArduCopter SITL
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${{ matrix.release }} --recurse-submodules --shallow-submodules https://github.com/ArduPilot/ardupilot.git
+          cd ardupilot
+          python3 -m pip install --user empy==3.3.4 pexpect future
+          ./waf configure --board sitl
+          ./waf copter
+          mkdir -p ../ardupilot-bin
+          cp build/sitl/bin/arducopter ../ardupilot-bin/
+          cp Tools/autotest/default_params/copter.parm ../ardupilot-bin/
+      - name: Real-firmware tests
+        env:
+          SITL_BIN: ${{ github.workspace }}/ardupilot-bin/arducopter
+          SITL_DEFAULTS: ${{ github.workspace }}/ardupilot-bin/copter.parm
+        run: npx vitest run sitl

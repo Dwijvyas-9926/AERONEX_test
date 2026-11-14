@@ -1,6 +1,9 @@
 import { CloudDownload, Home as HomeIcon, Layers, LocateFixed, Maximize, Minus, Mountain, Navigation, Plus, WifiOff, X } from "lucide-react";
-import maplibregl, { type GeoJSONSource, type Map as MlMap, type Marker, type StyleSpecification } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { GeoJSONSource, Map as MlMap, Marker, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+// MapLibre 6 runs its tile work in a module worker; under a bundler it has to be told where that file is.
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { useEffect, useRef, useState } from "react";
 import { covers, sampleDem } from "../../geo/elevation";
 import { parseLatLon, tilesIn, tileUrl, toGlobal, toLocal, type LatLon } from "../../geo/geo";
@@ -46,6 +49,7 @@ let protocolReady = false;
 function registerProtocol() {
   if (protocolReady) return;
   protocolReady = true;
+  maplibregl.setWorkerUrl(workerUrl);
   // Tiles from open sources go through the app's own store, so they survive the field.
   maplibregl.addProtocol("aeronex", async (params, abort) => {
     const res = await keptFetch(`https://${params.url.slice(KEPT.length)}`, abort.signal);

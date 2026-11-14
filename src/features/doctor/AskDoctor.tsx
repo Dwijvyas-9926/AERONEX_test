@@ -117,13 +117,13 @@ export function AskDoctor({ findings }: { findings: Finding[] }) {
         <div className="panel-body ask-setup">
           <div className="ask-setup-ic"><Sparkles size={22} /></div>
           <h4>Add your Anthropic API key to chat</h4>
-          <p>Ask anything about building, tuning or fixing your drone and get answers grounded in <strong>your connected aircraft's live data</strong>. AERONEX has no server — you use your own Anthropic key, and it's stored only in this browser.</p>
+          <p>Ask anything about building, tuning or fixing your drone and get answers grounded in <strong>your connected aircraft's live data</strong>. AERONEX has no server — you use your own Anthropic key, and it is sent only to Anthropic.</p>
           <div className="ask-key-row">
             <KeyRound size={15} />
             <input className="input" type="password" placeholder="sk-ant-…" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && keyDraft.trim() && setSetting("aiKey", keyDraft.trim())} />
             <button className="btn btn-primary" disabled={!keyDraft.trim()} onClick={() => setSetting("aiKey", keyDraft.trim())}>Save</button>
           </div>
-          <p className="ask-setup-note">Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>. Your key stays on this device (saved in local storage) and is sent only to Anthropic. You can remove it anytime in Settings.</p>
+          <p className="ask-setup-note">Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>. The key is kept only until this tab closes, unless you choose “Remember keys on this device” in Settings. You can remove it there at any time.</p>
         </div>
       </section>
     );

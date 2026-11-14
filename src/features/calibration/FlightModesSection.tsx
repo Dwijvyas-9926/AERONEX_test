@@ -1,10 +1,10 @@
 import { SlidersHorizontal, X } from "lucide-react";
-import { commandLink } from "../../services/link/commandLink";
 import { useNow } from "../../hooks/useNow";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
 import { COPTER_FLIGHT_MODES, FLTMODE_CH, switchPosition } from "./ardupilot";
-import { ParamSelect, useRequireParams } from "./common";
+import { ParamSelect } from "./common";
+import { useRequireParams, writeParam } from "./paramWrite";
 
 const PWM_BANDS = ["≤ 1230", "1231–1360", "1361–1490", "1491–1620", "1621–1749", "≥ 1750"];
 
@@ -70,9 +70,10 @@ export function FlightModesSection({ canSend }: { canSend: boolean }) {
 function BitmaskRow({ name, label, canSend }: { name: string; label: string; canSend: boolean }) {
   const value = useParams((s) => s.values[name]) ?? 0;
   const known = useParams((s) => s.values[name] !== undefined);
+  const armed = useLink((s) => !!s.vehicle?.armed);
   const toggle = (bit: number) => {
     const next = value ^ (1 << bit);
-    void commandLink.setParam(name, next);
+    writeParam(name, next);
   };
   return (
     <div className="fm-bits">
@@ -82,7 +83,7 @@ function BitmaskRow({ name, label, canSend }: { name: string; label: string; can
           <button
             key={bit}
             className={`fm-bit${value & (1 << bit) ? " on" : ""}`}
-            disabled={!canSend || !known}
+            disabled={!canSend || !known || armed}
             onClick={() => toggle(bit)}
             title={`Position ${bit + 1}`}
           >

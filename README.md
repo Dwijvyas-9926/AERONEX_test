@@ -135,11 +135,13 @@ and explains it rather than failing silently. The 3D views need **WebGL 2**.
 ## Target hardware
 
 Designed for **Pixhawk 2.4.8**, **Holybro Pixhawk 6C Mini** and other
-MAVLink-speaking controllers running **ArduPilot** or **PX4**. Board identity
-(via `AUTOPILOT_VERSION`) and firmware-specific capability detection land with
-the command layer in Phase 4. Hardware connectivity has **not** been verified
+MAVLink controllers running **ArduCopter** (4.6 and 4.7 are tested against
+the real firmware; see `sitl/`). Other MAVLink autopilots, PX4 and ArduPlane
+included, are shown and their telemetry and parameters read, but nothing that
+moves an aircraft is sent to them: every mode number and flight sequence in
+the app is ArduCopter's. Hardware connectivity has **not** been verified
 against a physical board in this environment — the protocol layer is validated
-with real pymavlink-encoded frames instead (see Testing).
+with real pymavlink-encoded frames and ArduPilot SITL instead (see Testing).
 
 ---
 
@@ -226,8 +228,9 @@ needs an account to work:
 | Sharp satellite | MapTiler, with the user's own key | Their free plan is non-commercial; no bulk saving |
 | Sharp satellite | Esri World Imagery | Works without a key; a published app should use an Esri account; no saving |
 
-Sharper pictures need a provider key, entered in the map's Layers panel and
-kept only in the browser. Tiles from the open sources are stored in the
+Sharper pictures need a provider key, entered in the map's Layers panel. It
+is kept for the browser session only, unless "Remember keys on this device"
+is chosen in Settings, and goes only to that provider. Tiles from the open sources are stored in the
 browser as they are viewed, and "Save this area" stores a whole view, so a
 saved field works with no internet.
 
@@ -242,6 +245,9 @@ include trees, buildings or wires.
 simulator build of ArduCopter (the same flight code as a Pixhawk, with
 simulated sensors) and do what a user does: link, read the settings, send
 missions, read them back, and fly them while watching where the aircraft goes.
+They also check that every setting a page reads by name exists on that
+release, that the Preflight verdict follows ArduCopter's own pre-arm checks,
+and that the planner's flight-time prediction is within 15% of the flight.
 They are skipped unless pointed at a simulator binary:
 
 ```
@@ -254,6 +260,9 @@ SITL_DEFAULTS=../ardupilot/Tools/autotest/default_params/copter.parm \
   npx vitest run sitl
 ```
 
-They have been run against ArduCopter 4.7.2 and 4.6.3. They do not replace a
+They have been run against ArduCopter 4.7.2 and 4.6.3. On GitHub, the CI
+workflow (`.github/workflows/ci.yml`) runs the type check, lint, unit tests,
+build and dependency audit on every push, and these firmware tests on both
+releases on demand and weekly. They do not replace a
 props-off bench test and a cautious first flight with the real aircraft: the
 simulator has no real radio, GPS, compass or motors.

@@ -93,6 +93,16 @@ describe("drone doctor diagnostics", () => {
   it("warns when arming checks are disabled", () => {
     const f = runDiagnostics(ctx({ telemetry: healthyTel, params: { ...healthyParams, ARMING_CHECK: 0 } }));
     expect(f.find((x) => x.id === "cfg-armcheck")?.severity).toBe("warn");
+    // ArduCopter 4.7 has ARMING_SKIPCHK instead: -1 skips every check, 0 skips none.
+    const { ARMING_CHECK: _, ...on47 } = healthyParams;
+    void _;
+    const off47 = runDiagnostics(ctx({ telemetry: healthyTel, params: { ...on47, ARMING_SKIPCHK: -1 } }));
+    expect(off47.find((x) => x.id === "cfg-armcheck")?.severity).toBe("warn");
+    expect(off47.find((x) => x.id === "cfg-armcheck")?.fix).toMatch(/ARMING_SKIPCHK = 0/);
+    const some47 = runDiagnostics(ctx({ telemetry: healthyTel, params: { ...on47, ARMING_SKIPCHK: 4 } }));
+    expect(some47.find((x) => x.id === "cfg-armcheck")?.severity).toBe("info");
+    const all47 = runDiagnostics(ctx({ telemetry: healthyTel, params: { ...on47, ARMING_SKIPCHK: 0 } }));
+    expect(all47.find((x) => x.id === "cfg-armcheck")).toBeUndefined();
   });
 
   it("translates a pre-arm compass message", () => {

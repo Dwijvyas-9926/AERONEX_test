@@ -2,6 +2,7 @@ import { Cable, Compass, Fan, Gauge, Radio, SlidersHorizontal, Zap } from "lucid
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useLink } from "../../state/linkStore";
+import { vehicleBlock } from "../../services/link/commandLink";
 import { AccelSection } from "./AccelSection";
 import { CompassSection } from "./CompassSection";
 import { RadioSection } from "./RadioSection";
@@ -24,9 +25,10 @@ export function CalibrationPage() {
   const vehicle = useLink((s) => s.vehicle);
   const status = useLink((s) => s.status);
   const connected = !!vehicle && (status === "connected" || status === "stale");
-  const canSend = !!vehicle && status === "connected";
+  // Every flow on this page is ArduCopter's: other firmware is shown, not changed.
+  const notCopter = vehicle ? vehicleBlock() : null;
+  const canSend = !!vehicle && status === "connected" && !notCopter;
   const [tab, setTab] = useState<Tab>("accel");
-  const isPx4 = vehicle?.firmware === "px4";
 
   return (
     <div className="page-pad">
@@ -54,9 +56,9 @@ export function CalibrationPage() {
           <span>Calibration needs a connected flight controller — nothing here runs as a demo. Connect over USB or a telemetry radio, then every screen works against your vehicle's own values.</span>
         </div>
       )}
-      {isPx4 && (
-        <div className="callout warn" style={{ marginBottom: "var(--s4)" }}>
-          <span>This vehicle reports PX4. These flows follow ArduPilot/Mission Planner commands and parameter names; some may not apply to PX4.</span>
+      {notCopter && (
+        <div className="callout warn" role="alert" style={{ marginBottom: "var(--s4)" }}>
+          <span><strong>{notCopter.title}.</strong> {notCopter.body}</span>
         </div>
       )}
 

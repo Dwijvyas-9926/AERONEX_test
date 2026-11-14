@@ -2,11 +2,12 @@ import { Cable, Link2, Link2Off, Loader2, Minus, Plus, RotateCcw, Search, Slider
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useLink } from "../../state/linkStore";
+import { vehicleBlock } from "../../services/link/commandLink";
 import { notify } from "../../state/notifyStore";
 import { useParams } from "../../state/paramStore";
 import { useParamEdits, type ParamEdits } from "../common/useParamEdits";
-import { useRequireParams } from "../calibration/common";
-import { advise, ALL_PID_PARAMS, HORIZONTAL, type PidControl, SYMPTOM_CHIPS, VERTICAL, YAW, type AdviceRec } from "./pidModel";
+import { useRequireParams } from "../calibration/paramWrite";
+import { advise, ALL_PID_PARAMS, HORIZONTAL, type PidControl, recFor, SYMPTOM_CHIPS, verticalControls, YAW, type AdviceRec } from "./pidModel";
 
 const fmt = (v: number, step: number) => {
   const dp = step < 0.001 ? 4 : step < 0.01 ? 3 : step < 0.1 ? 2 : 1;
@@ -151,7 +152,7 @@ function Advisor({ edits, values }: { edits: ParamEdits; values: Record<string, 
         {results.map((a) => (
           <div key={a.id} className="pid-advice">
             <strong>{a.title}</strong>
-            {a.recs.map((r, i) => (
+            {a.recs.map((r0) => recFor(r0, values)).map((r, i) => (
               <div key={i} className="pid-rec">
                 <div className="pid-rec-head">
                   <span className={`pid-dir ${r.direction}`}>{r.direction === "decrease" ? "Lower" : "Raise"} {r.pct}%</span>
@@ -174,7 +175,9 @@ export function PidTuningPage() {
   const status = useLink((s) => s.status);
   const values = useParams((s) => s.values);
   const connected = !!vehicle && (status === "connected" || status === "stale");
-  const canSend = !!vehicle && status === "connected";
+  // These are ArduCopter's gains; another firmware is shown, not tuned.
+  const notCopter = vehicle ? vehicleBlock() : null;
+  const canSend = !!vehicle && status === "connected" && !notCopter;
   const [linked, setLinked] = useState(true);
   const edits = useParamEdits();
   useRequireParams(ALL_PID_PARAMS, canSend);
@@ -193,6 +196,7 @@ export function PidTuningPage() {
         )}
       </header>
 
+      {notCopter && <div className="callout warn" role="alert" style={{ marginBottom: "var(--s4)" }}><span><strong>{notCopter.title}.</strong> {notCopter.body}</span></div>}
       {!connected && <div className="callout" style={{ marginBottom: "var(--s4)" }}><span>Connect a flight controller to read and stage its PID gains. Values are read live from the vehicle; changes upload only when you press the button.</span></div>}
       <div className="callout warn" style={{ marginBottom: "var(--s4)" }}>
         <TriangleAlert />
@@ -223,7 +227,7 @@ export function PidTuningPage() {
               </button>
             }
           />
-          <Section title="Vertical — altitude" controls={VERTICAL} linked={false} disabled={!canSend} edits={edits} />
+          <Section title="Vertical — altitude" controls={verticalControls(values)} linked={false} disabled={!canSend} edits={edits} />
           <Section title="Yaw" controls={YAW} linked={false} disabled={!canSend} edits={edits} />
         </div>
         <div className="stack">

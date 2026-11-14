@@ -21,6 +21,7 @@
 */
 
 import type { LinkEvent, Telemetry } from "../../state/linkStore";
+import { armingChecks } from "../../mavlink/paramNames";
 
 export type Severity = "critical" | "warn" | "info" | "ok";
 
@@ -56,7 +57,9 @@ export const DOCTOR_PARAMS = [
   "COMPASS_OFS2_X",
   "COMPASS_OFS2_Y",
   "COMPASS_OFS2_Z",
+  // Before ArduCopter 4.7 the checks to run; from 4.7 the checks to skip. Either may be answered.
   "ARMING_CHECK",
+  "ARMING_SKIPCHK",
   "BATT_MONITOR",
   "FRAME_CLASS",
   "FRAME_TYPE",
@@ -331,13 +334,25 @@ function checkConfig(c: DiagContext): Finding[] {
   const out: Finding[] = [];
   const has = (k: string) => p[k] !== undefined;
 
-  if (has("ARMING_CHECK") && p.ARMING_CHECK === 0) {
+  // ArduCopter 4.7 replaced ARMING_CHECK (checks to run) with ARMING_SKIPCHK (checks to skip).
+  const checks = armingChecks(p);
+  const newer = has("ARMING_SKIPCHK");
+  const param = newer ? "ARMING_SKIPCHK" : "ARMING_CHECK";
+  if (checks === "none") {
     out.push({
       id: "cfg-armcheck", area: "Configuration", severity: "warn",
       title: "Arming checks are disabled",
-      detail: "ARMING_CHECK is 0, so the autopilot will arm without verifying its own health. This hides exactly the problems that cause crashes and should only ever be used briefly on the bench.",
-      fix: "Set ARMING_CHECK = 1 (All) before flying.",
-      link: { to: "/params", label: "Open ARMING_CHECK" },
+      detail: `${param} is ${p[param]}, so the autopilot will arm without verifying its own health. This hides exactly the problems that cause crashes and should only ever be used briefly on the bench.`,
+      fix: newer ? "Set ARMING_SKIPCHK = 0 (skip none) before flying." : "Set ARMING_CHECK = 1 (All) before flying.",
+      link: { to: "/params", label: `Open ${param}` },
+    });
+  } else if (checks === "some") {
+    out.push({
+      id: "cfg-armcheck", area: "Configuration", severity: "info",
+      title: "Some arming checks are turned off",
+      detail: `${param} is ${p[param]}, so some of the autopilot's own health checks are skipped before arming.`,
+      fix: newer ? "Unless you know why each is skipped, set ARMING_SKIPCHK = 0." : "Unless you know why each is off, set ARMING_CHECK = 1 (All).",
+      link: { to: "/params", label: `Open ${param}` },
     });
   }
   if (has("FRAME_CLASS") && p.FRAME_CLASS === 0) {

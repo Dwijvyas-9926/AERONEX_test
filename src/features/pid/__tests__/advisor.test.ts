@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { advise, ALL_PID_PARAMS } from "../pidModel";
 
+describe("PID controls on ArduCopter 4.7", () => {
+  it("uses 4.7's vertical-gain names and units when the aircraft has them", async () => {
+    const { verticalControls, recFor, advise } = await import("../pidModel");
+    const v46 = { PSC_ACCZ_P: 0.5, PSC_ACCZ_I: 1, PSC_VELZ_P: 5, PSC_POSZ_P: 1 };
+    const v47 = { PSC_D_ACC_P: 0.05, PSC_D_ACC_I: 0.1, PSC_D_VEL_P: 5, PSC_D_POS_P: 1 };
+    expect(verticalControls(v46).map((c) => c.name)).toEqual(["PSC_ACCZ_P", "PSC_ACCZ_I", "PSC_VELZ_P", "PSC_POSZ_P"]);
+    const c47 = verticalControls(v47);
+    expect(c47.map((c) => c.name)).toEqual(["PSC_D_ACC_P", "PSC_D_ACC_I", "PSC_D_VEL_P", "PSC_D_POS_P"]);
+    // Every 4.7 default sits inside its control's range: a 4.6-sized value would not.
+    for (const c of c47) expect(v47[c.name as keyof typeof v47]).toBeGreaterThanOrEqual(c.min);
+    expect(c47[0].max).toBeLessThan(0.5);
+    const bounce = advise("bounces up and down")[0];
+    expect(bounce.recs.map((r) => recFor(r, v47).params).flat()).toEqual(expect.arrayContaining(["PSC_D_ACC_P", "PSC_D_ACC_I", "PSC_D_VEL_P"]));
+    expect(bounce.recs.map((r) => recFor(r, v46).params).flat()).toContain("PSC_ACCZ_P");
+  });
+});
+
 describe("PID tuning advisor", () => {
   it("maps fast wobble to lowering rate D", () => {
     const [a] = advise("it wobbles fast when hovering");

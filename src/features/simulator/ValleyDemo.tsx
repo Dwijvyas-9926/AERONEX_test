@@ -32,11 +32,13 @@ export function ValleyDemo() {
     const win = iframeRef.current?.contentWindow;
     if (!win) return;
     const parts = exportSimParts();
-    win.postMessage({ type: "avion:model", parts: parts ?? null }, "*");
+    // The frame is the app's own page; nothing else may receive the model.
+    win.postMessage({ type: "avion:model", parts: parts ?? null }, "/");
   }, []);
 
   useEffect(() => {
     const onMsg = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin || ev.source !== iframeRef.current?.contentWindow) return;
       if ((ev.data as { type?: string })?.type === "avion:ready") sendModel();
     };
     window.addEventListener("message", onMsg);

@@ -172,7 +172,9 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
                   if (r.filled.length === 0) notify("info", "Nothing to copy yet", "Add a weight or a motor diagonal to the Aircraft Profile first.");
                   else {
                     sim.set("airframe", r.airframe);
-                    notify("success", "Copied from the Aircraft Profile", `Took its ${r.filled.join(" and ")}. Check the rest.`);
+                    // The simulator flies a four-motor X; a hexa or octa profile is copied for its size and weight only.
+                    const quad = !profile?.frame || profile.frame === "quad-x";
+                    notify(quad ? "success" : "warn", "Copied from the Aircraft Profile", `Took its ${r.filled.join(" and ")}. Check the rest.${quad ? "" : " The simulator flies it as a four-motor X frame: the profile's frame layout is not modelled, so treat timings and battery figures as rough."}`);
                   }
                 }}
               >
@@ -182,7 +184,7 @@ function Setup({ running = false, onDone }: { running?: boolean; onDone?: () => 
                 className="btn"
                 onClick={() => {
                   sim.set("airframe", fromFrameStudio());
-                  notify("success", "Copied from Frame Studio", "Battery capacity is estimated from the pack's weight. Correct it if you know it.");
+                  notify("success", "Copied from Frame Studio", "Battery capacity is estimated from the pack's weight, and motor thrust is a typical figure for the motor class, not a measurement. Correct either if you know it.");
                 }}
               >
                 Copy from Frame Studio design

@@ -14,6 +14,10 @@
      last command — a built-in dead-man hold).
    - Takeoff is MAV_CMD_NAV_TAKEOFF to a low altitude; Land is LAND mode, which
      auto-disarms once on the ground.
+   - Range is fenced as height is: horizontal motion away from the take-off
+     point stops short of maxRange, allowing for the braking distance, and
+     without a fresh position from the aircraft there is no horizontal motion
+     at all. Moving back towards the take-off point is always allowed.
 */
 
 export type FlightPhase = "idle" | "arming" | "takeoff" | "flying" | "landing" | "emergency";
@@ -21,6 +25,7 @@ export type FlightPhase = "idle" | "arming" | "takeoff" | "flying" | "landing" |
 export interface FlightConfig {
   takeoffAlt: number; // m — target of the initial takeoff
   maxAlt: number; // m — climb ceiling (safety)
+  maxRange: number; // m — horizontal distance from the take-off point (safety)
   maxHoriz: number; // m/s — forward/back/left/right cap
   maxClimb: number; // m/s — vertical cap
   maxYawRate: number; // rad/s — yaw cap
@@ -34,6 +39,7 @@ export interface FlightConfig {
 export const DEFAULT_CONFIG: FlightConfig = {
   takeoffAlt: 2,
   maxAlt: 10,
+  maxRange: 20,
   maxHoriz: 1.5,
   maxClimb: 0.5,
   maxYawRate: 0.35,
@@ -59,6 +65,10 @@ export interface Telemetry {
   relAlt: number | null;
   mode: number | null;
   connected: boolean;
+  /** Fresh horizontal position, metres north and east of any fixed point; null when there is none. */
+  pos: { n: number; e: number } | null;
+  /** Fresh heading, radians clockwise from north; null when there is none. */
+  heading: number | null;
 }
 
 export type LogLevel = "info" | "warn" | "error" | "action";
@@ -109,6 +119,10 @@ export class FlightController {
   /** The mode a descent was asked for in, and when it was last asked. */
   private descent: { mode: number; sentAt: number; tries: number } | null = null;
   private warnedNoAlt = false;
+  /** Where the aircraft took off, in the same frame as Telemetry.pos. */
+  private origin: { n: number; e: number } | null = null;
+  private warnedRange = false;
+  private warnedNoPos = false;
   private deps: FlightDeps;
   config: FlightConfig;
 
@@ -162,6 +176,9 @@ export class FlightController {
     if (t.armed) return this.deps.log("error", "Vehicle is already armed. Land/disarm first.");
     this.busy = true;
     this.warnedNoAlt = false;
+    this.warnedRange = false;
+    this.warnedNoPos = false;
+    this.origin = t.pos ? { ...t.pos } : null;
     this.setPhase("arming");
     try {
       this.deps.log("action", "Switching to GUIDED…");
@@ -246,6 +263,47 @@ export class FlightController {
     }
   }
 
+  /**
+   * The forward/right velocity target, with any part that would carry the
+   * aircraft beyond maxRange of the take-off point taken out. The limit is
+   * applied early by the distance needed to brake from the present speed, so
+   * the ramp brings it to a stop at the limit rather than past it.
+   */
+  private limitRange(t: Telemetry, fwd: number, right: number): [number, number] {
+    if (fwd === 0 && right === 0) return [0, 0];
+    if (!t.pos || t.heading == null) {
+      if (!this.warnedNoPos) {
+        this.warnedNoPos = true;
+        this.deps.log("warn", "No position or heading from the aircraft — horizontal moves are held until it reports again.");
+      }
+      return [0, 0];
+    }
+    this.warnedNoPos = false;
+    if (!this.origin) this.origin = { ...t.pos };
+    const dn = t.pos.n - this.origin.n;
+    const de = t.pos.e - this.origin.e;
+    const dist = Math.hypot(dn, de);
+    const speed = Math.hypot(this.vx, this.vy);
+    const brake = (speed * speed) / (2 * this.config.horizAccel) + speed * (this.config.tickMs / 1000);
+    if (dist < 0.01 || dist + brake < this.config.maxRange) return [fwd, right];
+    const un = dn / dist;
+    const ue = de / dist;
+    const c = Math.cos(t.heading);
+    const s = Math.sin(t.heading);
+    // Body (forward, right) to north/east, remove the outward part, and back.
+    let wn = fwd * c - right * s;
+    let we = fwd * s + right * c;
+    const out = wn * un + we * ue;
+    if (out <= 0) return [fwd, right];
+    wn -= out * un;
+    we -= out * ue;
+    if (!this.warnedRange) {
+      this.warnedRange = true;
+      this.deps.log("warn", `Range limit: ${this.config.maxRange} m from the take-off point. You can still fly back towards it.`);
+    }
+    return [wn * c + we * s, -wn * s + we * c];
+  }
+
   /** The control loop. Pure given telemetry; call manually in tests. */
   tick() {
     const t = this.deps.getTelemetry();
@@ -261,6 +319,7 @@ export class FlightController {
     switch (this.phaseV) {
       case "takeoff": {
         // Wait for the autopilot's takeoff to reach altitude, then hand over to the pilot.
+        if (!this.origin && t.pos) this.origin = { ...t.pos };
         if (t.relAlt != null && t.relAlt >= this.config.takeoffAlt * 0.9) {
           this.deps.log("info", `Reached ${t.relAlt.toFixed(1)} m — you have control (WASD / Q,E / T up / L land).`);
           this.setPhase("flying");
@@ -302,9 +361,12 @@ export class FlightController {
           }
           break;
         }
-        // Targets from keys.
-        const vxT = (this.keys.fwd ? this.config.maxHoriz : 0) + (this.keys.back ? -this.config.maxHoriz : 0);
-        const vyT = (this.keys.right ? this.config.maxHoriz : 0) + (this.keys.left ? -this.config.maxHoriz : 0);
+        // Targets from keys, kept inside the range limit.
+        const [vxT, vyT] = this.limitRange(
+          t,
+          (this.keys.fwd ? this.config.maxHoriz : 0) + (this.keys.back ? -this.config.maxHoriz : 0),
+          (this.keys.right ? this.config.maxHoriz : 0) + (this.keys.left ? -this.config.maxHoriz : 0),
+        );
         // vz is +down; "up" means negative. Anticipate the altitude ceiling: stop
         // commanding climb once the remaining room is only the braking distance,
         // so it coasts gently to a stop at maxAlt instead of overshooting.

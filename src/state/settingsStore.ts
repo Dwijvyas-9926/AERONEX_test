@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { onRememberChange, secretSplitStorage } from "./secretStorage";
 
 export type MotionPref = "system" | "reduced" | "full";
 export type GraphicsPreset = "low" | "medium" | "high" | "ultra";
@@ -12,7 +13,7 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   /** Which section of the side menu is open: one at a time, or none. */
   navOpen: string | null;
-  /** BYOK: the user's own Anthropic API key for the Ask the Doctor chat. Stored only in this browser. */
+  /** BYOK: the user's own Anthropic API key for the Ask the Doctor chat. Kept for this session unless the user chooses to have keys remembered (secretStorage). */
   aiKey: string;
   aiModel: string;
   set: <K extends keyof Omit<SettingsState, "set">>(k: K, v: SettingsState[K]) => void;
@@ -37,7 +38,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: "avion.settings.v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => secretSplitStorage(["aiKey"])),
       version: 2,
       /*
         The first default was a model that has since been retired, so anyone
@@ -54,6 +55,8 @@ export const useSettings = create<SettingsState>()(
     },
   ),
 );
+
+onRememberChange(() => useSettings.setState({}));
 
 /** Resolved motion preference, honouring the OS setting when set to "system". */
 export function prefersReducedMotion(pref: MotionPref): boolean {

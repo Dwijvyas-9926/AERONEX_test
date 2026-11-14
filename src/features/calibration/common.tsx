@@ -1,18 +1,13 @@
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { commandLink } from "../../services/link/commandLink";
 import { useParams } from "../../state/paramStore";
+import { useLink } from "../../state/linkStore";
 import type { Option } from "./ardupilot";
+import { writeParam } from "./paramWrite";
 
-/* Request a fixed set of params once the vehicle can take commands. */
-export function useRequireParams(names: string[], enabled: boolean) {
-  const key = names.join(",");
-  useEffect(() => {
-    if (!enabled) return;
-    void commandLink.requestParams(names);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, enabled]);
-}
+/** Setup controls are locked while the aircraft is armed. */
+const useArmed = () => useLink((s) => !!s.vehicle?.armed);
+const ARMED_TITLE = "Disarm to change this setting";
 
 /** Small indicator of a parameter's write state. */
 function WriteState({ name }: { name: string }) {
@@ -44,6 +39,7 @@ const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(3).repla
 /** A labelled enum parameter rendered as a <select>, writing on change. */
 export function ParamSelect({ name, label, options, help, disabled }: { name: string; label: string; options: Option[]; help?: string; disabled?: boolean }) {
   const value = useParams((s) => s.values[name]);
+  const armed = useArmed();
   const known = value !== undefined;
   return (
     <label className="field cal-param">
@@ -53,8 +49,9 @@ export function ParamSelect({ name, label, options, help, disabled }: { name: st
       <select
         className="select"
         value={known ? String(value) : ""}
-        disabled={disabled || !known}
-        onChange={(e) => void commandLink.setParam(name, Number(e.target.value))}
+        disabled={disabled || armed || !known}
+        title={armed ? ARMED_TITLE : undefined}
+        onChange={(e) => writeParam(name, Number(e.target.value))}
       >
         {!known && <option value="">Reading…</option>}
         {options.map((o) => (
@@ -71,6 +68,7 @@ export function ParamSelect({ name, label, options, help, disabled }: { name: st
 /** A labelled numeric parameter; writes on Enter or blur when changed. */
 export function ParamNumber({ name, label, step = 1, min, max, suffix, help, disabled }: { name: string; label: string; step?: number; min?: number; max?: number; suffix?: string; help?: string; disabled?: boolean }) {
   const value = useParams((s) => s.values[name]);
+  const armed = useArmed();
   const [draft, setDraft] = useState("");
   const editing = useRef(false);
   useEffect(() => {
@@ -83,7 +81,7 @@ export function ParamNumber({ name, label, step = 1, min, max, suffix, help, dis
       // Clamp typed entry to the control's range so an out-of-range value can't
       // be written to the vehicle.
       const c = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, v));
-      if (c !== value) void commandLink.setParam(name, c);
+      if (c !== value) writeParam(name, c);
       setDraft(fmt(c));
     } else if (value !== undefined) setDraft(fmt(value));
   };
@@ -101,7 +99,8 @@ export function ParamNumber({ name, label, step = 1, min, max, suffix, help, dis
           min={min}
           max={max}
           value={draft}
-          disabled={disabled || value === undefined}
+          disabled={disabled || armed || value === undefined}
+          title={armed ? ARMED_TITLE : undefined}
           onFocus={() => (editing.current = true)}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -117,6 +116,7 @@ export function ParamNumber({ name, label, step = 1, min, max, suffix, help, dis
 /** A boolean parameter shown as a toggle (0/1). */
 export function ParamToggle({ name, label, help, disabled }: { name: string; label: string; help?: string; disabled?: boolean }) {
   const value = useParams((s) => s.values[name]);
+  const armed = useArmed();
   const on = value === 1;
   return (
     <div className="field cal-param">
@@ -127,8 +127,9 @@ export function ParamToggle({ name, label, help, disabled }: { name: string; lab
         className={`toggle${on ? " on" : ""}`}
         role="switch"
         aria-checked={on}
-        disabled={disabled || value === undefined}
-        onClick={() => void commandLink.setParam(name, on ? 0 : 1)}
+        disabled={disabled || armed || value === undefined}
+        title={armed ? ARMED_TITLE : undefined}
+        onClick={() => writeParam(name, on ? 0 : 1)}
       >
         <span className="knob" />
         <span className="toggle-txt">{value === undefined ? "—" : on ? "On" : "Off"}</span>

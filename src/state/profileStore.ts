@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { VehicleProfile } from "../vehicle/types";
+import { deleteModel, getModel, idbAvailable, putModel } from "../services/import/modelDB";
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
@@ -52,13 +53,23 @@ export const useProfiles = create<ProfileState>()(
           const t = Date.now();
           const copy: VehicleProfile = { ...src, id: uid(), name: `${src.name} copy`, createdAt: t, updatedAt: t };
           set((s) => ({ profiles: [...s.profiles, copy] }));
+          // An imported model's bytes are stored under the profile's id: the copy needs its own,
+          // or it opens to "the saved model wasn't found".
+          if (src.model.source !== "default" && idbAvailable()) {
+            void getModel(src.id)
+              .then((m) => (m ? putModel(copy.id, m) : undefined))
+              .catch(() => undefined);
+          }
           return copy;
         },
-        remove: (id) =>
+        remove: (id) => {
+          // The profile's imported model goes with it, rather than staying on the disk for ever.
+          if (idbAvailable()) void deleteModel(id).catch(() => undefined);
           set((s) => {
             const profiles = s.profiles.filter((p) => p.id !== id);
             return { profiles, activeId: s.activeId === id ? (profiles[0]?.id ?? null) : s.activeId };
-          }),
+          });
+        },
         setActive: (id) => set({ activeId: id }),
       };
     },

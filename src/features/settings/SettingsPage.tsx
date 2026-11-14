@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { confirmAction, notify } from "../../state/notifyStore";
+import { resetAppData } from "../../state/resetApp";
+import { rememberKeys, setRememberKeys } from "../../state/secretStorage";
 import { AI_MODELS, GRAPHICS, useSettings, type GraphicsPreset, type MotionPref, type Units } from "../../state/settingsStore";
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
@@ -15,6 +18,7 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
 
 export function SettingsPage() {
   const s = useSettings();
+  const [remember, setRemember] = useState(rememberKeys);
   return (
     <div className="page-pad" style={{ maxWidth: 920 }}>
       <header className="page-head">
@@ -59,7 +63,7 @@ export function SettingsPage() {
           <div className="setting">
             <div>
               <strong>Units</strong>
-              <p>Altitude and speed readouts. Protocol values are always metric internally.</p>
+              <p>Altitude and speed on the Flight Data and Connection readouts. Mission planning, the simulator, Keyboard Flight and the setup pages always work in metres and m/s, as ArduPilot does, and label every value with its unit.</p>
             </div>
             <Segmented<Units>
               label="Units"
@@ -80,12 +84,27 @@ export function SettingsPage() {
           <div className="setting">
             <div>
               <strong>Anthropic API key</strong>
-              <p>Powers the Ask the Doctor chat on the Drone Doctor page. Stored only in this browser and sent only to Anthropic — AERONEX has no server. Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.</p>
+              <p>Powers the Ask the Doctor chat on the Drone Doctor page. Sent only to Anthropic — AERONEX has no server. Kept for this session unless you choose to remember keys below. Get a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.</p>
             </div>
             <div className="set-ai-key">
               <input className="input" type="password" placeholder="sk-ant-…" value={s.aiKey} onChange={(e) => s.set("aiKey", e.target.value)} />
               {s.aiKey && <button className="btn btn-ghost" onClick={() => s.set("aiKey", "")} title="Remove stored key">Clear</button>}
             </div>
+          </div>
+          <div className="setting">
+            <div>
+              <strong>Remember keys on this device</strong>
+              <p>Off: API keys (this one and any map provider key) are kept only until this browser tab closes. On: they stay in this browser's storage until you clear them. Leave it off on a shared computer.</p>
+            </div>
+            <Segmented
+              label="Remember keys"
+              value={remember ? "on" : "off"}
+              onChange={(v) => { setRememberKeys(v === "on"); setRemember(v === "on"); }}
+              options={[
+                ["off", "This session"],
+                ["on", "Remember"],
+              ]}
+            />
           </div>
           <div className="setting">
             <div>
@@ -108,20 +127,19 @@ export function SettingsPage() {
           <div className="setting">
             <div>
               <strong>Reset app data</strong>
-              <p>Removes aircraft profiles and settings from this browser. Nothing on any flight controller is changed.</p>
+              <p>Removes everything AERONEX keeps in this browser: aircraft profiles, settings, API keys, frame designs, the mission plan, imported 3D models and saved map areas. Nothing on any flight controller is changed.</p>
             </div>
             <button
               className="btn btn-danger"
               onClick={async () => {
                 const ok = await confirmAction({
                   title: "Reset all app data?",
-                  body: "Vehicle profiles and settings stored in this browser will be deleted. This can't be undone.",
+                  body: "Aircraft profiles, settings, API keys, frame designs, the mission plan, imported 3D models and saved map areas stored in this browser will be deleted. This can't be undone.",
                   confirmLabel: "Reset data",
                   tone: "danger",
                 });
                 if (!ok) return;
-                localStorage.removeItem("avion.profiles.v1");
-                localStorage.removeItem("avion.settings.v1");
+                await resetAppData();
                 notify("info", "App data reset", "Reloading.");
                 window.setTimeout(() => window.location.reload(), 600);
               }}

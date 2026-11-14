@@ -4,6 +4,7 @@ import { useLink } from "../../state/linkStore";
 import { sameParam, useParams } from "../../state/paramStore";
 import { useCalibration, magCalOk } from "../../state/calibrationStore";
 import { notify } from "../../state/notifyStore";
+import { isArduCopter } from "../../mavlink/identity";
 
 /*
   The command layer: the one place the app TALKS to the vehicle. It owns the
@@ -11,10 +12,37 @@ import { notify } from "../../state/notifyStore";
   link's serial writer, tracks COMMAND_ACK / PARAM_VALUE replies, and routes the
   vehicle's calibration messages into the param and calibration stores.
 
-  Writing is gated: commands only go out while a vehicle link is live, and the
-  caller (the Calibration UI) additionally refuses anything motor-related unless
-  the vehicle is disarmed and the operator has confirmed props are off.
+  Writing is gated here, whichever page asks:
+   - nothing goes out unless a vehicle link is live;
+   - anything that can make an aircraft move or change how it flies (arming,
+     a mode, a take-off, a guided velocity, a motor test, a calibration, a
+     mission) goes only to ArduCopter, because every mode number and sequence
+     in this app is ArduCopter's (see vehicleBlock);
+   - a mission goes only to an aircraft with a 3D GPS fix that is disarmed.
+  Pages add their own checks on top (props off, disarmed, confirmations).
 */
+
+/**
+ * Why the linked vehicle may not be flown or configured for flight by this
+ * app; null when it may (or when nothing is linked: target() refuses that).
+ *
+ * The mode numbers, take-off, guided control and mission semantics used
+ * everywhere in AERONEX are ArduCopter's. ArduPlane, Rover and PX4 number
+ * their modes differently: ArduCopter's GUIDED (4) is ACRO on ArduPlane and
+ * HOLD on Rover. Sent to one of those, a "take off" could put the vehicle in
+ * a mode nobody asked for. Reading telemetry and parameters stays possible.
+ */
+export function vehicleBlock(): { title: string; body: string } | null {
+  const v = useLink.getState().vehicle;
+  if (!v || isArduCopter(v)) return null;
+  const what = v.firmware === "ardupilot" ? `an ArduPilot ${v.typeLabel.toLowerCase()}` : `${v.firmwareLabel} firmware`;
+  return {
+    title: "AERONEX flies ArduCopter only",
+    body: `This flight controller reports ${what}. Its telemetry and parameters can be read, but AERONEX will not arm it, change its flight mode, test its motors, calibrate it or send it a mission. Its mode numbers differ from ArduCopter's.`,
+  };
+}
+
+const blocked = (b: { title: string; body: string }) => new Error(`${b.title}. ${b.body}`);
 
 // MAVProxy/Mission Planner identify as system 255, component 190 (GCS).
 const GCS = { sysid: 255, compid: 190 };
@@ -234,44 +262,76 @@ class CommandLink {
 
   // ---- low-level ----
 
-  /** Send a COMMAND_LONG and resolve with the MAV_RESULT from its COMMAND_ACK. */
-  sendCommand(command: number, params: Partial<Record<"p1" | "p2" | "p3" | "p4" | "p5" | "p6" | "p7", number>> = {}, confirmation = 0, timeoutMs = 4000): Promise<number> {
-    const t = this.target();
-    const fields = {
-      target_system: t.sysid,
-      target_component: t.compid,
-      command,
-      confirmation,
-      param1: params.p1 ?? 0,
-      param2: params.p2 ?? 0,
-      param3: params.p3 ?? 0,
-      param4: params.p4 ?? 0,
-      param5: params.p5 ?? 0,
-      param6: params.p6 ?? 0,
-      param7: params.p7 ?? 0,
-    };
+  /**
+   * Send a COMMAND_LONG and resolve with the MAV_RESULT from its COMMAND_ACK.
+   *
+   * `retries`: how many more times to send it when no reply comes within
+   * `timeoutMs`, with `confirmation` counted up each time, as the MAVLink
+   * command protocol lays down. Over a telemetry radio a command or its reply
+   * is lost now and then; sent once, a mode change that had in fact been made
+   * was reported as failed. Only commands that are harmless to receive twice
+   * are retried (arm/disarm, a mode, a take-off); calibrations, reboots and
+   * mission start are not, since a second one would start them over again.
+   */
+  sendCommand(command: number, params: Partial<Record<"p1" | "p2" | "p3" | "p4" | "p5" | "p6" | "p7", number>> = {}, confirmation = 0, timeoutMs = 4000, retries = 0): Promise<number> {
+    const fields = this.cmdFields(command, params);
     return new Promise<number>((resolve, reject) => {
       const prev = this.pendingCmds.get(command);
       if (prev) {
         clearTimeout(prev.timer);
         prev.resolve(-1);
       }
-      const timer = setTimeout(() => {
-        this.pendingCmds.delete(command);
-        reject(new Error("No acknowledgement from the vehicle (timed out)."));
-      }, timeoutMs);
-      this.pendingCmds.set(command, { resolve, reject, timer });
-      this.write("COMMAND_LONG", fields).catch((e) => {
-        clearTimeout(timer);
-        this.pendingCmds.delete(command);
-        reject(e as Error);
-      });
+      let attempt = 0;
+      const entry: PendingCmd = { resolve, reject, timer: undefined as unknown as ReturnType<typeof setTimeout> };
+      const live = () => this.pendingCmds.get(command) === entry;
+      const transmit = () => {
+        clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => {
+          if (!live()) return;
+          if (attempt < retries && this.send) {
+            attempt++;
+            transmit();
+            return;
+          }
+          this.pendingCmds.delete(command);
+          reject(new Error(attempt > 0 ? `No reply from the vehicle after ${attempt + 1} tries.` : "No acknowledgement from the vehicle (timed out)."));
+        }, timeoutMs);
+        this.write("COMMAND_LONG", { ...fields, confirmation: Math.min(255, confirmation + attempt) }).catch((e) => {
+          if (!live()) return;
+          clearTimeout(entry.timer);
+          this.pendingCmds.delete(command);
+          reject(e as Error);
+        });
+      };
+      this.pendingCmds.set(command, entry);
+      transmit();
     });
   }
 
-  /** Write one parameter and resolve when the vehicle echoes the new value. */
-  setParam(id: string, value: number, timeoutMs = 4000): Promise<void> {
+  /** Throws when the linked vehicle is not ArduCopter (see vehicleBlock). */
+  private requireCopter() {
+    const b = vehicleBlock();
+    if (b) throw blocked(b);
+  }
+
+  /** Calibration is for ArduCopter, on the ground: a sensor calibration in flight is never intended. */
+  private requireCalibratable() {
+    this.requireCopter();
+    if (useLink.getState().vehicle?.armed) throw new Error("Disarm before calibrating. The aircraft is armed.");
+  }
+
+  /**
+   * Write one parameter and resolve when the vehicle echoes the new value.
+   *
+   * Refused when the value is not a finite number, and on an armed aircraft
+   * unless the caller has had the operator confirm it (`armedOk`): a setting
+   * takes effect the moment it is written, and the setup pages that write on
+   * every change were never meant for use in flight.
+   */
+  setParam(id: string, value: number, timeoutMs = 4000, armedOk = false): Promise<void> {
     const t = this.target();
+    if (!Number.isFinite(value)) return Promise.reject(new Error(`${id} was not written: ${String(value)} is not a number.`));
+    if (!armedOk && useLink.getState().vehicle?.armed) return Promise.reject(new Error(`${id} was not written: disarm first. The aircraft is armed.`));
     useParams.getState().markPending(id, value);
     return new Promise<void>((resolve, reject) => {
       const prev = this.pendingParams.get(id);
@@ -391,19 +451,28 @@ class CommandLink {
 
   // ---- guided flight ----
 
-  /** Arm or disarm the motors (MAV_CMD_COMPONENT_ARM_DISARM). force=21196 skips checks — avoid. */
-  async arm(shouldArm: boolean, force = false): Promise<number> {
-    return this.sendCommand(CMD.COMPONENT_ARM_DISARM, { p1: shouldArm ? 1 : 0, p2: force ? 21196 : 0 }, 0, 4000);
+  /**
+   * Arm or disarm the motors (MAV_CMD_COMPONENT_ARM_DISARM), never forced:
+   * the autopilot's own pre-arm checks always apply. Disarming is allowed on
+   * any vehicle, since stopping the motors is never the wrong thing to be
+   * able to ask for.
+   */
+  async arm(shouldArm: boolean): Promise<number> {
+    if (shouldArm) this.requireCopter();
+    return this.sendCommand(CMD.COMPONENT_ARM_DISARM, { p1: shouldArm ? 1 : 0, p2: 0 }, 0, 1500, 2);
   }
 
   /** Switch flight mode via MAV_CMD_DO_SET_MODE using an ArduCopter custom mode number. */
   async setMode(customMode: number): Promise<number> {
-    return this.sendCommand(CMD.DO_SET_MODE, { p1: MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, p2: customMode }, 0, 4000);
+    this.requireCopter();
+    return this.sendCommand(CMD.DO_SET_MODE, { p1: MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, p2: customMode }, 0, 1500, 2);
   }
 
   /** Command an autonomous takeoff to the given altitude (metres). Requires Guided + armed. */
   async guidedTakeoff(altitudeM: number): Promise<number> {
-    return this.sendCommand(CMD.NAV_TAKEOFF, { p7: altitudeM }, 0, 4000);
+    this.requireCopter();
+    if (!Number.isFinite(altitudeM) || altitudeM <= 0) throw new Error("Take-off height must be a positive number of metres.");
+    return this.sendCommand(CMD.NAV_TAKEOFF, { p7: altitudeM }, 0, 1500, 2);
   }
 
   /**
@@ -414,7 +483,8 @@ class CommandLink {
   setVelocityBody(vx: number, vy: number, vz: number, yawRate: number) {
     // Called from a timer at several hertz. If the vehicle has gone there is
     // nothing to send to, and throwing out of a timer helps nobody.
-    if (!this.canSend) return;
+    if (!this.canSend || vehicleBlock()) return;
+    if (![vx, vy, vz, yawRate].every(Number.isFinite)) return;
     const t = this.target();
     void this.write("SET_POSITION_TARGET_LOCAL_NED", {
       time_boot_ms: 0,
@@ -460,6 +530,8 @@ class CommandLink {
   /** Spin one motor (1-based, in test order) at a throttle %, auto-stopping after
       `timeoutS` so the motor halts if the GCS stops resending (dead-man safety). */
   async motorTest(motor: number, throttlePct: number, timeoutS = 3) {
+    // Stopping a motor is always allowed; spinning one only on ArduCopter, disarmed.
+    if (vehicleBlock() || useLink.getState().vehicle?.armed || !Number.isFinite(throttlePct)) return;
     await this.sendCommandNoAck(CMD.DO_MOTOR_TEST, { p1: motor, p2: MOTOR_TEST_THROTTLE_PERCENT, p3: Math.max(0, Math.min(100, throttlePct)), p4: timeoutS, p5: 0, p6: 0 });
   }
 
@@ -477,6 +549,7 @@ class CommandLink {
   async startAccelCal() {
     useCalibration.getState().setAccel({ phase: "running", step: 0, prompt: null, awaitingConfirm: false, message: "Starting — keep the vehicle still for the gyro check." });
     try {
+      this.requireCalibratable();
       await this.write("COMMAND_LONG", { ...this.cmdFields(CMD.PREFLIGHT_CALIBRATION, { p5: 1 }) });
     } catch (e) {
       useCalibration.getState().setAccel({ phase: "failed", message: (e as Error).message });
@@ -500,6 +573,7 @@ class CommandLink {
   async startLevel() {
     useCalibration.getState().setLevel({ phase: "running", message: "Hold the vehicle level and still…" });
     try {
+      this.requireCalibratable();
       const r = await this.sendCommand(CMD.PREFLIGHT_CALIBRATION, { p5: 2 }, 0, 8000);
       const ok = r === 0;
       useCalibration.getState().setLevel({ phase: ok ? "success" : "failed", message: ok ? "Level set." : `Vehicle returned: ${MAV_RESULT[r] ?? r}` });
@@ -511,6 +585,7 @@ class CommandLink {
   async startGyro() {
     useCalibration.getState().setGyro({ phase: "running", message: "Keep the vehicle completely still…" });
     try {
+      this.requireCalibratable();
       const r = await this.sendCommand(CMD.PREFLIGHT_CALIBRATION, { p1: 1 }, 0, 8000);
       const ok = r === 0;
       useCalibration.getState().setGyro({ phase: ok ? "success" : "failed", message: ok ? "Gyros calibrated." : `Vehicle returned: ${MAV_RESULT[r] ?? r}` });
@@ -524,6 +599,7 @@ class CommandLink {
   async startMagCal() {
     useCalibration.getState().setMag({ phase: "running", compasses: {}, message: "Rotate the vehicle through all orientations.", maxPct: 0, lastAdvanceAt: Date.now() });
     try {
+      this.requireCalibratable();
       // p1=0 all compasses, p2=0 no auto-retry, p3=1 autosave on success, p5=0 no auto-reboot
       await this.sendCommand(CMD.DO_START_MAG_CAL, { p1: 0, p2: 0, p3: 1, p5: 0 }, 0, 4000);
     } catch (e) {
@@ -587,8 +663,8 @@ class CommandLink {
   uploadMission(items: MissionWire[]): Promise<void> {
     // Whatever page asks, a real aircraft without a GPS position is not given a mission,
     // and neither is one that is armed.
-    const block = missionBlock() ?? armedBlock();
-    if (block) return Promise.reject(new Error(`${block.title}. ${block.body}`));
+    const block = vehicleBlock() ?? missionBlock() ?? armedBlock();
+    if (block) return Promise.reject(blocked(block));
     const t = this.target();
     this.missionUp?.reject(new Error("Superseded by a newer upload"));
     return new Promise<void>((resolve, reject) => {
@@ -684,8 +760,9 @@ class CommandLink {
   }
 
   async startMission(): Promise<number> {
-    const block = missionBlock();
-    if (block) throw new Error(`${block.title}. ${block.body}`);
+    const block = vehicleBlock() ?? missionBlock();
+    if (block) throw blocked(block);
+    // Not retried: with MIS_RESTART = 1 a second start sends the aircraft back to the first item.
     return this.sendCommand(CMD.MISSION_START, {});
   }
 

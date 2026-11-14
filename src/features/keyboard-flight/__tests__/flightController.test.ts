@@ -16,6 +16,11 @@ class MockAutopilot {
   private climbingTo: number | null = null;
   private landing = false;
   lastVel = { vx: 0, vy: 0, vz: 0, yawRate: 0 };
+  /** Metres north and east of where it started, and heading in radians. */
+  n = 0;
+  e = 0;
+  heading = 0;
+  hasPos = true;
   rejectArm = false;
   rejectMode = false;
 
@@ -39,7 +44,10 @@ class MockAutopilot {
     this.lastVel = { vx, vy, vz, yawRate };
   });
 
-  telemetry = (): Telemetry => ({ armed: this.armed, relAlt: this.relAlt, mode: this.mode, connected: this.connected });
+  telemetry = (): Telemetry => ({
+    armed: this.armed, relAlt: this.relAlt, mode: this.mode, connected: this.connected,
+    pos: this.hasPos ? { n: this.n, e: this.e } : null, heading: this.hasPos ? this.heading : null,
+  });
 
   // Advance the physical model.
   tickSim(dt: number) {
@@ -53,7 +61,13 @@ class MockAutopilot {
       if (this.relAlt >= this.climbingTo - 0.01) this.climbingTo = null;
       return;
     }
-    if (this.armed) this.relAlt = Math.max(0, this.relAlt - this.lastVel.vz * dt); // vz is +down
+    if (this.armed) {
+      this.relAlt = Math.max(0, this.relAlt - this.lastVel.vz * dt); // vz is +down
+      const c = Math.cos(this.heading), s = Math.sin(this.heading);
+      this.n += (this.lastVel.vx * c - this.lastVel.vy * s) * dt;
+      this.e += (this.lastVel.vx * s + this.lastVel.vy * c) * dt;
+      this.heading += this.lastVel.yawRate * dt;
+    }
   }
 }
 
@@ -304,5 +318,51 @@ describe("FlightController — a descent that does not take", () => {
     await fc.emergencyRTL();
     expect(ap.mode).toBe(MODE.RTL);
     expect(fc.phase).toBe("landing");
+  });
+});
+
+describe("FlightController — range limit", () => {
+  it("stops short of the range limit flying straight out, and lets it fly back", async () => {
+    const ap = new MockAutopilot();
+    const { fc, logs } = makeController(ap);
+    await fc.requestTakeoff();
+    run(fc, ap, 20);
+    expect(fc.phase).toBe("flying");
+    fc.setKeys({ fwd: true });
+    run(fc, ap, 600); // a minute of holding W
+    const out = Math.hypot(ap.n, ap.e);
+    expect(out).toBeLessThanOrEqual(DEFAULT_CONFIG.maxRange + 0.2);
+    expect(out).toBeGreaterThan(DEFAULT_CONFIG.maxRange - 3);
+    expect(logs.join("\n")).toMatch(/Range limit/);
+    fc.setKeys({ fwd: false, back: true });
+    run(fc, ap, 100);
+    expect(Math.hypot(ap.n, ap.e)).toBeLessThan(out - 5);
+  });
+
+  it("holds the limit whichever way the aircraft faces, sliding along it rather than through", async () => {
+    const ap = new MockAutopilot();
+    const { fc } = makeController(ap);
+    await fc.requestTakeoff();
+    run(fc, ap, 20);
+    ap.heading = 0.7;
+    fc.setKeys({ fwd: true, right: true });
+    for (let i = 0; i < 900; i++) {
+      fc.tick();
+      ap.tickSim(DEFAULT_CONFIG.tickMs / 1000);
+      expect(Math.hypot(ap.n, ap.e)).toBeLessThanOrEqual(DEFAULT_CONFIG.maxRange + 0.2);
+    }
+  });
+
+  it("moves nowhere sideways without a position from the aircraft", async () => {
+    const ap = new MockAutopilot();
+    const { fc, logs } = makeController(ap);
+    await fc.requestTakeoff();
+    run(fc, ap, 20);
+    ap.hasPos = false;
+    fc.setKeys({ fwd: true });
+    run(fc, ap, 30);
+    expect(ap.lastVel.vx).toBe(0);
+    expect(ap.lastVel.vy).toBe(0);
+    expect(logs.join("\n")).toMatch(/No position or heading/);
   });
 });

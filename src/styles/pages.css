@@ -1698,6 +1698,7 @@ input[type="range"]::-moz-range-thumb {
 .pf-verdict svg { width: 30px; height: 30px; flex: none; }
 .pf-verdict strong { display: block; font-family: var(--font-display); font-size: var(--t-lg); }
 .pf-verdict span { color: var(--ink-2); font-size: var(--t-sm); }
+.pf-reasons { margin: var(--s2) 0 0; padding-left: 1.1em; color: var(--ink-2); font-size: var(--t-sm); display: grid; gap: 2px; }
 .pf-verdict.go { background: var(--ok-soft); border-color: rgba(156,178,87,.4); }
 .pf-verdict.go svg, .pf-verdict.go strong { color: var(--ok); }
 .pf-verdict.caution { background: var(--warn-soft); border-color: rgba(224,123,51,.4); }

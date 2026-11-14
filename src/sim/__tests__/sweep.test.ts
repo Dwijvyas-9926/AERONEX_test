@@ -146,7 +146,8 @@ it("ends every flight with a verdict, in real numbers, however wrong the inputs"
   };
   // Too heavy: it says so, in three different ways for three different weights.
   is("mass 6 kg (T/W 0.60)", "grounded", /cannot take off: four motors make 3\.6 kg of thrust and the aircraft weighs 6\.0 kg/, /Thrust to weight is 0\.60/);
-  is("mass 3.5 kg (T/W 1.03)", "stuck", /could not hold its height, and sank back/);
+  // With 3% of thrust to spare it can neither climb to the height asked for nor stay up long: either is "stuck".
+  is("mass 3.5 kg (T/W 1.03)", "stuck", /could not climb|could not hold its height, and sank back/);
   is("mass 3.3 kg (T/W 1.09)", "crashed", /did not have the thrust to hold its height/);
   is("mass 2.5 kg (T/W 1.44)", "completed", undefined, /Thrust to weight is only 1\.44/);
   is("capacity 100 mAh", "grounded", /battery sags/);

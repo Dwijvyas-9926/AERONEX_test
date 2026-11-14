@@ -57,6 +57,13 @@ describe.skipIf(!BIN)("the planner against real ArduCopter (SITL)", () => {
   const tele = () => app.useLink.getState().telemetry;
   const pos = () => tele().position?.value;
   const armed = () => !!app.useLink.getState().vehicle?.armed;
+  let verdictOf: (typeof import("../src/features/preflight/health"))["preflightVerdict"];
+  /** The Preflight page's verdict, on what the firmware itself reports: its pre-arm bit and its PreArm messages. */
+  const verdictNow = () => {
+    const s = app.useLink.getState();
+    const p = app.useParams.getState().values;
+    return verdictOf({ now: Date.now(), armed: !!s.vehicle?.armed, ...s.telemetry, battLimits: { low: p.BATT_LOW_VOLT, crit: p.BATT_CRT_VOLT }, events: s.events });
+  };
   const texts: string[] = [];
   let radio = { loss: 0, dropped: 0 };
 
@@ -82,6 +89,7 @@ describe.skipIf(!BIN)("the planner against real ArduCopter (SITL)", () => {
       fw: await import("../src/sim/firmwareParams"),
       params: await import("../src/sim/params"),
     };
+    verdictOf = (await import("../src/features/preflight/health")).preflightVerdict;
     // The plan starts somewhere else entirely, as it would on a user's laptop.
     app.sim.useSim.setState({ home: { lat: 22.3, lon: 73.2, altMsl: 35 }, points: [], takeoffAlt: 10, ending: "rtl" });
     app.home.startHomeFollow();
@@ -127,6 +135,20 @@ describe.skipIf(!BIN)("the planner against real ArduCopter (SITL)", () => {
     say(`Still missing after translation: ${missing.length ? missing.join(", ") : "none"}`);
     say(`Return height: firmware RTL_ALT_M=${raw.RTL_ALT_M} RTL_ALT=${raw.RTL_ALT} -> app RTL_ALT=${named.RTL_ALT} cm. Cruise: WP_SPD=${raw.WP_SPD} WPNAV_SPEED=${raw.WPNAV_SPEED} -> ${named.WPNAV_SPEED} cm/s. Lean limit -> ${named.ANGLE_MAX} cdeg. Land speed -> ${named.LAND_SPEED} cm/s.`);
     expect(missing).toEqual([]);
+    // Every setting a page reads by name must exist under that name on this firmware.
+    const { DOCTOR_PARAMS } = await import("../src/features/doctor/diagnostics");
+    const pid = await import("../src/features/pid/pidModel");
+    const byName = [
+      ...DOCTOR_PARAMS.filter((n) => n !== "ARMING_CHECK" && n !== "ARMING_SKIPCHK" && !/2_/.test(n)),
+      ...[...pid.HORIZONTAL, ...pid.verticalControls(raw), ...pid.YAW].flatMap((c) => (c.mirror ? [c.name, c.mirror] : [c.name])),
+      "BATT_LOW_VOLT", "BATT_CRT_VOLT", "BATT_ARM_VOLT", "FS_GCS_ENABLE",
+    ];
+    const absent = byName.filter((n) => !Number.isFinite(raw[n]));
+    const arming = Number.isFinite(raw.ARMING_SKIPCHK) || Number.isFinite(raw.ARMING_CHECK);
+    say(`Settings the pages read by name: ${byName.length}, absent on this firmware: ${absent.length ? absent.join(", ") : "none"}; arming-check setting found: ${arming}`);
+    if (process.env.PARAM_DUMP) writeFileSync(process.env.PARAM_DUMP, Object.keys(raw).sort().join("\n") + "\n");
+    expect(absent).toEqual([]);
+    expect(arming).toBe(true);
     // The values must be in the units the app works in.
     expect(named.RTL_ALT).toBeGreaterThanOrEqual(0);
     expect(named.WPNAV_SPEED).toBeGreaterThan(100);
@@ -186,19 +208,41 @@ describe.skipIf(!BIN)("the planner against real ArduCopter (SITL)", () => {
     const newer = Number.isFinite(app.useParams.getState().values.SIM_GPS1_ENABLE);
     const gps = (on: boolean) => (newer ? app.commandLink.setParam("SIM_GPS1_ENABLE", on ? 1 : 0) : app.commandLink.setParam("SIM_GPS_DISABLE", on ? 0 : 1));
     await gps(false);
-    await until("the fix to be lost", () => (tele().gps?.value.fixType ?? 9) < 3, 60000);
-    const block = app.link.missionBlock();
-    say(`GPS switched off in the simulator: fix type ${tele().gps?.value.fixType}; the app says "${block?.title}"`);
-    expect(block).not.toBeNull();
-    await expect(app.commandLink.uploadMission(missionOf(plans[1]))).rejects.toThrow(/GPS/);
-    await expect(app.commandLink.startMission()).rejects.toThrow(/GPS/);
-    await gps(true);
+    try {
+      await until("the fix to be lost", () => (tele().gps?.value.fixType ?? 9) < 3, 60000);
+      const block = app.link.missionBlock();
+      say(`GPS switched off in the simulator: fix type ${tele().gps?.value.fixType}; the app says "${block?.title}"`);
+      expect(block).not.toBeNull();
+      // ArduCopter in Stabilize arms without a GPS, so Preflight does not say "not ready", but it does flag it.
+      await until("Preflight to flag the GPS", () => verdictNow().reasons.some((r) => /GPS/.test(r)), 30000);
+      say(`Preflight with the GPS off: "${verdictNow().title}": ${verdictNow().reasons.join(" ")}`);
+      await expect(app.commandLink.uploadMission(missionOf(plans[1]))).rejects.toThrow(/GPS/);
+      await expect(app.commandLink.startMission()).rejects.toThrow(/GPS/);
+    } finally {
+      await gps(true);
+    }
     await until("the fix to return", () => (tele().gps?.value.fixType ?? 0) >= 3, 120000);
     await until("the block to lift", () => app.link.missionBlock() === null, 20000);
     // The mission on the aircraft is the one from before: nothing got through.
     const after = await app.commandLink.downloadMission();
     expect(app.link.compareMissions(before, after)).toBeNull();
   }, 300000);
+
+  it("says 'Not ready' while ArduCopter's own pre-arm checks fail, quoting its reason, and 'Ready' once they pass", async () => {
+    const was = app.useParams.getState().values.BATT_ARM_VOLT ?? 0;
+    try {
+      // A minimum arming voltage above the pack's: ArduCopter refuses to arm, in any mode.
+      await app.commandLink.setParam("BATT_ARM_VOLT", 30);
+      await until("ArduCopter to report the pre-arm failure", () => verdictNow().cls === "nogo" && verdictNow().prearm.length > 0, 90000);
+      say(`Preflight with a failing pre-arm check: "${verdictNow().title}"; ArduCopter says: ${verdictNow().prearm.join(" | ")}`);
+      expect(verdictNow().prearm.join(" ")).toMatch(/volt|batt/i);
+    } finally {
+      await app.commandLink.setParam("BATT_ARM_VOLT", was);
+    }
+    await until("the pre-arm checks to pass again", () => verdictNow().cls === "go" || verdictNow().cls === "caution", 120000);
+    say(`Preflight once they pass: "${verdictNow().title}"${verdictNow().reasons.length ? `: ${verdictNow().reasons.join(" ")}` : ""}`);
+    expect(verdictNow().reasons.join(" ")).not.toMatch(/pre-arm/);
+  }, 260000);
 
   it("over a link that loses a fifth of everything, either sends the mission whole or says it failed", async () => {
     let ok = 0;
@@ -300,8 +344,11 @@ describe.skipIf(!BIN)("the planner against real ArduCopter (SITL)", () => {
     const { PRESETS } = await import("../src/sim/airframe");
     const { modelledParams } = await import("../src/sim/firmwareParams");
     const guess = predict(PRESETS[0], { ...app.params.defaultParams(PRESETS[0]), ...modelledParams(app.useParams.getState().values) }, app.sim.useSim.getState().home, mission, { windSpeed: 0, windFromDeg: 0, gust: 0, soc: 1, faults: [] });
-    say(`  the app predicted "${guess.verdict}" in ${Math.round(guess.stats.durationS)} s; ArduCopter took about ${Math.round(f.simSeconds)} s`);
+    const off = (guess.stats.durationS - f.simSeconds) / f.simSeconds;
+    say(`  the app predicted "${guess.verdict}" in ${Math.round(guess.stats.durationS)} s; ArduCopter took about ${Math.round(f.simSeconds)} s (${off >= 0 ? "+" : ""}${Math.round(off * 100)}%)`);
     expect(guess.verdict).toBe("completed");
+    // The prediction is the planner's flight time and battery estimate: it must be close to the firmware's.
+    expect(Math.abs(off)).toBeLessThan(0.15);
     expect(refused).toMatch(/Disarm before changing the mission/);
     for (const r of f.reach) {
       expect(r.d).toBeLessThan(3.5);

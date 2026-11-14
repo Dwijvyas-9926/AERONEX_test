@@ -32,13 +32,45 @@ export const HORIZONTAL: PidControl[] = [
   { name: "ATC_ANG_RLL_P", mirror: "ATC_ANG_PIT_P", label: "Angle P", min: 3, max: 12, step: 0.1, help: "How hard it drives toward the target angle. High → twitchy; low → sluggish." },
 ];
 
-/** Altitude / throttle controllers — the ones that drive vertical wobble. */
+/** Altitude / throttle controllers — the ones that drive vertical wobble. Names and units before ArduCopter 4.7. */
 export const VERTICAL: PidControl[] = [
   { name: "PSC_ACCZ_P", label: "Accel Z P", min: 0.2, max: 1.5, step: 0.05, help: "Throttle stiffness. Too high → the aircraft bounces vertically." },
   { name: "PSC_ACCZ_I", label: "Accel Z I", min: 0.0, max: 3.0, step: 0.05, help: "Usually about twice Accel Z P. Too high → slow vertical hunting." },
   { name: "PSC_VELZ_P", label: "Velocity Z P", min: 1, max: 8, step: 0.1, help: "Climb/descent rate control. High → jerky altitude." },
   { name: "PSC_POSZ_P", label: "Position Z P", min: 0.5, max: 3.0, step: 0.05, help: "How hard it holds the altitude setpoint." },
 ];
+
+/**
+ * The same controllers on ArduCopter 4.7 and later, which renamed them
+ * (PSC_ACCZ_P became PSC_D_ACC_P, and so on) and scaled the acceleration
+ * gains by 0.1: 4.6's Accel Z P of 0.5 is 4.7's 0.05. The ranges here are in
+ * 4.7's units, so a value from an old tuning guide does not land ten times
+ * too high.
+ */
+export const VERTICAL_47: PidControl[] = [
+  { name: "PSC_D_ACC_P", label: "Accel Z P", min: 0.02, max: 0.15, step: 0.005, help: "Throttle stiffness. Too high → the aircraft bounces vertically. 4.7 units: one tenth of 4.6's PSC_ACCZ_P." },
+  { name: "PSC_D_ACC_I", label: "Accel Z I", min: 0.0, max: 0.3, step: 0.005, help: "Usually about twice Accel Z P. Too high → slow vertical hunting. 4.7 units: one tenth of 4.6's PSC_ACCZ_I." },
+  { name: "PSC_D_VEL_P", label: "Velocity Z P", min: 1, max: 8, step: 0.1, help: "Climb/descent rate control. High → jerky altitude." },
+  { name: "PSC_D_POS_P", label: "Position Z P", min: 0.5, max: 3.0, step: 0.05, help: "How hard it holds the altitude setpoint." },
+];
+
+/** Older vertical-gain name → the name ArduCopter 4.7 uses. */
+const VERTICAL_RENAMED: Record<string, string> = Object.fromEntries(VERTICAL.map((c, i) => [c.name, VERTICAL_47[i].name]));
+
+/** True when the aircraft's parameters use 4.7's vertical-gain names. */
+export const hasNewVerticalNames = (values: Record<string, number>) => Number.isFinite(values.PSC_D_ACC_P) || Number.isFinite(values.PSC_D_VEL_P);
+
+/** The vertical controls this aircraft actually has. */
+export const verticalControls = (values: Record<string, number>): PidControl[] => (hasNewVerticalNames(values) ? VERTICAL_47 : VERTICAL);
+
+/**
+ * A recommendation with its parameter names as this aircraft has them. The
+ * advice is a percentage, which is the same in either unit.
+ */
+export function recFor(rec: AdviceRec, values: Record<string, number>): AdviceRec {
+  if (!hasNewVerticalNames(values)) return rec;
+  return { ...rec, params: rec.params.map((p) => VERTICAL_RENAMED[p] ?? p) };
+}
 
 /** Yaw gains — secondary, for nose-wag. */
 export const YAW: PidControl[] = [
@@ -49,6 +81,7 @@ export const YAW: PidControl[] = [
 export const ALL_PID_PARAMS: string[] = [
   ...HORIZONTAL.flatMap((c) => (c.mirror ? [c.name, c.mirror] : [c.name])),
   ...VERTICAL.map((c) => c.name),
+  ...VERTICAL_47.map((c) => c.name),
   ...YAW.map((c) => c.name),
 ];
 

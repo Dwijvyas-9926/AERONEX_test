@@ -7,11 +7,16 @@ import { useCalibration } from "../../state/calibrationStore";
 import { VirtualVehicle, type VehicleOptions } from "../../sim/vehicle";
 
 /*
-  Owns the physical serial connection. Reads are always safe; writes are used
-  only by the command layer (commandLink) for calibration — commands and
-  parameter sets the operator explicitly triggers. Nothing is written
-  autonomously, and the UI gates anything motor-related behind a disarmed,
-  props-off confirmation.
+  Owns the physical serial connection: opening it, the read loop, link
+  health (connected / stale / lost) and the virtual aircraft.
+
+  Everything written goes through the command layer (commandLink). On its own
+  the app writes only what keeps the link working: the 1 Hz ground-station
+  heartbeat (which the aircraft's GCS failsafe depends on), requests for
+  telemetry streams and requests to read parameters. Everything that changes
+  the aircraft (a parameter, a mode, arming, a mission, a calibration, a motor
+  test) is triggered by the operator, and the command layer refuses it for
+  anything but ArduCopter, and in the air unless confirmed.
 */
 
 const HEARTBEAT_TIMEOUT_MS = 8000; // first heartbeat must arrive within this window

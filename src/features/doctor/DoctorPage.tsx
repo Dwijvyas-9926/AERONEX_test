@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLink } from "../../state/linkStore";
 import { useParams } from "../../state/paramStore";
-import { useRequireParams } from "../calibration/common";
+import { useRequireParams } from "../calibration/paramWrite";
 import { AskDoctor } from "./AskDoctor";
 import { DOCTOR_PARAMS, type Finding, runDiagnostics, type Severity, summarize } from "./diagnostics";
 

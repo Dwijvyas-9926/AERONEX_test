@@ -154,7 +154,7 @@ export function FullParamsPage() {
                 <button
                   className="fp-group-head"
                   aria-expanded={isOpen}
-                  onClick={() => setOpen((s) => { const n = new Set(s); n.has(g) ? n.delete(g) : n.add(g); return n; })}
+                  onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n; })}
                 >
                   <ChevronRight size={16} className={`fp-caret${isOpen ? " open" : ""}`} />
                   <strong>{g}</strong>

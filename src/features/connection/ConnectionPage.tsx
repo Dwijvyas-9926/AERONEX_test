@@ -545,9 +545,10 @@ export function ConnectionPage() {
                   shows the vehicle type, firmware family, mode and arming state it reports.
                 </p>
                 <p>
-                  Reading is always passive. The app writes to the port only when you explicitly run something &mdash; a calibration, a parameter change, or a
-                  motor test &mdash; and tracks each command for the vehicle&rsquo;s acknowledgement. It never sends anything on its own, and motor actions stay
-                  behind a disarmed, props-off gate.
+                  On its own the app sends only what keeps the link working: a once-a-second ground-station heartbeat (the aircraft&rsquo;s link-loss
+                  failsafe depends on it) and requests for telemetry and settings. Anything that changes the aircraft &mdash; a parameter, a calibration, a
+                  motor test, arming, a mode, a mission &mdash; is sent only when you run it, is tracked for the vehicle&rsquo;s acknowledgement, and goes only
+                  to ArduCopter. Motor actions stay behind a disarmed, props-off gate.
                 </p>
                 <p>If heartbeats stop for 3 seconds, every value on screen is marked stale.</p>
               </div>

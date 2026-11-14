@@ -80,7 +80,7 @@ export function buildDroneContext(args: {
   }
   if (live.length) lines.push(`Live telemetry: ${live.join("; ")}.`);
 
-  const PARAM_KEYS = ["FRAME_CLASS", "FRAME_TYPE", "MOT_THST_HOVER", "FS_EKF_THRESH", "COMPASS_USE", "ARMING_CHECK", "BATT_MONITOR", "ATC_RAT_RLL_P", "ATC_RAT_RLL_D", "ATC_RAT_PIT_P", "ATC_ANG_RLL_P"];
+  const PARAM_KEYS = ["FRAME_CLASS", "FRAME_TYPE", "MOT_THST_HOVER", "FS_EKF_THRESH", "COMPASS_USE", "ARMING_CHECK", "ARMING_SKIPCHK", "BATT_MONITOR", "ATC_RAT_RLL_P", "ATC_RAT_RLL_D", "ATC_RAT_PIT_P", "ATC_ANG_RLL_P"];
   const shown = PARAM_KEYS.filter((k) => params[k] !== undefined).map((k) => `${k}=${params[k]}`);
   if (shown.length) lines.push(`Selected parameters: ${shown.join(", ")}.`);
 

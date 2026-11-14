@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConnectPrompt } from "../../components/ui/ConnectPrompt";
 import { Pfd } from "../flightdata/Pfd";
 import { notify } from "../../state/notifyStore";
-import { commandLink } from "../../services/link/commandLink";
+import { commandLink, vehicleBlock } from "../../services/link/commandLink";
 import { useLink } from "../../state/linkStore";
-import { FlightController, type FlightDeps, type FlightState, type KeyState, type LogLevel } from "./flightController";
+import { DEFAULT_CONFIG, FlightController, type FlightDeps, type FlightState, type KeyState, type LogLevel } from "./flightController";
 
 const DEG = 180 / Math.PI;
 const fresh = (at: number | undefined) => at != null && Date.now() - at < 3000;
@@ -62,6 +62,8 @@ export function KeyboardFlightPage() {
   const readyRef = useRef(false);
   const modalRef = useRef(true);
   const logId = useRef(0);
+  /** A fixed point for turning latitude and longitude into metres; any point will do, as long as it stays put. */
+  const geoRef = useRef<{ lat: number; lon: number } | null>(null);
 
   const pushLog = useCallback((level: LogLevel, text: string) => {
     setLogs((l) => [...l.slice(-40), { id: logId.current++, level, text, at: Date.now() }]);
@@ -71,7 +73,8 @@ export function KeyboardFlightPage() {
   const gps = tel.gps?.value;
   const gpsOk = !!gps && fresh(tel.gps?.at) && gps.fixType >= 3;
   const disarmed = !vehicle?.armed;
-  const ready = canSend && gpsOk && disarmed && ack && fsSet;
+  const notCopter = vehicle ? vehicleBlock() : null;
+  const ready = canSend && !notCopter && gpsOk && disarmed && ack && fsSet;
   useEffect(() => { readyRef.current = ready; }, [ready]);
 
   // --- build the controller once, wired to real MAVLink + telemetry ---
@@ -98,7 +101,16 @@ export function KeyboardFlightPage() {
         // asked for has actually begun — or that someone has taken over on
         // the radio. It was passed as null, so the controller flew blind to
         // both.
-        return { armed: s.vehicle?.armed ?? false, relAlt: alt, mode: s.vehicle?.customMode ?? null, connected: !!s.vehicle && s.status === "connected" };
+        // Position and heading, for the range limit. Old readings count as none.
+        let pos: { n: number; e: number } | null = null;
+        if (fresh) {
+          const { lat, lon } = t.position!.value;
+          const r = (geoRef.current ??= { lat, lon });
+          pos = { n: (lat - r.lat) * 111_320, e: (lon - r.lon) * 111_320 * Math.cos((r.lat * Math.PI) / 180) };
+        }
+        const attFresh = t.attitude && Date.now() - t.attitude.at < 3000;
+        const hdg = attFresh ? t.attitude!.value.yaw : fresh && t.position!.value.heading != null ? (t.position!.value.heading * Math.PI) / 180 : null;
+        return { armed: s.vehicle?.armed ?? false, relAlt: alt, mode: s.vehicle?.customMode ?? null, connected: !!s.vehicle && s.status === "connected", pos, heading: hdg };
       },
       now: () => Date.now(),
       log: pushLog,
@@ -132,8 +144,7 @@ export function KeyboardFlightPage() {
     };
   }, [pushLog]);
 
-  // --- tutorial shows every time the tab opens ---
-  useEffect(() => { setShowTutorial(true); }, []);
+  // The tutorial shows every time the page opens: its state starts open.
   // Keep a ref so the global key handler can suppress flight keys while the modal is open.
   useEffect(() => { modalRef.current = showTutorial; }, [showTutorial]);
 
@@ -325,6 +336,7 @@ export function KeyboardFlightPage() {
           <div className="panel-body">
             <ul className="kf-check">
               <li className={canSend ? "ok" : "bad"}><span className="kf-check-dot" /> Link connected</li>
+              {notCopter && <li className="bad" title={notCopter.body}><span className="kf-check-dot" /> {notCopter.title}</li>}
               <li className={gpsOk ? "ok" : "bad"}><span className="kf-check-dot" /> GPS 3D fix {gps ? `(${gps.satellites ?? 0} sats, fix ${gps.fixType})` : ""}</li>
               <li className={disarmed ? "ok" : "bad"}><span className="kf-check-dot" /> Disarmed on the ground</li>
               <li className={fsSet ? "ok" : "bad"}>
@@ -368,7 +380,7 @@ export function KeyboardFlightPage() {
             <p className="kf-modal-sub">Everything is slow, gradual and autopilot-stabilised. Release a key and the drone smoothly holds. This flies a <strong>real aircraft</strong> — fly in an open area, props on, people clear.</p>
             <div className="kf-modal-keys">
               <div className="kf-mk"><kbd>T</kbd><div><strong>Take off & climb</strong><span>Press once on the ground to arm and lift off gently. Hold in the air to climb. Release to hold altitude.</span></div></div>
-              <div className="kf-mk"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><div><strong>Move</strong><span>Forward, left, back, right — gentle and capped. Release to glide to a stop and hold.</span></div></div>
+              <div className="kf-mk"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><div><strong>Move</strong><span>Forward, left, back, right — gentle and capped. Release to glide to a stop and hold. It stays within {DEFAULT_CONFIG.maxRange} m of where it took off and {DEFAULT_CONFIG.maxAlt} m up.</span></div></div>
               <div className="kf-mk"><kbd>Q</kbd><kbd>E</kbd><div><strong>Yaw</strong><span>Rotate left / right slowly and smoothly.</span></div></div>
               <div className="kf-mk"><kbd>L</kbd><div><strong>Land</strong><span>Descends gently at the current spot and disarms automatically on the ground.</span></div></div>
               <div className="kf-mk emergency"><kbd>Space</kbd><div><strong>Hold</strong><span>Instantly brake to a stable hover at any time.</span></div></div>

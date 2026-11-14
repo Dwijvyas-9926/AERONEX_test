@@ -1,13 +1,15 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { onRememberChange, secretSplitStorage } from "./secretStorage";
 import { covers, loadDem, realTerrain, type DemPatch } from "../geo/elevation";
 import { tileUrl, type LatLon } from "../geo/geo";
 import { ELEVATION, type KeyKind } from "../geo/sources";
 import { loadTilePixels } from "../geo/tileCache";
 import type { Terrain } from "../sim/terrain";
 
-/* How the real map is shown. Kept in this browser, keys included: they go
-   nowhere but to the map provider they belong to. */
+/* How the real map is shown, kept in this browser. Provider keys go nowhere
+   but to the provider they belong to, and are kept for this session unless
+   the user chooses to have keys remembered (secretStorage). */
 interface MapPrefs {
   imagery: string;
   keys: Partial<Record<KeyKind, string>>;
@@ -29,9 +31,10 @@ export const useMapPrefs = create<MapPrefs>()(
       shading: true,
       set: (k, v) => set({ [k]: v } as Partial<MapPrefs>),
     }),
-    { name: "aeronex.map.v1", storage: createJSONStorage(() => localStorage), version: 1 },
+    { name: "aeronex.map.v1", storage: createJSONStorage(() => secretSplitStorage(["keys"])), version: 1 },
   ),
 );
+onRememberChange(() => useMapPrefs.setState({}));
 
 /* The real ground around home, once loaded. Not kept across reloads: the
    tiles it is built from are, so building it again needs no network. */
