@@ -106,6 +106,7 @@ function GrantedPorts({ disabled }: { disabled: boolean }) {
 
 function ConnectDial() {
   const status = useLink((s) => s.status);
+  const virtual = useLink((s) => s.virtual);
   const connectedAt = useLink((s) => s.connectedAt);
   const openedAt = useLink((s) => s.openedAt);
   const last = useLink((s) => s.lastHeartbeatAt);
@@ -154,7 +155,7 @@ function ConnectDial() {
         <span className="cb-inner on-navy">
           {open ? <Unplug /> : <Plug />}
           <span className="cb-label">{open ? "DISCONNECT" : "CONNECT"}</span>
-          <span className="cb-sub">{busy ? view.label : open ? "Close the serial port" : "Choose a serial port"}</span>
+          <span className="cb-sub">{busy ? view.label : open ? (virtual ? "Stop the virtual aircraft" : "Close the serial port") : "Choose a serial port"}</span>
         </span>
       </button>
       <div style={{ textAlign: "center", display: "grid", gap: 6 }}>
@@ -235,6 +236,7 @@ function Value<T>({ s, now, render, unit }: { s: Stamped<T> | undefined; now: nu
 
 function VehiclePanels() {
   const v = useLink((s) => s.vehicle);
+  const virtual = useLink((s) => s.virtual);
   const tel = useLink((s) => s.telemetry);
   const status = useLink((s) => s.status);
   const units = useSettings((s) => s.units);
@@ -292,7 +294,7 @@ function VehiclePanels() {
 
       <section className="panel">
         <div className="panel-head">
-          <h3>Live telemetry</h3>
+          <h3>{virtual ? "Simulated telemetry" : "Live telemetry"}</h3>
           <span className="muted" style={{ fontSize: "var(--t-sm)" }}>
             Shown only when the vehicle sends it
           </span>

@@ -46,6 +46,7 @@ function VelBar({ label, value, max }: { label: string; value: number; max: numb
 export function KeyboardFlightPage() {
   const vehicle = useLink((s) => s.vehicle);
   const status = useLink((s) => s.status);
+  const virtual = useLink((s) => s.virtual);
   const tel = useLink((s) => s.telemetry);
   const connected = !!vehicle && (status === "connected" || status === "stale");
   const canSend = !!vehicle && status === "connected";
@@ -289,10 +290,17 @@ export function KeyboardFlightPage() {
         <button className="btn btn-ghost" onClick={() => setShowTutorial(true)}><Gamepad2 size={15} /> Controls</button>
       </header>
 
-      <div className="callout danger">
-        <TriangleAlert />
-        <span><strong>Real flight.</strong> Props on, open area, everyone clear. Keep this browser tab focused — if it loses focus the drone holds, and if it disconnects the drone lands itself.</span>
-      </div>
+      {virtual ? (
+        <div className="callout virtual">
+          <TriangleAlert />
+          <span><strong>Virtual flight.</strong> You are flying the simulator's virtual aircraft; nothing real moves. On a real aircraft the same keys fly it for real, so treat this as rehearsal.</span>
+        </div>
+      ) : (
+        <div className="callout danger">
+          <TriangleAlert />
+          <span><strong>Real flight.</strong> Props on, open area, everyone clear. Keep this browser tab focused — if it loses focus the drone holds, and if it disconnects the drone lands itself.</span>
+        </div>
+      )}
 
       <div className={`kf-grid${flying ? " flying" : ""}`}>
         <section className="panel kf-pfd-panel">

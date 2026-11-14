@@ -56,8 +56,10 @@ export function FullParamsPage() {
     const d = new Date();
     const p2 = (n: number) => String(n).padStart(2, "0");
     const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`;
+    const virtual = useLink.getState().virtual;
     const header =
       `# AERONEX parameter file\n` +
+      (virtual ? `# SIMULATED: read from the AERONEX virtual aircraft, not a flight controller\n` : "") +
       `# ${vehicle?.firmwareLabel ?? "MAVLink"} · system ${vehicle?.sysid ?? "?"} · ${d.toISOString()}\n` +
       `# ${names.length} parameters${edits.count ? " — note: unsaved edits in the app are NOT included" : ""}\n`;
     const body = names.map((n) => `${n},${values[n]}`).join("\n");
@@ -65,7 +67,7 @@ export function FullParamsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `aeronex-params-${stamp}.param`;
+    a.download = `aeronex-params-${virtual ? "virtual-" : ""}${stamp}.param`;
     document.body.appendChild(a);
     a.click();
     a.remove();

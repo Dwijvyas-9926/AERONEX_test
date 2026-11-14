@@ -10,6 +10,7 @@ import { SearchPalette } from "../components/shell/SearchPalette";
 import { ConfirmDialog, Toasts } from "../components/shell/Overlays";
 import { Sidebar } from "../components/shell/Sidebar";
 import { StatusBar } from "../components/shell/StatusBar";
+import { VirtualDataBanner } from "../components/shell/VirtualDataBanner";
 import { CalibrationPage } from "../features/calibration/CalibrationPage";
 import { ConnectionPage } from "../features/connection/ConnectionPage";
 import { DigitalTwinPage } from "../features/digital-twin/DigitalTwinPage";
@@ -140,6 +141,7 @@ function Frame() {
       <StatusBar />
       <Sidebar />
       <main className="main" id="main">
+        <VirtualDataBanner />
         <AnimatedRoutes />
       </main>
       <HelpPanel />

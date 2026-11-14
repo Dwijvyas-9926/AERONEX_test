@@ -22,6 +22,7 @@ function Bar({ value, max, h }: { value: number; max: number; h: Health }) {
 export function PreflightPage() {
   const vehicle = useLink((s) => s.vehicle);
   const status = useLink((s) => s.status);
+  const virtual = useLink((s) => s.virtual);
   const tel = useLink((s) => s.telemetry);
   const events = useLink((s) => s.events);
   // Every hook must run on every render. Reading the clock after the
@@ -100,6 +101,7 @@ export function PreflightPage() {
         <div>
           <strong>{verdict.title}</strong>
           <span>{verdict.note}</span>
+          {virtual && <span className="pf-virtual">This verdict is for the virtual aircraft. It says nothing about your real one.</span>}
           {verdict.reasons.length > 1 && (
             <ul className="pf-reasons">
               {verdict.reasons.map((r) => <li key={r}>{r}</li>)}

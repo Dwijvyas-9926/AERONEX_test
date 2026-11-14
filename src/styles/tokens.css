@@ -19,7 +19,14 @@
   /* Surfaces: ivory, from page to raised control */
   --midnight: #f6f3ec;      /* page background */
   --midnight-deep: #ece7dd; /* wells under 3D, maps and drawings */
-  --chrome: #f1ede5;        /* side menu and top bar: a breath off the page */
+  --chrome: #ebe6dc;        /* side menu and top bar: a breath off the page */
+  /* Frosted-glass finish for the menu and top bar: a light sheen over the
+     chrome tone, a fine grain, and a bright inner edge. Same colour family. */
+  --chrome-sheen-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.36));
+  --chrome-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.2) 38%, rgba(255, 255, 255, 0.06) 100%);
+  --chrome-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .08 0 0 0 0 .13 0 0 0 0 .24 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --chrome-edge: rgba(255, 255, 255, 0.85);
+  --chrome-line: rgba(20, 33, 61, 0.09);
   --graphite: #fdfcf8;      /* panels and cards */
   --slate: #efebe2;         /* raised controls: buttons, chips */
   --field: #ffffff;         /* text fields and the selected segment */

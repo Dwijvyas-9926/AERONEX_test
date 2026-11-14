@@ -12,6 +12,8 @@ export function TelemetryPage() {
   const frames = useLink((s) => s.recentFrames);
   const last = useLink((s) => s.lastHeartbeatAt);
   const vehicle = useLink((s) => s.vehicle);
+  const virtual = useLink((s) => s.virtual);
+  const portLabel = useLink((s) => s.portLabel);
   const now = useNow(1000);
   const view = LINK_STATUS[status];
   const rates = Object.entries(stats.rates).sort((a, b) => b[1].hz - a[1].hz);
@@ -25,7 +27,9 @@ export function TelemetryPage() {
           <p>What is actually arriving on the link: message rates, vehicle events and the raw frame stream.</p>
         </div>
         <div className="actions">
-          <span className="pill accent plain">Source: physical link</span>
+          {isPortOpen(status) && (
+            <span className={`pill ${virtual ? "virtual" : "accent"} plain`}>{virtual ? "Source: virtual aircraft (simulated)" : `Source: ${portLabel ?? "serial link"}`}</span>
+          )}
           <span className={`pill ${view.tone}${view.live ? " live" : ""}`}>{view.label}</span>
         </div>
       </header>

@@ -191,7 +191,8 @@ function Rig({
       return;
     }
     const p = mode === "scripted" ? stepScripted((t.current += Math.min(dt, 0.05)), livePose) : manual.update(dt, keys.current);
-    if (mode === "scripted") Object.assign(livePose, p);
+    // The HUD reads livePose in both modes; manual keeps its own pose object.
+    if (p !== livePose) Object.assign(livePose, p);
     if (fly.current) {
       fly.current.position.set(p.x, p.y, p.z);
       fly.current.rotation.copy(attitudeToEuler(p.roll, p.pitch, p.yaw, euler));

@@ -20,7 +20,7 @@ export function FlightHud({ active }: { active: boolean }) {
       if (alt.current) alt.current.textContent = p.agl.toFixed(1);
       if (vs.current) vs.current.textContent = (p.climb >= 0 ? "+" : "") + p.climb.toFixed(1);
       if (hdg.current) hdg.current.textContent = String(Math.round((((p.yaw * RAD) % 360) + 360) % 360)).padStart(3, "0");
-      horizon.current?.setAttribute("transform", `rotate(${-p.roll * RAD}) translate(0 ${p.pitch * RAD * 2})`);
+      horizon.current?.setAttribute("transform", `rotate(${-p.roll * RAD}) translate(0 ${p.pitch * RAD * 1.2})`);
       roll.current?.setAttribute("transform", `rotate(${-p.roll * RAD})`);
       raf = requestAnimationFrame(draw);
     };

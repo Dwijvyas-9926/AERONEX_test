@@ -11,6 +11,7 @@ const STALE = 3000;
 export function FlightDataPage() {
   const vehicle = useLink((s) => s.vehicle);
   const status = useLink((s) => s.status);
+  const virtual = useLink((s) => s.virtual);
   const tel = useLink((s) => s.telemetry);
   const connectedAt = useLink((s) => s.connectedAt);
   const units = useSettings((s) => s.units);
@@ -81,8 +82,9 @@ export function FlightDataPage() {
           </div>
           <div className="fd-ribbon-right">
             <span className={`fd-arm ${vehicle!.armed ? "armed" : "safe"}`}>{vehicle!.armed ? "Armed" : "Disarmed"}</span>
+            {virtual && <span className="fd-sim" title="Every value on this display comes from the virtual aircraft">Simulated</span>}
             <span className={`fd-link ${status === "connected" ? "live" : "stale"}`}>
-              <i /> {status === "connected" ? "Live link" : "Stale"}
+              <i /> {status === "connected" ? (virtual ? "Live (virtual)" : "Live link") : "Stale"}
             </span>
             {connectedAt && <span className="fd-time">{duration(now - connectedAt)}</span>}
             {remaining != null && (

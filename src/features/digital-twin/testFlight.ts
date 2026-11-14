@@ -94,7 +94,8 @@ export class ManualController {
 
     const fwd = (k.pitchFwd ? 1 : 0) - (k.pitchBack ? 1 : 0);
     const right = (k.rollRight ? 1 : 0) - (k.rollLeft ? 1 : 0);
-    const yawIn = (k.yawLeft ? 1 : 0) - (k.yawRight ? 1 : 0);
+    // Yaw is a compass heading: positive turns clockwise, to the right (E).
+    const yawIn = (k.yawRight ? 1 : 0) - (k.yawLeft ? 1 : 0);
     const climbIn = (k.up ? 1 : 0) - (k.down ? 1 : 0);
 
     p.yaw += yawIn * YAW_RATE * step;
@@ -123,9 +124,11 @@ export class ManualController {
       this.vy = 0;
     }
 
-    // Visual attitude from commanded horizontal motion (bank into travel)
-    p.pitch = (fwd * MAX_TILT) * 0.9;
-    p.roll = (right * MAX_TILT) * 0.9;
+    // Visual attitude from commanded horizontal motion: a multicopter tilts
+    // into the way it is going. Pitch is nose-up positive, so moving forward
+    // (W) dips the nose; roll is right-wing-down positive.
+    p.pitch = -fwd * MAX_TILT * 0.9;
+    p.roll = right * MAX_TILT * 0.9;
     p.groundSpeed = Math.hypot(this.vx, this.vz);
     p.climb = this.vy;
     p.agl = p.y;
