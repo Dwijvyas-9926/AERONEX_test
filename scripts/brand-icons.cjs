@@ -7,11 +7,12 @@ const path = require("path");
 const { chromium } = require("playwright");
 
 const OUT = path.join(__dirname, "..", "public");
-const BG = "#1b1410";
+const BG = "#14213d";
+const PAPER = "#f6f3ec";
 const glyph = `
-  <path d="M11.5 53 L28.2 10 H35.8 L52.5 53 H44 L32 21.5 L20 53 Z" fill="#d8a648"/>
+  <path d="M11.5 53 L28.2 10 H35.8 L52.5 53 H44 L32 21.5 L20 53 Z" fill="#f28c38"/>
   <path d="M4 40.5 H60" stroke="${BG}" stroke-width="9.6"/>
-  <path d="M6.5 40.5 H57.5" stroke="#f2e8d6" stroke-width="4.2"/>`;
+  <path d="M6.5 40.5 H57.5" stroke="#f4f2ec" stroke-width="4.2"/>`;
 
 const tile = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${BG}"/>${glyph}</svg>`;
 // Full-bleed square for platforms that round the corners themselves.
@@ -20,12 +21,12 @@ const square = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rec
 const maskable = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${BG}"/><g transform="translate(32 32) scale(0.62) translate(-32 -32)">${glyph}</g></svg>`;
 
 const social = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
-  <rect width="1200" height="630" fill="${BG}"/>
-  <path d="M0 470 H1200" stroke="#3b2c1d" stroke-width="2"/>
-  <g transform="translate(96 150) scale(2.6)">${glyph}</g>
-  <text x="300" y="268" font-family="'Saira Semi Condensed', 'Arial Narrow', sans-serif" font-weight="600" font-size="118" letter-spacing="6" fill="#f2e8d6">AERONEX</text>
-  <text x="304" y="328" font-family="'Saira Semi Condensed', 'Arial Narrow', sans-serif" font-weight="500" font-size="40" letter-spacing="2" fill="#a99a7f">Ground Station</text>
-  <text x="96" y="540" font-family="Manrope, Arial, sans-serif" font-size="30" fill="#cfc0a5">Design, set up, fly and review a Pixhawk drone from the browser.</text>
+  <rect width="1200" height="630" fill="${PAPER}"/>
+  <path d="M0 470 H1200" stroke="#dad3c4" stroke-width="2"/>
+  <g transform="translate(96 150) scale(2.6)"><rect width="64" height="64" rx="14" fill="${BG}"/>${glyph}</g>
+  <text x="300" y="268" font-family="'Saira Semi Condensed', 'Arial Narrow', sans-serif" font-weight="600" font-size="118" letter-spacing="6" fill="${BG}">AERONEX</text>
+  <text x="304" y="328" font-family="'Saira Semi Condensed', 'Arial Narrow', sans-serif" font-weight="500" font-size="40" letter-spacing="2" fill="#56617a">Ground Station</text>
+  <text x="96" y="540" font-family="Manrope, Arial, sans-serif" font-size="30" fill="#33405c">Design, set up, fly and review a Pixhawk drone from the browser.</text>
 </svg>`;
 
 (async () => {

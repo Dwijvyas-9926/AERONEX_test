@@ -226,7 +226,7 @@ export function padTexture(): THREE.CanvasTexture {
     ctx.lineTo(s * 0.63, s * 0.5);
     ctx.stroke();
     // North tick, so the pad itself shows which way the aircraft starts facing.
-    ctx.fillStyle = "#d8a648";
+    ctx.fillStyle = "#f28c38";
     ctx.beginPath();
     ctx.moveTo(s / 2, s * 0.03);
     ctx.lineTo(s * 0.53, s * 0.1);
@@ -285,7 +285,7 @@ export function blobTexture(): THREE.CanvasTexture {
 }
 
 /** A text label as a texture, for a sprite. */
-export function labelTexture(text: string, fg = "#17120c", bg = "#d8a648"): { tex: THREE.CanvasTexture; aspect: number } {
+export function labelTexture(text: string, fg = "#14213d", bg = "#f28c38"): { tex: THREE.CanvasTexture; aspect: number } {
   const c = document.createElement("canvas");
   const ctx = c.getContext("2d")!;
   const font = "700 46px 'Saira Semi Condensed', 'Arial Narrow', sans-serif";

@@ -1,47 +1,81 @@
 /*
   AERONEX Ground Station design tokens.
-  Warm "golden hour" palette: dark espresso/chocolate surfaces, beige ink,
-  burnished-brass accent. Token names are historical; values below are the
-  source of truth. Colour roles stay semantic: accent = active/interactive
-  only, ok/warn/danger = verified state only. Never use them as decoration.
+
+  "Ivory & Navy": warm ivory surfaces, navy ink, one signal-orange accent.
+  The language of aviation charts and flight manuals, chosen to read well
+  on a laptop outdoors in daylight. Token names are historical (the app was
+  dark once); the values below are the source of truth.
+
+  Roles stay semantic and never decorative:
+   - accent (signal orange) = the action to take, and where you are;
+   - ok / warn / danger = verified state only, each with a soft fill and a line;
+   - virtual = the simulator's aircraft, distinct from any real one.
+  Every text colour here is at least 4.5:1 on every surface it sits on
+  (page, panel and raised control).
 */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* Base palette — espresso through cocoa */
-  --midnight: #1b1410;      /* app background */
-  --midnight-deep: #120c08; /* viewport wells, under 3D */
-  --graphite: #241a13;      /* panels */
-  --slate: #32251a;         /* raised controls */
-  --slate-hi: #3f2f20;      /* hover on raised */
-  --line: #3b2c1d;          /* separators */
-  --line-soft: #2a1f15;
+  /* Surfaces: ivory, from page to raised control */
+  --midnight: #f6f3ec;      /* page background */
+  --midnight-deep: #ece7dd; /* wells under 3D, maps and drawings */
+  --chrome: #f1ede5;        /* side menu and top bar: a breath off the page */
+  --graphite: #fdfcf8;      /* panels and cards */
+  --slate: #efebe2;         /* raised controls: buttons, chips */
+  --field: #ffffff;         /* text fields and the selected segment */
+  --slate-hi: #e5e0d4;      /* hover on raised */
+  --line: #dad3c4;          /* borders and separators */
+  --line-soft: #e8e3d8;     /* hairlines inside panels */
 
-  --ink: #f2e8d6;           /* warm beige */
-  --ink-2: #cfc0a5;
+  /* Ink: navy */
+  --ink: #14213d;           /* headings and primary text: 13.4:1 on a panel */
+  --ink-2: #33405c;         /* body text */
+  --muted: #56617a;         /* secondary text, labels */
+  --faint: #5d677d;         /* least text that still must be read */
+
+  /* Accent: signal orange */
+  --accent: #a8470f;        /* 4.9:1 as text on a raised control */
+  --accent-hi: #8f3b0b;     /* pressed / hover on a filled accent */
+  --accent-ink: #ffffff;    /* text on a filled accent: 5.9:1 */
+  --accent-soft: rgba(168, 71, 15, 0.09);
+  --accent-line: rgba(168, 71, 15, 0.34);
+
+  /* State */
+  --ok: #376f33;
+  --ok-soft: rgba(55, 111, 51, 0.10);
+  --ok-line: rgba(55, 111, 51, 0.34);
+  --warn: #965700;
+  --warn-soft: rgba(176, 106, 0, 0.11);
+  --warn-line: rgba(150, 87, 0, 0.36);
+  --danger: #b3261e;
+  --danger-soft: rgba(179, 38, 30, 0.08);
+  --danger-line: rgba(179, 38, 30, 0.34);
+  --virtual: #6b4fa0;
+  --virtual-soft: rgba(107, 79, 160, 0.10);
+
+  /* Brand navy, for marks and the few solid navy fills */
+  --navy: #14213d;
+  --navy-2: #1d3461;
+
   /*
-    Secondary text, checked against every surface it sits on. The previous
-    pair measured 5.2:1 and 2.4:1 on a raised panel — the second well under
-    the 4.5:1 that small text needs, on an app meant to be read outdoors on a
-    laptop in daylight. Both now clear it: 6.2:1 and 4.5:1 on a panel, more
-    on the page background.
+    Glass over imagery. Panels that float on a satellite picture or a 3D
+    world sit on unknown colours, so they are dark navy glass with ivory
+    text, like a cockpit display; panels floating on the app's own light
+    surfaces use the light glass.
   */
-  --muted: #a99a7f;
-  --faint: #908168;
+  --glass: rgba(253, 252, 248, 0.86);
+  --glass-line: rgba(20, 33, 61, 0.12);
+  --hud: rgba(13, 22, 41, 0.78);
+  --hud-strong: rgba(13, 22, 41, 0.9);
+  --hud-ink: #f4f2ec;
+  --hud-muted: #b8c0cf;
+  --hud-line: rgba(244, 242, 236, 0.16);
 
-  --accent: #d8a648;        /* burnished brass */
-  --accent-ink: #241704;
-  --accent-soft: rgba(216, 166, 72, 0.13);
-  --accent-line: rgba(216, 166, 72, 0.4);
-
-  --ok: #9cb257;            /* olive / healthy */
-  --ok-soft: rgba(156, 178, 87, 0.14);
-  --warn: #e07b33;          /* burnt orange — distinct from brass */
-  --warn-soft: rgba(224, 123, 51, 0.14);
-  --danger: #de6149;        /* rust red — 4.8:1 as text on a panel */
-  --danger-soft: rgba(214, 87, 63, 0.14);
-  --virtual: #c49ad0;       /* dusty lilac — cool pop for simulated vehicles */
-  --virtual-soft: rgba(196, 154, 208, 0.14);
+  /* Depth: navy-tinted shadows, never black */
+  --shadow-1: 0 1px 2px rgba(20, 33, 61, 0.06), 0 1px 1px rgba(20, 33, 61, 0.04);
+  --shadow-2: 0 10px 28px rgba(20, 33, 61, 0.10), 0 2px 6px rgba(20, 33, 61, 0.05);
+  --shadow-3: 0 28px 70px rgba(20, 33, 61, 0.20), 0 6px 16px rgba(20, 33, 61, 0.08);
+  --scrim: rgba(13, 22, 41, 0.40);
 
   /* Type */
   --font-ui: "Manrope Variable", "Manrope", system-ui, sans-serif;
@@ -92,4 +126,41 @@
 :root[data-motion="reduced"] {
   --dur-fast: 0ms;
   --dur: 0ms;
+}
+
+/*
+  Navy scope: a panel that is solid or glass navy (the flight display, the
+  connect dial, overlays on a 3D world or a satellite picture). Inside it
+  the same token names resolve to their on-navy values, so components need
+  no second set of class names. Text stays at least 4.5:1 on --hud.
+*/
+.on-navy {
+  --ink: #f4f2ec;
+  --ink-2: #dde2ea;
+  --muted: #b8c0cf;
+  --faint: #a3adc0;
+  --line: rgba(244, 242, 236, 0.18);
+  --line-soft: rgba(244, 242, 236, 0.1);
+  --slate: rgba(244, 242, 236, 0.08);
+  --slate-hi: rgba(244, 242, 236, 0.14);
+  --field: rgba(244, 242, 236, 0.06);
+  --graphite: #13213f;
+  --midnight-deep: #0d1629;
+  --accent: #f4a259;
+  --accent-hi: #f7b77c;
+  --accent-ink: #14213d;
+  --accent-soft: rgba(244, 162, 89, 0.14);
+  --accent-line: rgba(244, 162, 89, 0.42);
+  --ok: #8fcb8a;
+  --ok-soft: rgba(143, 203, 138, 0.14);
+  --ok-line: rgba(143, 203, 138, 0.4);
+  --warn: #f2bd57;
+  --warn-soft: rgba(242, 189, 87, 0.14);
+  --warn-line: rgba(242, 189, 87, 0.42);
+  --danger: #ff8f80;
+  --danger-soft: rgba(255, 143, 128, 0.14);
+  --danger-line: rgba(255, 143, 128, 0.45);
+  --virtual: #c5b3ec;
+  --virtual-soft: rgba(197, 179, 236, 0.16);
+  color: var(--ink);
 }

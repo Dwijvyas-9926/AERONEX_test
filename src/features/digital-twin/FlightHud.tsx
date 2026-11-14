@@ -31,7 +31,7 @@ export function FlightHud({ active }: { active: boolean }) {
   if (!active) return null;
   const r = 44;
   return (
-    <div className="flight-hud">
+    <div className="flight-hud on-navy">
       <svg width="92" height="92" viewBox="-46 -46 92 92" aria-hidden>
         <defs>
           <clipPath id="hud-ai">
@@ -40,20 +40,20 @@ export function FlightHud({ active }: { active: boolean }) {
         </defs>
         <g clipPath="url(#hud-ai)">
           <g ref={horizon}>
-            <rect x={-120} y={-120} width={240} height={120} fill="#bfae90" />
-            <rect x={-120} y={0} width={240} height={120} fill="#2c1f14" />
-            <line x1={-120} x2={120} y1={0} y2={0} stroke="#f2e8d6" strokeWidth={1.2} />
+            <rect x={-120} y={-120} width={240} height={120} fill="#3a74b4" />
+            <rect x={-120} y={0} width={240} height={120} fill="#6b4a2c" />
+            <line x1={-120} x2={120} y1={0} y2={0} stroke="#f4f2ec" strokeWidth={1.2} />
           </g>
           <g ref={roll}>
-            <path d="M0 -43 l-4 7 h8 z" fill="#d8a648" />
+            <path d="M0 -43 l-4 7 h8 z" fill="#f4a259" />
           </g>
         </g>
-        <g stroke="#d8a648" strokeWidth={2.4} fill="none" strokeLinecap="round">
+        <g stroke="#f4a259" strokeWidth={2.4} fill="none" strokeLinecap="round">
           <path d="M-22 0 H-8 L-4 5" />
           <path d="M22 0 H8 L4 5" />
         </g>
-        <circle r={2} fill="#d8a648" />
-        <circle r={r - 1} fill="none" stroke="rgba(242,232,214,0.25)" strokeWidth={1.5} />
+        <circle r={2} fill="#f4a259" />
+        <circle r={r - 1} fill="none" stroke="rgba(244,242,236,0.28)" strokeWidth={1.5} />
       </svg>
       <dl>
         <div>

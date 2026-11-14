@@ -296,7 +296,9 @@ export function KeyboardFlightPage() {
 
       <div className={`kf-grid${flying ? " flying" : ""}`}>
         <section className="panel kf-pfd-panel">
-          <Pfd {...pfd} />
+          <div className="kf-pfd-well on-navy">
+            <Pfd {...pfd} />
+          </div>
           <div className={`kf-phase ${flight.phase}`}>
             <span className="kf-phase-dot" />
             {phaseLabel[flight.phase] ?? flight.phase}

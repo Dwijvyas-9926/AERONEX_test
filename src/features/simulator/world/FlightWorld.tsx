@@ -64,7 +64,7 @@ interface Pose {
 }
 
 const SUN = new THREE.Vector3(0.48, 0.6, 0.36).normalize();
-const ACCENT = "#e8b04a";
+const ACCENT = "#f28c38";
 
 /* ---------------------------------------------------------------- ground */
 
@@ -284,7 +284,7 @@ function WindStreaks({ wind, pose }: { wind: { speed: number; fromDeg: number };
 const lensScale = (camera: THREE.Camera) => Math.tan((((camera as THREE.PerspectiveCamera).fov ?? 55) * Math.PI) / 360) / Math.tan((55 * Math.PI) / 360);
 
 function Tag({ text, position, tone = "accent", size = 0.045 }: { text: string; position: [number, number, number]; tone?: "accent" | "light" | "active"; size?: number }) {
-  const l = useMemo(() => (tone === "light" ? labelTexture(text, "#17120c", "#f2e8d6") : tone === "active" ? labelTexture(text, "#17120c", "#9fd45a") : labelTexture(text)), [text, tone]);
+  const l = useMemo(() => (tone === "light" ? labelTexture(text, "#14213d", "#f4f2ec") : tone === "active" ? labelTexture(text, "#14213d", "#9fd45a") : labelTexture(text)), [text, tone]);
   useEffect(() => () => l.tex.dispose(), [l]);
   const ref = useRef<THREE.Sprite>(null);
   useFrame(({ camera }) => {
@@ -480,7 +480,7 @@ function Flight(props: FlightWorldProps & { pose: MutableRefObject<Pose>; env: T
   const sun = useRef<THREE.DirectionalLight>(null);
   const spin = useRef(0);
   const blobTex = useMemo(() => blobTexture(), []);
-  const beaconTex = useMemo(() => labelTexture("▼", "#17120c", "#f2e8d6"), []);
+  const beaconTex = useMemo(() => labelTexture("▼", "#14213d", "#f4f2ec"), []);
   const e3 = useMemo(() => new THREE.Euler(), []);
   const { camera } = useThree();
 
@@ -770,8 +770,8 @@ function CrashEffects({ pose, terrain, wind, size }: { pose: MutableRefObject<Po
           }
           tmp.m.compose(b.p, tmp.q.setFromEuler(b.r), tmp.s.set(b.s * 2.4, b.s * 0.35, b.s));
           mesh.setMatrixAt(i, tmp.m);
-          // Mostly carbon, with a few pieces of shell and one of the gold trim.
-          mesh.setColorAt(i, tmp.c.set(i % 7 === 0 ? "#d8a648" : i % 3 === 0 ? "#d9cfba" : "#1d1a17"));
+          // Mostly carbon, with a few pieces of shell and one of the orange trim.
+          mesh.setColorAt(i, tmp.c.set(i % 7 === 0 ? "#e0742a" : i % 3 === 0 ? "#e6e3dc" : "#1c1f26"));
         });
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

@@ -43,9 +43,9 @@ function Label({ text, color, position }: { text: string; color: string; positio
 
 function Axes() {
   const items: { dir: [number, number, number]; color: string; label: string }[] = [
-    { dir: [0, 0, -1], color: "#d8a648", label: "Forward" },
-    { dir: [1, 0, 0], color: "#c49ad0", label: "Right" },
-    { dir: [0, 1, 0], color: "#9cb257", label: "Up" },
+    { dir: [0, 0, -1], color: "#c4540f", label: "Forward" },
+    { dir: [1, 0, 0], color: "#6b4fa0", label: "Right" },
+    { dir: [0, 1, 0], color: "#376f33", label: "Up" },
   ];
   return (
     <group>
@@ -229,7 +229,7 @@ export interface TwinSceneProps {
 }
 
 /** A clean vertical studio gradient as the scene backdrop — professional and
-    high-contrast so the model reads clearly, instead of a flat dark fill. */
+    high-contrast so the model reads clearly, instead of a flat fill. */
 function StudioBackground() {
   const { scene } = useThree();
   const tex = useMemo(() => {
@@ -238,9 +238,9 @@ function StudioBackground() {
     c.height = 256;
     const ctx = c.getContext("2d")!;
     const g = ctx.createLinearGradient(0, 0, 0, 256);
-    g.addColorStop(0, "#47535f");
-    g.addColorStop(0.5, "#323c46");
-    g.addColorStop(1, "#1b2027");
+    g.addColorStop(0, "#f7f8f9");
+    g.addColorStop(0.5, "#e3e7eb");
+    g.addColorStop(1, "#cdd3da");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 16, 256);
     const t = new THREE.CanvasTexture(c);
@@ -281,11 +281,11 @@ export default function TwinScene({ mode, object, forward, up, scalePercent, gra
   const [env, setEnv] = useState<THREE.Texture | null>(null);
   return (
     <Canvas dpr={GRAPHICS[graphics].dpr} camera={{ position: [1.8, 1.3, 2.2], fov: 42, near: 0.01, far: 200 }} shadows={false}>
-      <fog attach="fog" args={["#2a333d", 28, 95]} />
+      <fog attach="fog" args={["#dde2e7", 28, 95]} />
       <StudioBackground />
       <TwinEnv onEnv={setEnv} />
       {/* Even, neutral studio lighting so the model reads clearly from any angle. */}
-      <hemisphereLight args={["#ffffff", "#5b6673", 0.65]} />
+      <hemisphereLight args={["#ffffff", "#8a929e", 0.75]} />
       <directionalLight position={[-6, 12, 4]} intensity={1.5} color="#ffffff" />
       <directionalLight position={[7, 6, -5]} intensity={0.5} color="#cfe0ff" />
       <Rig mode={mode} object={object} forward={forward} up={up} scalePercent={scalePercent} keys={keys} env={env} />
@@ -293,18 +293,18 @@ export default function TwinScene({ mode, object, forward, up, scalePercent, gra
         args={[80, 80]}
         cellSize={0.5}
         cellThickness={0.55}
-        cellColor="#3b4653"
+        cellColor="#bcc3cc"
         sectionSize={2.5}
         sectionThickness={1.1}
-        sectionColor="#5a6a79"
+        sectionColor="#8a95a5"
         fadeDistance={55}
         fadeStrength={1.4}
         infiniteGrid
         position={[0, 0, 0]}
       />
-      <ContactShadows position={[0, 0.002, 0]} scale={16} blur={2.6} far={6} opacity={0.4} color="#05070a" resolution={512} />
+      <ContactShadows position={[0, 0.002, 0]} scale={16} blur={2.6} far={6} opacity={0.38} color="#14213d" resolution={512} />
       <GizmoHelper alignment="bottom-right" margin={[56, 56]}>
-        <GizmoViewport axisColors={["#d8a648", "#9cb257", "#c49ad0"]} labelColor="#17120c" />
+        <GizmoViewport axisColors={["#6b4fa0", "#376f33", "#c4540f"]} labelColor="#ffffff" />
       </GizmoHelper>
     </Canvas>
   );

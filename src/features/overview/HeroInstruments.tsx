@@ -21,7 +21,7 @@ function PitchLadder() {
     const w = major ? 44 : 22;
     lines.push(
       <g key={d}>
-        <line x1={-w / 2} x2={w / 2} y1={y} y2={y} stroke="#f2e8d6" strokeOpacity={major ? 0.85 : 0.5} strokeWidth={1.2} />
+        <line x1={-w / 2} x2={w / 2} y1={y} y2={y} stroke="#14213d" strokeOpacity={major ? 0.85 : 0.5} strokeWidth={1.2} />
         {major && (
           <>
             <text x={-w / 2 - 6} y={y + 3.5} textAnchor="end" className="ai-num">
@@ -45,7 +45,7 @@ function HeadingTicks() {
     const x = d * TAPE_PX_PER_DEG;
     const n = ((d % 360) + 360) % 360;
     const major = n % 30 === 0;
-    items.push(<line key={`t${d}`} x1={x} x2={x} y1={major ? 14 : 18} y2={24} stroke="#cfc0a5" strokeOpacity={major ? 0.9 : 0.45} />);
+    items.push(<line key={`t${d}`} x1={x} x2={x} y1={major ? 14 : 18} y2={24} stroke="#33405c" strokeOpacity={major ? 0.9 : 0.45} />);
     if (major)
       items.push(
         <text key={`n${d}`} x={x} y={10} textAnchor="middle" className={card[n] ? "tape-card" : "tape-num"}>
@@ -106,7 +106,7 @@ export function HeroInstruments({ animate }: { animate: boolean }) {
             <HeadingTicks />
           </g>
         </g>
-        <path d={`M${TAPE_W / 2 - 5} 28 L${TAPE_W / 2} 21 L${TAPE_W / 2 + 5} 28 Z`} fill="#d8a648" />
+        <path d={`M${TAPE_W / 2 - 5} 28 L${TAPE_W / 2} 21 L${TAPE_W / 2 + 5} 28 Z`} fill="#a8470f" />
       </svg>
 
       <svg className="ai" width={AI} height={AI} viewBox={`${-r} ${-r} ${AI} ${AI}`} aria-hidden>
@@ -117,9 +117,9 @@ export function HeroInstruments({ animate }: { animate: boolean }) {
         </defs>
         <g clipPath="url(#aiClip)">
           <g ref={horizon}>
-            <rect x={-AI * 2} y={-AI * 2} width={AI * 4} height={AI * 2} fill="#bfae90" />
-            <rect x={-AI * 2} y={0} width={AI * 4} height={AI * 2} fill="#2c1f14" />
-            <line x1={-AI * 2} x2={AI * 2} y1={0} y2={0} stroke="#f2e8d6" strokeWidth={1.5} />
+            <rect x={-AI * 2} y={-AI * 2} width={AI * 4} height={AI * 2} fill="#c9dced" />
+            <rect x={-AI * 2} y={0} width={AI * 4} height={AI * 2} fill="#c8bca4" />
+            <line x1={-AI * 2} x2={AI * 2} y1={0} y2={0} stroke="#14213d" strokeWidth={1.5} />
             <PitchLadder />
           </g>
           {/* Roll scale */}
@@ -135,23 +135,23 @@ export function HeroInstruments({ animate }: { animate: boolean }) {
                 y1={Math.sin(rad) * r1}
                 x2={Math.cos(rad) * r2}
                 y2={Math.sin(rad) * r2}
-                stroke="#f2e8d6"
+                stroke="#14213d"
                 strokeOpacity={0.8}
                 strokeWidth={1.3}
               />
             );
           })}
           <g ref={rollPtr}>
-            <path d={`M0 ${-r + 14} l-5 8 h10 z`} fill="#d8a648" />
+            <path d={`M0 ${-r + 14} l-5 8 h10 z`} fill="#a8470f" />
           </g>
         </g>
         {/* Fixed aircraft symbol */}
-        <g stroke="#d8a648" strokeWidth={3} strokeLinecap="round" fill="none">
+        <g stroke="#a8470f" strokeWidth={3} strokeLinecap="round" fill="none">
           <path d="M-46 0 H-18 L-10 8" />
           <path d="M46 0 H18 L10 8" />
         </g>
-        <circle r={3} fill="#d8a648" />
-        <circle r={r - 1} fill="none" stroke="rgba(242,232,214,0.22)" strokeWidth={2} />
+        <circle r={3} fill="#a8470f" />
+        <circle r={r - 1} fill="none" stroke="rgba(20,33,61,0.22)" strokeWidth={2} />
       </svg>
 
       <dl className="hero-readouts">

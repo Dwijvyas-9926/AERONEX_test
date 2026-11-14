@@ -76,13 +76,13 @@ function baseStyle(): StyleSpecification {
       track: { type: "geojson", data: EMPTY },
     },
     layers: [
-      { id: "bg", type: "background", paint: { "background-color": "#1d1a14" } },
-      { id: "shade", type: "hillshade", source: "shade", paint: { "hillshade-exaggeration": 0.4, "hillshade-shadow-color": "#0c0a06", "hillshade-highlight-color": "#fff6dc", "hillshade-accent-color": "#201a10" } },
-      { id: "fence", type: "line", source: "fence", paint: { "line-color": "#e07b33", "line-width": 2, "line-dasharray": [3, 2] } },
-      { id: "route-edge", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#120c08", "line-width": 6, "line-opacity": 0.75 } },
-      { id: "route", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#f0c060", "line-width": 3 } },
-      { id: "ghost", type: "line", source: "ghost", paint: { "line-color": "#d9b3e6", "line-width": 2.5, "line-dasharray": [2, 1.5] } },
-      { id: "track", type: "line", source: "track", paint: { "line-color": "#ffffff", "line-width": 2 } },
+      { id: "bg", type: "background", paint: { "background-color": "#e9e5da" } },
+      { id: "shade", type: "hillshade", source: "shade", paint: { "hillshade-exaggeration": 0.4, "hillshade-shadow-color": "#3b4763", "hillshade-highlight-color": "#ffffff", "hillshade-accent-color": "#5d677d" } },
+      { id: "fence", type: "line", source: "fence", paint: { "line-color": "#ff6b57", "line-width": 2, "line-dasharray": [3, 2] } },
+      { id: "route-edge", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#0d1629", "line-width": 6, "line-opacity": 0.7 } },
+      { id: "route", type: "line", source: "route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#f28c38", "line-width": 3 } },
+      { id: "ghost", type: "line", source: "ghost", paint: { "line-color": "#9a7fe0", "line-width": 2.5, "line-dasharray": [2, 1.5] } },
+      { id: "track", type: "line", source: "track", paint: { "line-color": "#2f6fe4", "line-width": 2.5 } },
     ],
   };
 }

@@ -10,10 +10,10 @@ import { heightAt, RIVER_LEVEL, riverX } from "../../rendering/terrain";
 import { GRAPHICS, type GraphicsPreset } from "../../state/settingsStore";
 import { heroState, HOVER_ANCHOR, stepHero } from "./heroMotion";
 
-const SKY_HORIZON = new THREE.Color("#30200f");
-const FOG = new THREE.Color("#1a120b");
+const SKY_HORIZON = new THREE.Color("#e6e3da");
+const FOG = new THREE.Color("#ece9e1");
 
-/* ---------------- Sky dome with a low dusk band and sparse stars ---------------- */
+/* ---------------- Sky dome: a pale daylight sky with a warm band low in the west ---------------- */
 function Sky() {
   const mat = useMemo(
     () =>
@@ -22,10 +22,10 @@ function Sky() {
         depthWrite: false,
         fog: false,
         uniforms: {
-          zenith: { value: new THREE.Color("#0c0704") },
+          zenith: { value: new THREE.Color("#f4f6f7") },
           horizon: { value: SKY_HORIZON },
-          glow: { value: new THREE.Color("#8f5620") },
-          warm: { value: new THREE.Color("#a85628") },
+          glow: { value: new THREE.Color("#f0d9b8") },
+          warm: { value: new THREE.Color("#e3c39a") },
         },
         vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
         fragmentShader: `
@@ -42,31 +42,11 @@ function Sky() {
       }),
     [],
   );
-  const stars = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    const n = 700;
-    const p = new Float32Array(n * 3);
-    let seed = 3;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-    for (let i = 0; i < n; i++) {
-      const u = rnd() * Math.PI * 2;
-      const v = 0.12 + rnd() * 0.85; // above the horizon only
-      const r = 380;
-      p[i * 3] = Math.cos(u) * Math.cos(v) * r;
-      p[i * 3 + 1] = Math.sin(v) * r;
-      p[i * 3 + 2] = Math.sin(u) * Math.cos(v) * r;
-    }
-    g.setAttribute("position", new THREE.BufferAttribute(p, 3));
-    return g;
-  }, []);
   return (
     <group>
       <mesh material={mat} renderOrder={-1}>
         <sphereGeometry args={[400, 32, 16]} />
       </mesh>
-      <points geometry={stars}>
-        <pointsMaterial color="#ecdcbf" size={1.1} sizeAttenuation={false} transparent opacity={0.55} fog={false} />
-      </points>
     </group>
   );
 }
@@ -91,9 +71,9 @@ function Terrain() {
         uniforms: THREE.UniformsUtils.merge([
           THREE.UniformsLib.fog,
           {
-            low: { value: new THREE.Color("#1d140b") },
-            high: { value: new THREE.Color("#3a2b1b") },
-            line: { value: new THREE.Color("#d8a648") },
+            low: { value: new THREE.Color("#b9bcb0") },
+            high: { value: new THREE.Color("#e9e6dc") },
+            line: { value: new THREE.Color("#14213d") },
             sun: { value: new THREE.Vector3(-0.5, 0.45, -0.75).normalize() },
           },
         ]),
@@ -120,11 +100,11 @@ function Terrain() {
             float t = smoothstep(-3.0, 26.0, vH);
             vec3 c = mix(low, high, t);
             float diff = clamp(dot(normalize(vN), sun), 0.0, 1.0);
-            c *= 0.55 + diff * 0.75;
+            c *= 0.82 + diff * 0.28;
             float minor = contour(vH, 2.0, 1.0) * 0.16;
             float major = contour(vH, 10.0, 1.4) * 0.42;
             float slopeFade = smoothstep(0.15, 0.9, normalize(vN).y);
-            c += line * (minor + major) * slopeFade;
+            c = mix(c, line, (minor + major) * slopeFade * 0.9);
             gl_FragColor = vec4(c, 1.0);
             #include <fog_fragment>
           }`,
@@ -173,7 +153,7 @@ function River() {
           uniform float time; varying vec3 vW;
           void main(){
             float ripple = sin(vW.z*0.9 - time*1.6 + sin(vW.x*0.7)*1.5) * sin(vW.x*1.3 + time*0.8);
-            vec3 c = vec3(0.055,0.04,0.028) + vec3(0.52,0.35,0.15) * smoothstep(0.82, 1.0, ripple) * 0.35;
+            vec3 c = vec3(0.616,0.706,0.769) + vec3(0.16,0.16,0.14) * smoothstep(0.88, 1.0, ripple) * 0.35;
             gl_FragColor = vec4(c, 0.92);
             #include <fog_fragment>
           }`,
@@ -215,7 +195,7 @@ function Forest() {
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6.28);
       m.compose(p, q, s);
       mesh.setMatrixAt(placed, m);
-      col.setHSL(0.12 + rnd() * 0.05, 0.33, 0.08 + rnd() * 0.05);
+      col.setHSL(0.28 + rnd() * 0.04, 0.1, 0.26 + rnd() * 0.05);
       mesh.setColorAt(placed, col);
       placed++;
     }
@@ -265,22 +245,22 @@ function GroundMarker() {
       <group ref={ring}>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[1.6, 1.68, 64]} />
-          <meshBasicMaterial color="#d8a648" transparent opacity={0.7} fog={false} />
+          <meshBasicMaterial color="#a8470f" transparent opacity={0.7} fog={false} />
         </mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.55, 0.6, 48]} />
-          <meshBasicMaterial color="#d8a648" transparent opacity={0.55} fog={false} />
+          <meshBasicMaterial color="#a8470f" transparent opacity={0.55} fog={false} />
         </mesh>
         {[0, 1, 2, 3].map((i) => (
           <mesh key={i} rotation={[-Math.PI / 2, 0, (i * Math.PI) / 2]} position={[0, 0, 0]}>
             <planeGeometry args={[0.05, 0.6]} />
-            <meshBasicMaterial color="#d8a648" transparent opacity={0.6} fog={false} />
+            <meshBasicMaterial color="#a8470f" transparent opacity={0.6} fog={false} />
           </mesh>
         ))}
       </group>
       <mesh ref={line}>
         <cylinderGeometry args={[0.008, 0.008, 1, 6]} />
-        <meshBasicMaterial color="#d8a648" transparent opacity={0.35} fog={false} />
+        <meshBasicMaterial color="#a8470f" transparent opacity={0.35} fog={false} />
       </mesh>
     </>
   );
@@ -358,9 +338,9 @@ function Rig({ animate }: { animate: boolean }) {
 function Lights({ shadows }: { shadows: boolean }) {
   return (
     <>
-      <hemisphereLight args={["#c99a6a", "#140d08", 0.62]} />
-      <directionalLight position={[-30, 22, -45]} intensity={2.3} color="#f2e2c4" castShadow={shadows} />
-      <directionalLight position={[20, 12, 30]} intensity={0.9} color="#d8a648" />
+      <hemisphereLight args={["#ffffff", "#6d7380", 1.1]} />
+      <directionalLight position={[-30, 22, -45]} intensity={2.3} color="#fff6ea" castShadow={shadows} />
+      <directionalLight position={[20, 12, 30]} intensity={0.7} color="#c9d6e8" />
       <ambientLight intensity={0.12} />
     </>
   );

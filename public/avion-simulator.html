@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#120c08;color:#f2e8d6}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#0d1629;color:#f4f2ec}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <meta charset="utf-8">
 <title>Flight Simulator</title>
 <!-- No web fonts: a ground station is used in fields without a connection, and a
@@ -13,9 +13,9 @@
 @font-face{font-family:"Saira Semi Condensed";src:url("vendor/fonts/saira-semi-condensed-latin-600-normal.woff2") format("woff2");font-weight:600 700;font-display:swap}
 /* Layout: full-bleed 3D viewport as the "airspace", ground-station glass panels docked at its edges (stacked below it on phones). */
 :root{
-  --bg:#120c08; --deep:#5b3f6a; --panel:rgba(36,26,19,.84); --panel-solid:#241a13; --line:rgba(207,192,165,.18);
-  --ink:#f2e8d6; --body:#cfc0a5; --muted:#9b8c72; --accent:#c49ad0;
-  --ok:#9cb257; --warn:#e07b33; --crit:#d6573f; --yellow:#F1C84B;
+  --bg:#0d1629; --deep:#4b3a7a; --panel:rgba(13,22,41,.84); --panel-solid:#13213f; --line:rgba(244,242,236,.16);
+  --ink:#f4f2ec; --body:#dde2ea; --muted:#a3adc0; --accent:#c5b3ec;
+  --ok:#8fcb8a; --warn:#f2bd57; --crit:#ff8f80; --yellow:#F1C84B;
   --f-head:"Saira Semi Condensed","Arial Narrow",system-ui,sans-serif; --f-body:"Manrope","Segoe UI",system-ui,sans-serif; --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   color-scheme:dark;
 }
@@ -38,11 +38,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .brand h1{font-family:var(--f-head);font-weight:600;font-size:22px;margin:0;letter-spacing:.02em}
 .brand span{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;font-family:var(--f-mono);font-size:12px}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 3px rgba(207,192,165,.14)}
-.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(156,178,87,.2)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--crit)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 3px rgba(184,192,207,.16)}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(143,203,138,.2)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--crit)}
 .seg{display:flex;padding:3px;gap:2px}
 .seg button{background:none;border:0;padding:6px 11px;border-radius:7px;color:var(--body);font-size:13px}
-.seg button[aria-pressed="true"]{background:rgba(196,154,208,.22);color:var(--ink)}
+.seg button[aria-pressed="true"]{background:rgba(197,179,236,.22);color:var(--ink)}
 .seg button:hover{color:var(--ink)}
 .spacer{flex:1}
 
@@ -54,14 +54,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .phases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
 .phases li{display:grid;grid-template-columns:20px 1fr;gap:8px;align-items:center;padding:5px 6px;border-radius:6px;color:var(--muted);font-size:13px}
 .phases li i{font-style:normal;font-family:var(--f-mono);font-size:11px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line)}
-.phases li.on{background:rgba(196,154,208,.14);color:var(--ink)} .phases li.on i{border-color:var(--accent);color:var(--accent)}
+.phases li.on{background:rgba(197,179,236,.14);color:var(--ink)} .phases li.on i{border-color:var(--accent);color:var(--accent)}
 .phases li.done{color:var(--body)} .phases li.done i{background:var(--ok);border-color:var(--ok);color:var(--bg)}
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .btn{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:7px;padding:8px 9px;font-size:13px;text-align:center}
-.btn:hover:not(:disabled){background:rgba(196,154,208,.16)}
+.btn:hover:not(:disabled){background:rgba(197,179,236,.16)}
 .btn:disabled{opacity:.38;cursor:not-allowed}
-.btn.primary{background:var(--accent);color:#1b1410;border-color:transparent;font-weight:700}
-.btn.primary:hover:not(:disabled){background:#d7b6df}
+.btn.primary{background:var(--accent);color:#14213d;border-color:transparent;font-weight:700}
+.btn.primary:hover:not(:disabled){background:#d6c8f2}
 .btn.wide{grid-column:1/-1}
 .btn.confirm{background:var(--yellow);color:#241a06;border-color:transparent;font-weight:700;animation:pulse 1.2s ease-in-out infinite}
 @keyframes pulse{50%{box-shadow:0 0 0 6px rgba(241,200,75,.25)}}
@@ -104,7 +104,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .parts button{display:grid;grid-template-columns:12px 1fr auto;gap:8px;align-items:center;background:none;border:0;padding:6px 6px;border-radius:6px;text-align:left;color:var(--body);font-size:13px}
 .parts button:hover{background:rgba(255,255,255,.06)}
 .parts button[aria-pressed="false"]{opacity:.4}
-.parts button.sel{background:rgba(196,154,208,.16);color:var(--ink)}
+.parts button.sel{background:rgba(197,179,236,.16);color:var(--ink)}
 .sw{width:12px;height:12px;border-radius:3px}
 #partinfo{position:absolute;right:12px;top:70px;width:272px}
 #partinfo p{margin:0;color:var(--body);line-height:1.45}

@@ -73,7 +73,7 @@ export function FlightDataPage() {
         </div>
       </header>
 
-      <section className="fd-cockpit">
+      <section className="fd-cockpit on-navy">
         <div className="fd-ribbon">
           <div className="fd-ribbon-mode">
             <span className="fd-ribbon-label">Mode</span>

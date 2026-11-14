@@ -2,7 +2,7 @@
   Primary Flight Display — a large artificial horizon with pitch ladder, roll
   scale, and rolling speed / altitude / heading tapes, drawn as one responsive
   SVG. Driven entirely by live telemetry; values arrive already in display units.
-  Styled as a glass cockpit instrument to match the app's brass-on-espresso system.
+  Styled as a glass cockpit instrument on a navy panel: the one place the app goes dark, as an aircraft display does.
 */
 
 export interface PfdProps {
@@ -37,22 +37,22 @@ export function Pfd(p: PfdProps) {
           <rect x={AW.x} y={AW.y} width={AW.w} height={AW.h} rx={14} />
         </clipPath>
         <linearGradient id="pfd-sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#2f5b8c" />
-          <stop offset="0.75" stopColor="#4d82bd" />
-          <stop offset="1" stopColor="#6ea3d6" />
+          <stop offset="0" stopColor="#1f4f8a" />
+          <stop offset="0.75" stopColor="#3c78b8" />
+          <stop offset="1" stopColor="#5f97cf" />
         </linearGradient>
         <linearGradient id="pfd-ground" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#8a6038" />
-          <stop offset="0.5" stopColor="#5f4226" />
-          <stop offset="1" stopColor="#3a2817" />
+          <stop offset="0" stopColor="#7a5532" />
+          <stop offset="0.5" stopColor="#5c3f25" />
+          <stop offset="1" stopColor="#3d2a19" />
         </linearGradient>
         <linearGradient id="pfd-tape" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="rgba(32,23,14,0.82)" />
-          <stop offset="1" stopColor="rgba(16,11,7,0.82)" />
+          <stop offset="0" stopColor="rgba(20,33,61,0.86)" />
+          <stop offset="1" stopColor="rgba(11,20,40,0.86)" />
         </linearGradient>
         <radialGradient id="pfd-inner" cx="0.5" cy="0.44" r="0.72">
           <stop offset="0.6" stopColor="rgba(0,0,0,0)" />
-          <stop offset="1" stopColor="rgba(4,6,10,0.55)" />
+          <stop offset="1" stopColor="rgba(5,10,22,0.5)" />
         </radialGradient>
       </defs>
 
@@ -62,19 +62,19 @@ export function Pfd(p: PfdProps) {
           <g transform={`translate(0 ${p.pitch * PPD})`}>
             <rect x={cx - 1300} y={cy - 1700} width={2600} height={1700} fill="url(#pfd-sky)" />
             <rect x={cx - 1300} y={cy} width={2600} height={1700} fill="url(#pfd-ground)" />
-            <rect x={cx - 1300} y={cy - 2} width={2600} height={3} fill="#f5e9d0" />
-            <rect x={cx - 1300} y={cy + 2} width={2600} height={1.5} fill="#d8a648" opacity={0.6} />
+            <rect x={cx - 1300} y={cy - 2} width={2600} height={3} fill="#ffffff" />
+            <rect x={cx - 1300} y={cy + 2} width={2600} height={1.5} fill="#f4a259" opacity={0.6} />
             {/* pitch ladder */}
             {[-80, -70, -60, -50, -40, -30, -20, -10, 10, 20, 30, 40, 50, 60, 70, 80].map((d) => {
               const y = cy - d * PPD;
               const half = d % 20 === 0 ? 58 : 30;
               return (
-                <g key={d} stroke="#f2e8d6" strokeWidth={1.5} strokeLinecap="round">
+                <g key={d} stroke="#f4f2ec" strokeWidth={1.5} strokeLinecap="round">
                   <line x1={cx - half} x2={cx + half} y1={y} y2={y} />
                   {d % 20 === 0 && (
                     <>
-                      <text x={cx - half - 9} y={y + 4.5} fill="#f2e8d6" fontSize={13} textAnchor="end" stroke="none" fontFamily="var(--font-display)">{Math.abs(d)}</text>
-                      <text x={cx + half + 9} y={y + 4.5} fill="#f2e8d6" fontSize={13} textAnchor="start" stroke="none" fontFamily="var(--font-display)">{Math.abs(d)}</text>
+                      <text x={cx - half - 9} y={y + 4.5} fill="#f4f2ec" fontSize={13} textAnchor="end" stroke="none" fontFamily="var(--font-display)">{Math.abs(d)}</text>
+                      <text x={cx + half + 9} y={y + 4.5} fill="#f4f2ec" fontSize={13} textAnchor="start" stroke="none" fontFamily="var(--font-display)">{Math.abs(d)}</text>
                     </>
                   )}
                 </g>
@@ -85,11 +85,11 @@ export function Pfd(p: PfdProps) {
         <rect x={AW.x} y={AW.y} width={AW.w} height={AW.h} fill="url(#pfd-inner)" />
       </g>
       {/* bezel */}
-      <rect x={AW.x - 2} y={AW.y - 2} width={AW.w + 4} height={AW.h + 4} rx={16} fill="none" stroke="#0c0906" strokeWidth={4} />
-      <rect x={AW.x} y={AW.y} width={AW.w} height={AW.h} rx={14} fill="none" stroke="rgba(216,166,72,0.45)" strokeWidth={1.5} />
+      <rect x={AW.x - 2} y={AW.y - 2} width={AW.w + 4} height={AW.h + 4} rx={16} fill="none" stroke="#0b1428" strokeWidth={4} />
+      <rect x={AW.x} y={AW.y} width={AW.w} height={AW.h} rx={14} fill="none" stroke="rgba(244,162,89,0.4)" strokeWidth={1.5} />
 
       {/* ---- roll scale + moving pointer ---- */}
-      <g stroke="#e9dcc3" fill="#e9dcc3">
+      <g stroke="#dde2ea" fill="#dde2ea">
         {rollTicks.map((t) => {
           const a = (t * Math.PI) / 180;
           const len = t % 30 === 0 || t === 0 ? 15 : 9;
@@ -100,20 +100,20 @@ export function Pfd(p: PfdProps) {
           return <line key={t} x1={x1} y1={y1} x2={x2} y2={y2} strokeWidth={t === 0 ? 2.6 : 1.6} />;
         })}
         <g transform={`rotate(${-p.roll} ${cx} ${cy})`}>
-          <polygon points={`${cx},${cy - RARC + 17} ${cx - 10},${cy - RARC + 33} ${cx + 10},${cy - RARC + 33}`} fill="#d8a648" stroke="none" />
+          <polygon points={`${cx},${cy - RARC + 17} ${cx - 10},${cy - RARC + 33} ${cx + 10},${cy - RARC + 33}`} fill="#f4a259" stroke="none" />
         </g>
       </g>
 
       {/* ---- fixed aircraft reference ---- */}
-      <g stroke="#1a130a" strokeWidth={6} fill="none" strokeLinecap="round" opacity={0.5}>
+      <g stroke="#0b1428" strokeWidth={6} fill="none" strokeLinecap="round" opacity={0.5}>
         <path d={`M${cx - 98} ${cy} H${cx - 36} L${cx - 27} ${cy + 13}`} />
         <path d={`M${cx + 98} ${cy} H${cx + 36} L${cx + 27} ${cy + 13}`} />
       </g>
-      <g stroke="#d8a648" strokeWidth={3.5} fill="none" strokeLinecap="round">
+      <g stroke="#f4a259" strokeWidth={3.5} fill="none" strokeLinecap="round">
         <path d={`M${cx - 98} ${cy} H${cx - 36} L${cx - 27} ${cy + 13}`} />
         <path d={`M${cx + 98} ${cy} H${cx + 36} L${cx + 27} ${cy + 13}`} />
       </g>
-      <circle cx={cx} cy={cy} r={4.5} fill="#d8a648" stroke="#1a130a" strokeWidth={1} />
+      <circle cx={cx} cy={cy} r={4.5} fill="#f4a259" stroke="#0b1428" strokeWidth={1} />
 
       {/* ---- tapes ---- */}
       <Tape x={118} w={122} value={p.speed} unit={p.speedUnit} step={5} pxPerUnit={7} side="left" label="SPD" has={p.hasData} />
@@ -124,7 +124,7 @@ export function Pfd(p: PfdProps) {
       <Corner x={866} y={cy} label="V/S" value={p.hasData ? `${p.climb >= 0 ? "+" : ""}${p.climb.toFixed(1)}` : "—"} align="start" />
       <Corner x={94} y={cy} label="THR" value={p.hasData ? `${Math.round(p.throttle)}%` : "—"} align="end" />
 
-      {!p.hasData && <text x={cx} y={cy - 90} textAnchor="middle" fill="#f2e8d6" fontSize={16} fontFamily="var(--font-display)">Waiting for telemetry…</text>}
+      {!p.hasData && <text x={cx} y={cy - 90} textAnchor="middle" fill="#f4f2ec" fontSize={16} fontFamily="var(--font-display)">Waiting for telemetry…</text>}
     </svg>
   );
 }
@@ -152,7 +152,7 @@ function Tape({ x, w, value, unit, step, pxPerUnit, side, label, has }: { x: num
     : `${bx},${midY - 22} ${bx - 15},${midY} ${bx},${midY + 22} ${bx + w},${midY + 22} ${bx + w},${midY - 22}`;
   return (
     <g>
-      <rect x={x} y={top} width={w} height={h} rx={8} fill="url(#pfd-tape)" stroke="rgba(216,166,72,0.22)" />
+      <rect x={x} y={top} width={w} height={h} rx={8} fill="url(#pfd-tape)" stroke="rgba(244,242,236,0.16)" />
       <text x={x + w / 2} y={top - 9} textAnchor="middle" fontSize={11} fill="var(--muted)" letterSpacing="0.06em">{label} · {unit}</text>
       <clipPath id={`tape-${label}`}><rect x={x} y={top} width={w} height={h} rx={8} /></clipPath>
       <g clipPath={`url(#tape-${label})`}>
@@ -162,14 +162,14 @@ function Tape({ x, w, value, unit, step, pxPerUnit, side, label, has }: { x: num
           const major = m % (step * 2) === 0;
           return (
             <g key={m}>
-              <line x1={side === "left" ? x + w - (major ? 14 : 8) : x} x2={side === "left" ? x + w : x + (major ? 14 : 8)} y1={y} y2={y} stroke="#cfc0a5" strokeWidth={major ? 1.6 : 0.8} opacity={major ? 0.9 : 0.5} />
-              {major && <text x={side === "left" ? x + w - 20 : x + 20} y={y + 4.5} textAnchor={side === "left" ? "end" : "start"} fontSize={13} fill="#cfc0a5" fontFamily="var(--font-display)">{m}</text>}
+              <line x1={side === "left" ? x + w - (major ? 14 : 8) : x} x2={side === "left" ? x + w : x + (major ? 14 : 8)} y1={y} y2={y} stroke="#b8c0cf" strokeWidth={major ? 1.6 : 0.8} opacity={major ? 0.9 : 0.5} />
+              {major && <text x={side === "left" ? x + w - 20 : x + 20} y={y + 4.5} textAnchor={side === "left" ? "end" : "start"} fontSize={13} fill="#b8c0cf" fontFamily="var(--font-display)">{m}</text>}
             </g>
           );
         })}
       </g>
-      <polygon points={boxPts} fill="#241a13" stroke="#d8a648" strokeWidth={1.6} />
-      <text x={x + w / 2} y={midY + 7} textAnchor="middle" fontSize={22} fontWeight={600} fill="#f2e8d6" fontFamily="var(--font-display)">{has ? Math.round(value) : "—"}</text>
+      <polygon points={boxPts} fill="#0b1428" stroke="#f4a259" strokeWidth={1.6} />
+      <text x={x + w / 2} y={midY + 7} textAnchor="middle" fontSize={22} fontWeight={600} fill="#f4f2ec" fontFamily="var(--font-display)">{has ? Math.round(value) : "—"}</text>
     </g>
   );
 }
@@ -191,7 +191,7 @@ function HeadingTape({ heading, has }: { heading: number; has: boolean }) {
   };
   return (
     <g>
-      <rect x={x} y={y} width={w} height={hh} rx={8} fill="url(#pfd-tape)" stroke="rgba(216,166,72,0.22)" />
+      <rect x={x} y={y} width={w} height={hh} rx={8} fill="url(#pfd-tape)" stroke="rgba(244,242,236,0.16)" />
       <clipPath id="hdg-clip"><rect x={x} y={y} width={w} height={hh} rx={8} /></clipPath>
       <g clipPath="url(#hdg-clip)">
         {has && marks.map((m) => {
@@ -200,15 +200,15 @@ function HeadingTape({ heading, has }: { heading: number; has: boolean }) {
           const cardinal = ((m % 90) + 90) % 90 === 0;
           return (
             <g key={m}>
-              <line x1={px} x2={px} y1={y + 4} y2={y + (major ? 22 : 13)} stroke={major ? "#f2e8d6" : "#cfc0a5"} strokeWidth={major ? 2 : 1} opacity={major ? 1 : 0.7} />
-              {major && <text x={px} y={y + 44} textAnchor="middle" fontSize={cardinal ? 19 : 15} fontWeight={cardinal ? 600 : 400} fill={cardinal ? "#d8a648" : "#e9dcc3"} fontFamily="var(--font-display)">{compass(m)}</text>}
+              <line x1={px} x2={px} y1={y + 4} y2={y + (major ? 22 : 13)} stroke={major ? "#f4f2ec" : "#b8c0cf"} strokeWidth={major ? 2 : 1} opacity={major ? 1 : 0.7} />
+              {major && <text x={px} y={y + 44} textAnchor="middle" fontSize={cardinal ? 19 : 15} fontWeight={cardinal ? 600 : 400} fill={cardinal ? "#f4a259" : "#dde2ea"} fontFamily="var(--font-display)">{compass(m)}</text>}
             </g>
           );
         })}
       </g>
-      <polygon points={`${midX},${y + 1} ${midX - 14},${y - 14} ${midX + 14},${y - 14}`} fill="#d8a648" />
-      <rect x={midX - 34} y={y - 42} width={68} height={28} rx={5} fill="#241a13" stroke="#d8a648" strokeWidth={1.6} />
-      <text x={midX} y={y - 22} textAnchor="middle" fontSize={18} fontWeight={600} fill="#f2e8d6" fontFamily="var(--font-display)">{has ? `${Math.round(((heading % 360) + 360) % 360)}°` : "—"}</text>
+      <polygon points={`${midX},${y + 1} ${midX - 14},${y - 14} ${midX + 14},${y - 14}`} fill="#f4a259" />
+      <rect x={midX - 34} y={y - 42} width={68} height={28} rx={5} fill="#0b1428" stroke="#f4a259" strokeWidth={1.6} />
+      <text x={midX} y={y - 22} textAnchor="middle" fontSize={18} fontWeight={600} fill="#f4f2ec" fontFamily="var(--font-display)">{has ? `${Math.round(((heading % 360) + 360) % 360)}°` : "—"}</text>
     </g>
   );
 }

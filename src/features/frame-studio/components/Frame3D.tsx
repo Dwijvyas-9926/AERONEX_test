@@ -300,7 +300,7 @@ export function Frame3D({ design: d, exploded }: Props) {
         off-white every part reads, and it is what a drawing of a part looks
         like on paper anyway.
       */}
-      <color attach="background" args={["#ece4d6"]} />
+      <color attach="background" args={["#ece7dd"]} />
       {/* Key from the front-right, a cool fill from behind-left to keep the
           shaded sides from going flat, and ambient lifted for the light room. */}
       <ambientLight intensity={0.85} color="#fff6e8" />

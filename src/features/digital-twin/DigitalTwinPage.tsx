@@ -290,7 +290,7 @@ export function DigitalTwinPage() {
                 <Progress />
                 {mode !== "inspect" && mode !== "live" && <FlightHud active />}
                 {mode === "manual" && (
-                  <div className="key-help">
+                  <div className="key-help on-navy">
                     <KeyRow keys={["W", "S"]} label="Pitch" />
                     <KeyRow keys={["A", "D"]} label="Roll" />
                     <KeyRow keys={["Q", "E"]} label="Yaw" />
@@ -404,7 +404,7 @@ function TwinLiveReadout() {
   const climb = hud?.value.climb ?? 0;
   const alt = posAlt ?? hud?.value.alt ?? null;
   return (
-    <div className={`twin-hud${stale ? " stale" : ""}`}>
+    <div className={`twin-hud on-navy${stale ? " stale" : ""}`}>
       <div className="twin-hud-title">Live · Pixhawk</div>
       <div className="twin-hud-row"><span>Roll</span><strong>{att ? `${r.toFixed(1)}°` : "—"}</strong></div>
       <div className="twin-hud-row"><span>Pitch</span><strong>{att ? `${p.toFixed(1)}°` : "—"}</strong></div>

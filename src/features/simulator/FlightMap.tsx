@@ -50,13 +50,13 @@ function relief(terrain: Terrain, cn: number, ce: number, span: number): string 
       const h = terrain.land(n, e);
       const k = (j * N + i) * 4;
       if (h < terrain.waterLevel) {
-        img.data.set([34, 66, 86, 255], k);
+        img.data.set([185, 208, 222, 255], k);
         continue;
       }
       const light = Math.max(-1, Math.min(1, ((terrain.land(n + cell, e - cell) - h) / cell) * 2.2));
       const t = Math.min(1, h / 90);
-      const s = 1 + light * 0.45;
-      img.data.set([(34 + 58 * t) * s, (46 + 30 * t) * s, (24 + 14 * t) * s, 255], k);
+      const s = 1 + light * 0.16;
+      img.data.set([(222 - 26 * t) * s, (226 - 42 * t) * s, (208 - 56 * t) * s, 255], k);
     }
   }
   ctx.putImageData(img, 0, 0);

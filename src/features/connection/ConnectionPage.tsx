@@ -151,7 +151,7 @@ function ConnectDial() {
             style={{ transition: "stroke-dasharray 500ms var(--ease-out)" }}
           />
         </svg>
-        <span className="cb-inner">
+        <span className="cb-inner on-navy">
           {open ? <Unplug /> : <Plug />}
           <span className="cb-label">{open ? "DISCONNECT" : "CONNECT"}</span>
           <span className="cb-sub">{busy ? view.label : open ? "Close the serial port" : "Choose a serial port"}</span>

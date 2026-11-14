@@ -12,20 +12,20 @@ export function AttitudeIndicator({ roll, pitch, size = 132, stale = false }: { 
       </defs>
       <g clipPath={`url(#${id})`}>
         <g transform={`rotate(${-roll}) translate(0 ${pitch * ppd})`}>
-          <rect x={-size * 2} y={-size * 2} width={size * 4} height={size * 2} fill="#bfae90" />
-          <rect x={-size * 2} y={0} width={size * 4} height={size * 2} fill="#2c1f14" />
-          <line x1={-size} x2={size} y1={0} y2={0} stroke="#f2e8d6" strokeWidth={1.5} />
+          <rect x={-size * 2} y={-size * 2} width={size * 4} height={size * 2} fill="#c9dced" />
+          <rect x={-size * 2} y={0} width={size * 4} height={size * 2} fill="#c8bca4" />
+          <line x1={-size} x2={size} y1={0} y2={0} stroke="#14213d" strokeWidth={1.5} />
           {[-20, -10, 10, 20].map((d) => (
-            <line key={d} x1={-14} x2={14} y1={-d * ppd} y2={-d * ppd} stroke="#f2e8d6" strokeOpacity={0.6} />
+            <line key={d} x1={-14} x2={14} y1={-d * ppd} y2={-d * ppd} stroke="#14213d" strokeOpacity={0.45} />
           ))}
         </g>
       </g>
-      <g stroke="#d8a648" strokeWidth={2.5} strokeLinecap="round" fill="none">
+      <g stroke="#a8470f" strokeWidth={2.5} strokeLinecap="round" fill="none">
         <path d={`M${-r * 0.55} 0 H${-r * 0.2} L${-r * 0.12} 6`} />
         <path d={`M${r * 0.55} 0 H${r * 0.2} L${r * 0.12} 6`} />
       </g>
-      <circle r={2.5} fill="#d8a648" />
-      <circle r={r - 1} fill="none" stroke="rgba(242,232,214,0.2)" strokeWidth={2} />
+      <circle r={2.5} fill="#a8470f" />
+      <circle r={r - 1} fill="none" stroke="rgba(20,33,61,0.22)" strokeWidth={2} />
     </svg>
   );
 }

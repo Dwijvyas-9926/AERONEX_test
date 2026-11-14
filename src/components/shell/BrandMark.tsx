@@ -14,19 +14,19 @@ const LEGS = "M11.5 53 L28.2 10 H35.8 L52.5 53 H44 L32 21.5 L20 53 Z";
 
 interface Props {
   className?: string;
-  /** "tile" is the app icon on its dark square; "glyph" is the mark alone. */
+  /** "tile" is the app icon on its navy square; "glyph" is the mark alone. */
   variant?: "tile" | "glyph";
   /** Colour behind the mark, for the gap the level line cuts through the A. */
   ground?: string;
 }
 
-export function BrandMark({ className = "brand-mark", variant = "tile", ground = "#1b1410" }: Props) {
+export function BrandMark({ className = "brand-mark", variant = "tile", ground = "#14213d" }: Props) {
   return (
     <svg className={className} viewBox="0 0 64 64" aria-hidden="true">
       {variant === "tile" && <rect width="64" height="64" rx="14" fill={ground} />}
-      <path d={LEGS} fill="#d8a648" />
+      <path d={LEGS} fill="#f28c38" />
       <path d="M4 40.5 H60" stroke={ground} strokeWidth="9.6" />
-      <path d="M6.5 40.5 H57.5" stroke="#f2e8d6" strokeWidth="4.2" />
+      <path d="M6.5 40.5 H57.5" stroke="#f4f2ec" strokeWidth="4.2" />
     </svg>
   );
 }

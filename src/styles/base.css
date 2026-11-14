@@ -108,8 +108,12 @@ textarea {
   background: var(--slate-hi);
 }
 
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -123,10 +127,21 @@ textarea {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
+  box-shadow: 0 1px 2px rgba(143, 59, 11, 0.24);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 82%, white);
+  background: var(--accent-hi);
+  border-color: var(--accent-hi);
+}
+
+/* A primary action that is not available yet reads as unavailable, not as a faded orange. */
+.btn-primary:disabled {
+  opacity: 1;
+  background: var(--slate-hi);
+  border-color: var(--line);
+  color: var(--faint);
+  box-shadow: none;
 }
 
 .btn-ghost {
@@ -142,12 +157,12 @@ textarea {
 
 .btn-danger {
   background: var(--danger-soft);
-  border-color: rgba(214, 87, 63, 0.45);
-  color: color-mix(in srgb, var(--danger) 55%, white);
+  border-color: var(--danger-line);
+  color: var(--danger);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(214, 87, 63, 0.22);
+  background: rgba(179, 38, 30, 0.14);
 }
 
 .btn-lg {
@@ -186,9 +201,21 @@ textarea {
   padding: 0 var(--s3);
   border-radius: var(--r-ctl);
   border: 1px solid var(--line);
-  background: var(--midnight-deep);
+  background: var(--field);
   color: var(--ink);
   font-size: var(--t-sm);
+  box-shadow: inset 0 1px 1px rgba(20, 33, 61, 0.04);
+}
+
+.input::placeholder {
+  color: var(--faint);
+  opacity: 0.8;
+}
+
+.input:disabled,
+.select:disabled {
+  background: var(--slate);
+  color: var(--muted);
 }
 
 .input:focus,
@@ -201,7 +228,7 @@ textarea {
 .select {
   appearance: none;
   padding-right: 32px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239B8C72' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2356617A' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
 }
@@ -240,16 +267,17 @@ textarea {
 }
 
 .segmented button[aria-pressed="true"] {
-  background: var(--slate);
+  background: var(--field);
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line);
+  box-shadow: 0 0 0 1px var(--line), var(--shadow-1);
 }
 
 /* ---------- Panels ---------- */
 .panel {
   background: var(--graphite);
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--r-panel);
+  box-shadow: var(--shadow-1);
 }
 
 .panel-head {
@@ -357,13 +385,16 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
   gap: 1px;
-  background: var(--line-soft);
+  /* The hairlines are each cell's own edge, so a short last row leaves blank
+     panel rather than a grey block. */
+  background: var(--graphite);
   border-radius: var(--r-ctl);
   overflow: hidden;
 }
 
 .readout {
   background: var(--graphite);
+  box-shadow: 1px 0 0 var(--line-soft), 0 1px 0 var(--line-soft), 1px 1px 0 var(--line-soft);
   padding: var(--s3) var(--s4);
   display: grid;
   gap: 2px;
@@ -418,8 +449,8 @@ textarea {
 
 .callout.warn {
   background: var(--warn-soft);
-  border-color: rgba(224, 123, 51, 0.35);
-  color: color-mix(in srgb, var(--warn) 48%, white);
+  border-color: var(--warn-line);
+  color: var(--ink-2);
 }
 
 .callout.warn svg {
@@ -428,8 +459,8 @@ textarea {
 
 .callout.danger {
   background: var(--danger-soft);
-  border-color: rgba(214, 87, 63, 0.35);
-  color: color-mix(in srgb, var(--danger) 50%, white);
+  border-color: var(--danger-line);
+  color: var(--ink-2);
 }
 
 .callout.danger svg {
