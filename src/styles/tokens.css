@@ -20,13 +20,16 @@
   --midnight: #f6f3ec;      /* page background */
   --midnight-deep: #ece7dd; /* wells under 3D, maps and drawings */
   --chrome: #ebe6dc;        /* side menu and top bar: a breath off the page */
-  /* Frosted-glass finish for the menu and top bar: a light sheen over the
-     chrome tone, a fine grain, and a bright inner edge. Same colour family. */
-  --chrome-sheen-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.36));
-  --chrome-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.2) 38%, rgba(255, 255, 255, 0.06) 100%);
-  --chrome-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .08 0 0 0 0 .13 0 0 0 0 .24 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  --chrome-edge: rgba(255, 255, 255, 0.85);
-  --chrome-line: rgba(20, 33, 61, 0.09);
+  /* Clear tinted glass for the side menu and top bar. The app's back wall
+     carries the light; the panes are see-through with a warm tint, a thick
+     amber edge where the glass catches the light, and a second pane line
+     just inside it. */
+  --pane-tint: linear-gradient(180deg, rgba(250, 249, 226, 0.58) 0%, rgba(242, 242, 212, 0.42) 55%, rgba(236, 234, 198, 0.5) 100%);
+  --pane-sheen: linear-gradient(105deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 38%, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.28) 100%);
+  --pane-edge: linear-gradient(180deg, #f8dd9a 0%, #e3ac47 30%, #f2ca78 58%, #d59a35 82%, #c4882a 100%);
+  --pane-edge-x: linear-gradient(90deg, #f8dd9a 0%, #e3ac47 30%, #f2ca78 58%, #d59a35 82%, #c4882a 100%);
+  --pane-line: rgba(255, 255, 255, 0.75);
+  --pane-inner: rgba(196, 136, 42, 0.22);
   --graphite: #fdfcf8;      /* panels and cards */
   --slate: #efebe2;         /* raised controls: buttons, chips */
   --field: #ffffff;         /* text fields and the selected segment */
