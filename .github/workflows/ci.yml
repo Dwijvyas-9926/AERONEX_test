@@ -58,7 +58,7 @@ jobs:
       - run: npm ci
       - name: Cache the ArduCopter build
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ardupilot-bin
           key: sitl-${{ matrix.release }}-ubuntu-24.04
